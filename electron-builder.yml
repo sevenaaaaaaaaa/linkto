@@ -1,0 +1,18 @@
+appId: studio.mail.app
+productName: Mail Studio
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack: []
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+  darkModeSupport: true
+  hardenedRuntime: false
+npmRebuild: false
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
