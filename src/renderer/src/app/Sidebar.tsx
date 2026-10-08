@@ -151,7 +151,7 @@ export function Sidebar() {
     <div className="glass w-[248px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
       <div className="drag-region h-[52px] shrink-0 flex items-end pl-[76px] pb-1">
         <span className="text-[12.5px] font-semibold tracking-wide" style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
-          Mail Studio
+          LinkTo
         </span>
       </div>
       <div className="px-2 pb-2">
@@ -210,6 +210,16 @@ export function Sidebar() {
           }}
         />
         <Row icon={<IconBook width={15} height={15} />} label="知识库" active={kbView} onClick={showKb} />
+        <Row
+          icon={<span className="text-[13px] leading-none">🤖</span>}
+          label="Agent"
+          active={location.hash.startsWith('#/agent')}
+          onClick={() => {
+            setKbView(false)
+            setScope({ kind: 'unified', title: 'Agent' })
+            location.hash = '#/agent'
+          }}
+        />
 
         {accounts.map(acc => {
           const accFolders = folders.filter(f => f.accountId === acc.id && !f.hidden)

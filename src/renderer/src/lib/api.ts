@@ -1,8 +1,8 @@
-import type { MailStudioApi } from '@shared/ipc'
+import type { LinkToApi } from '@shared/ipc'
 
 declare global {
   interface Window {
-    api: MailStudioApi
+    api: LinkToApi
   }
 }
 

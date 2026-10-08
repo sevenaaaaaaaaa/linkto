@@ -99,6 +99,8 @@ export function Reader() {
 
   // 「提炼」状态
   const [extracting, setExtracting] = useState(false)
+  // 「Agent 学习」状态
+  const [learning, setLearning] = useState(false)
 
   const runExtract = async () => {
     if (!msg || extracting) return
@@ -108,6 +110,17 @@ export function Reader() {
       showToast(res.ok ? (res.created.length ? `已加入${res.created.join('、')}` : '这封邮件没有可提炼的待办/文章') : res.error ?? '提炼失败')
     } finally {
       setExtracting(false)
+    }
+  }
+
+  const runAgentLearn = async () => {
+    if (!msg || learning) return
+    setLearning(true)
+    try {
+      const res = await api.agentLearn(msg.id)
+      showToast(res.ok ? (res.learned.length ? `Agent 记住了 ${res.learned.length} 条` : '没有值得沉淀的长期信息') : res.error ?? '学习失败')
+    } finally {
+      setLearning(false)
     }
   }
 
@@ -489,6 +502,7 @@ export function Reader() {
             <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
             <AIChip label="提取待办" onClick={() => runAI('tasks')} active={aiMode === 'tasks'} />
             <AIChip label={extracting ? '提炼中…' : '提炼'} onClick={runExtract} active={false} />
+            <AIChip label={learning ? '学习中…' : '学习'} onClick={runAgentLearn} active={false} />
           </div>
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">

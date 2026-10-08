@@ -57,6 +57,7 @@ export class AppStore {
   private kv!: DatabaseSync
 
   constructor() {
+    // 保持 'mail-studio' 目录名以兼容老版本本地数据（不对外可见）
     this.dataDir = join(app.getPath('userData'), 'mail-studio')
     this.attachmentDir = join(this.dataDir, 'attachments')
     this.dbPath = join(this.dataDir, 'mail.db')

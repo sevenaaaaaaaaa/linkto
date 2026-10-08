@@ -8,6 +8,7 @@ import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
 import { AIService } from './ai/service'
 import { InsightsService } from './ai/insights'
+import { AgentService } from './ai/agent'
 import { Notifier, focusMainWindow } from './notify'
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
@@ -20,6 +21,7 @@ let aiService: AIService
 let notifier: Notifier
 let outbox: Outbox
 let insights: InsightsService
+let agent: AgentService
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -142,9 +144,9 @@ function updateDockBadge() {
 function buildAppMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Mail Studio',
+      label: 'LinkTo',
       submenu: [
-        { role: 'about', label: '关于 Mail Studio' },
+        { role: 'about', label: '关于 LinkTo' },
         { type: 'separator' },
         {
           label: '设置…',
@@ -156,7 +158,7 @@ function buildAppMenu() {
         { role: 'hideOthers', label: '隐藏其他' },
         { role: 'unhide', label: '全部显示' },
         { type: 'separator' },
-        { role: 'quit', label: '退出 Mail Studio' }
+        { role: 'quit', label: '退出 LinkTo' }
       ]
     },
     {
@@ -234,6 +236,16 @@ async function bootstrap() {
   })
 
   insights = new InsightsService({
+    ai: aiService,
+    store: mailStore,
+    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    event: payload => broadcast(payload),
+    // Agent 长期记忆注入（agent 稍后初始化，闭包延迟求值）
+    getMemoryContext: q => agent?.memoryBlock(q) || null,
+    onDailyGenerated: ids => void agent?.learnFromMessages(ids, 6)
+  })
+
+  agent = new AgentService({
     ai: aiService,
     store: mailStore,
     getAISettings: () => appStore.get('ai', DEFAULT_AI),
@@ -322,6 +334,7 @@ async function bootstrap() {
     notifier,
     outbox,
     insights,
+    agent,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),

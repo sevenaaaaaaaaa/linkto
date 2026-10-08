@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
+import { randomUUID } from 'node:crypto'
 import type {
   AccountConfig,
   AccountWithStatus,
@@ -13,7 +14,9 @@ import type {
   MessageQuery,
   MessageSummary,
   Rule,
-  Signature
+  Signature,
+  AgentMemory,
+  MemoryScope
 } from '@shared/types'
 
 export interface AccountRow extends AccountConfig {
@@ -694,6 +697,105 @@ export class MailStore {
       .run(patch.title ?? item.title, patch.content ?? item.content, JSON.stringify(patch.tags ?? item.tags), id)
   }
 
+  // ================= Agent 记忆 =================
+
+  private memoryRow(r: any): AgentMemory {
+    return {
+      id: r.id,
+      scope: r.scope,
+      entity: r.entity ?? '',
+      title: r.title,
+      content: r.content ?? '',
+      source: r.source ?? 'auto',
+      sourceMessageId: r.source_message_id ?? null,
+      confidence: Number(r.confidence ?? 0.8),
+      useCount: Number(r.use_count ?? 0),
+      lastUsedAt: r.last_used_at ?? null,
+      status: r.status ?? 'active',
+      createdAt: r.created_at ?? 0,
+      updatedAt: r.updated_at ?? 0
+    }
+  }
+
+  listMemories(scope?: MemoryScope | 'all'): AgentMemory[] {
+    const rows = (
+      scope && scope !== 'all'
+        ? this.db.prepare('SELECT * FROM agent_memory WHERE scope = ? ORDER BY updated_at DESC').all(scope)
+        : this.db.prepare('SELECT * FROM agent_memory ORDER BY updated_at DESC').all()
+    ) as any[]
+    return rows.map(r => this.memoryRow(r))
+  }
+
+  getMemory(id: string): AgentMemory | undefined {
+    const r = this.db.prepare('SELECT * FROM agent_memory WHERE id = ?').get(id) as any
+    return r ? this.memoryRow(r) : undefined
+  }
+
+  /** 新增或更新记忆：同 scope+entity+title 视为同一条，更新内容并提升置信度 */
+  upsertMemory(m: {
+    id?: string
+    scope: MemoryScope
+    entity?: string
+    title: string
+    content: string
+    source?: 'auto' | 'manual'
+    sourceMessageId?: string | null
+    confidence?: number
+  }): AgentMemory {
+    const now = Date.now()
+    const existing = this.db
+      .prepare('SELECT id FROM agent_memory WHERE scope = ? AND entity = ? AND title = ?')
+      .get(m.scope, m.entity ?? '', m.title) as { id: string } | undefined
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE agent_memory SET content = ?, confidence = ?, source_message_id = coalesce(?, source_message_id), updated_at = ? WHERE id = ?`
+        )
+        .run(m.content, Math.min(0.99, (this.getMemory(existing.id)?.confidence ?? 0.5) + 0.1), m.sourceMessageId ?? null, now, existing.id)
+      return this.getMemory(existing.id)!
+    }
+    const id = m.id ?? `mem-${randomUUID()}`
+    this.db
+      .prepare(
+        `INSERT INTO agent_memory (id, scope, entity, title, content, source, source_message_id, confidence, status, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,'active',?,?)`
+      )
+      .run(id, m.scope, m.entity ?? '', m.title, m.content, m.source ?? 'auto', m.sourceMessageId ?? null, m.confidence ?? 0.8, now, now)
+    return this.getMemory(id)!
+  }
+
+  updateMemory(id: string, patch: Partial<Pick<AgentMemory, 'title' | 'content' | 'scope' | 'status'>>) {
+    const cur = this.getMemory(id)
+    if (!cur) return
+    this.db
+      .prepare('UPDATE agent_memory SET title = ?, content = ?, scope = ?, status = ?, updated_at = ? WHERE id = ?')
+      .run(patch.title ?? cur.title, patch.content ?? cur.content, patch.scope ?? cur.scope, patch.status ?? cur.status, Date.now(), id)
+  }
+
+  deleteMemory(id: string) {
+    this.db.prepare('DELETE FROM agent_memory WHERE id = ?').run(id)
+  }
+
+  /** 记忆被 AI 上下文引用时调用：提升使用次数并刷新时间 */
+  touchMemories(ids: string[]) {
+    const now = Date.now()
+    const stmt = this.db.prepare('UPDATE agent_memory SET use_count = use_count + 1, last_used_at = ?, updated_at = ? WHERE id = ?')
+    for (const id of ids) stmt.run(now, now, id)
+  }
+
+  /** 记忆统计 */
+  memoryStats(): { total: number; byScope: Record<string, number>; weekNew: number; topUsed: AgentMemory[] } {
+    const total = (this.db.prepare('SELECT COUNT(*) c FROM agent_memory WHERE status = \'active\'').get() as any).c
+    const byScopeRows = this.db
+      .prepare('SELECT scope, COUNT(*) c FROM agent_memory WHERE status = \'active\' GROUP BY scope')
+      .all() as { scope: string; c: number }[]
+    const weekNew = (this.db.prepare('SELECT COUNT(*) c FROM agent_memory WHERE created_at > ?').get(Date.now() - 7 * 864e5) as any).c
+    const topUsed = (this.db
+      .prepare('SELECT * FROM agent_memory WHERE status = \'active\' ORDER BY use_count DESC, updated_at DESC LIMIT 5')
+      .all() as any[]).map(r => this.memoryRow(r))
+    return { total, byScope: Object.fromEntries(byScopeRows.map(r => [r.scope, r.c])), weekNew, topUsed }
+  }
+
   // ================= 连接器 =================
 
   listConnectorInstances(): { id: string; manifestId: string; enabled: boolean; config: Record<string, string> }[] {
@@ -920,5 +1022,24 @@ export class MailStore {
     error TEXT,
     created_at INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS agent_memory (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    entity TEXT DEFAULT '',
+    title TEXT NOT NULL,
+    content TEXT DEFAULT '',
+    source TEXT DEFAULT 'auto',
+    source_message_id TEXT,
+    confidence REAL DEFAULT 0.8,
+    use_count INTEGER DEFAULT 0,
+    last_used_at INTEGER,
+    status TEXT DEFAULT 'active',
+    created_at INTEGER,
+    updated_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, status, updated_at);
+  CREATE INDEX IF NOT EXISTS idx_agent_memory_entity ON agent_memory(entity);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memory_dedupe ON agent_memory(scope, entity, title);
   `
 }

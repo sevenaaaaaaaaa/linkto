@@ -1,5 +1,5 @@
 appId: studio.mail.app
-productName: Mail Studio
+productName: LinkTo
 directories:
   buildResources: build
   output: dist

@@ -1,4 +1,4 @@
-// Mail Studio 共享领域类型
+// LinkTo 共享领域类型
 // 主进程 / 渲染进程 / 预加载三方共用，改动需保持向后兼容
 
 // ---------- 账户 ----------
@@ -445,4 +445,40 @@ export interface RankedMessage {
 export interface BulkTodo {
   title: string
   due?: string | null
+}
+
+// ---------- Agent 记忆（个人 Agent 成长系统） ----------
+
+/** 记忆域：fact 事实 · preference 偏好 · person 人物关系 · commitment 承诺 · routine 惯例 */
+export type MemoryScope = 'fact' | 'preference' | 'person' | 'commitment' | 'routine'
+
+export interface AgentMemory {
+  id: string
+  scope: MemoryScope
+  /** 关联实体（发件人地址 / 域名 / 主题词），用于定向召回 */
+  entity: string
+  title: string
+  content: string
+  source: 'auto' | 'manual'
+  sourceMessageId?: string | null
+  confidence: number
+  useCount: number
+  lastUsedAt?: number | null
+  status: 'active' | 'archived'
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ContactProfile {
+  addr: string
+  displayName: string
+  mailCount: number
+  firstContact: number
+  lastContact: number
+  /** 我对该发件人的回复率（0-100） */
+  myReplyRate: number
+  topTopics: string[]
+  summary: string
+  keyFacts: string[]
+  generatedAt: number
 }

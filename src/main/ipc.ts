@@ -14,7 +14,7 @@ import type {
   SendResult,
   Signature
 } from '@shared/types'
-import type { MailStudioApi } from '@shared/ipc'
+import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
 import type { AppStore } from './store'
 import { DEFAULT_AI, DEFAULT_GENERAL, DEFAULT_NOTIFICATIONS, type AISettings, type GeneralSettings, type NotificationSettings } from './store'
@@ -25,6 +25,7 @@ import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { presetFor, ACCOUNT_COLORS } from './mail/presets'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
+import type { AgentService } from './ai/agent'
 import type { Notifier } from './notify'
 import type { AccountWorker } from './mail/sync-engine'
 
@@ -40,6 +41,7 @@ export interface AppContext {
   notifier: Notifier
   outbox: Outbox
   insights: InsightsService
+  agent: AgentService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openSettings(tab?: string): void
@@ -51,7 +53,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent } = ctx
 
   // ---------- 工具 ----------
 
@@ -521,10 +523,11 @@ export function registerIpc(ctx: AppContext) {
       const row = store.getMessageRow(messageId)
       const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
       try {
+        const mem = agent.memoryPrompt(`${row?.subject ?? ''} ${row?.from_addr ?? ''}`)
         await ai.stream(requestId, [
           {
             role: 'system',
-            content: `你是邮件回复助手。根据下面的邮件内容，用简体中文起草一封${tone}的回复。直接输出 HTML 格式的邮件正文（可用 <p>、<ul><li>、<b>），不要包含称呼抬头和落款签名，不要输出代码块标记。`
+            content: `你是邮件回复助手。根据下面的邮件内容，用简体中文起草一封${tone}的回复。直接输出 HTML 格式的邮件正文（可用 <p>、<ul><li>、<b>），不要包含称呼抬头和落款签名，不要输出代码块标记。${mem.block}`
           },
           { role: 'user', content: `${text}\n\n（收件人是：${row?.from_addr ?? ''}）` }
         ], delta => {
@@ -573,11 +576,12 @@ export function registerIpc(ctx: AppContext) {
         : '（知识库中没有找到相关内容）'
       const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
       try {
+        const mem = agent.memoryPrompt(question)
         await ai.stream(requestId, [
           {
             role: 'system',
             content:
-              '你是知识库问答助手。仅根据提供的知识库内容回答问题，用简体中文。引用来源时标注 [编号]。如果知识库中没有相关内容，明确说明。'
+              '你是知识库问答助手。仅根据提供的知识库内容回答问题，用简体中文。引用来源时标注 [编号]。如果知识库中没有相关内容，明确说明。' + mem.block
           },
           { role: 'user', content: `知识库内容：\n${context}\n\n问题：${question}` }
         ], delta => {
@@ -670,7 +674,49 @@ export function registerIpc(ctx: AppContext) {
 
     aiRankMessages: ([ids]: [string[]]) => insights.rankMessages(ids),
 
-    aiAskBulk: ([ids, question]: [string[], string]) => insights.askBulk(ids, question),
+    aiAskBulk: ([ids, question]: [string[], string]) => insights.askBulk(ids, question, agent.memoryBlock(question)),
+
+    // ================= Agent 记忆（个人 Agent 成长系统） =================
+
+    listMemories: ([scope]: [string | undefined]) => store.listMemories((scope as never) ?? 'all'),
+
+    saveMemory: ([input]: [{ scope: string; title: string; content: string; entity?: string }]) =>
+      store.upsertMemory({
+        scope: input.scope as never,
+        title: input.title,
+        content: input.content,
+        entity: input.entity ?? '',
+        source: 'manual',
+        confidence: 1
+      }),
+
+    updateMemory: ([id, patch]: [string, { title?: string; content?: string; scope?: string; status?: string }]) =>
+      store.updateMemory(id, patch as never),
+
+    deleteMemory: ([id]: [string]) => store.deleteMemory(id),
+
+    memoryStats: () => store.memoryStats(),
+
+    agentLearn: ([messageId]: [string]) => agent.learnFromMessage(messageId),
+
+    agentProfile: ([addr]: [string]) => agent.profile(addr),
+
+    agentChat: async ([question, requestId]: [string, string]) => {
+      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      try {
+        const { system, user } = await agent.chat(question)
+        await ai.stream(requestId, [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ], delta => {
+          if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta, done: false })
+        })
+        if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true })
+      } catch (err) {
+        if (win && !win.isDestroyed())
+          win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true, error: err instanceof Error ? err.message : String(err) })
+      }
+    },
 
     saveTodoSet: ([title, todos, messageId]: [string, { title: string; due?: string | null }[], string | null | undefined]) => {
       const setId = `set-${Date.now()}`

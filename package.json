@@ -1,7 +1,7 @@
 {
-  "name": "mail-studio",
+  "name": "linkto",
   "version": "0.1.0",
-  "description": "Mail Studio — AI 原生邮件工作台",
+  "description": "LinkTo — AI 原生邮件工作台",
   "main": "./out/main/index.js",
   "author": "LinKTo · OpenFlow",
   "private": true,

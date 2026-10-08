@@ -32,7 +32,7 @@ function buildSentRaw(account: AccountConfig, draft: ComposeDraft, messageId?: s
     draft.cc.length ? `Cc: ${draft.cc.map(addr).join(', ')}` : '',
     `Subject: ${draft.subject}`,
     `Date: ${date}`,
-    messageId ? `Message-ID: ${messageId}` : `Message-ID: <${Math.random().toString(36).slice(2)}@mailstudio.local>`,
+    messageId ? `Message-ID: ${messageId}` : `Message-ID: <${Math.random().toString(36).slice(2)}@linkto.local>`,
     'MIME-Version: 1.0',
     'Content-Type: text/html; charset=utf-8',
     'Content-Transfer-Encoding: 8bit',

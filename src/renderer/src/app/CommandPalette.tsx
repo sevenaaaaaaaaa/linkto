@@ -66,6 +66,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-noise', group: '前往', label: '噪声', run: go({ kind: 'category', category: 'noise' }, '噪声') },
       { id: 'nav-insights', group: '前往', label: '智能洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { location.hash = '#/insights'; props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { location.hash = '#/kb'; useMail.getState().setScope({ kind: 'unified', title: '知识库' }); props.onClose() } },
+      { id: 'nav-agent', group: '前往', label: 'Agent（记忆 / 对话 / 发件人画像）', run: () => { location.hash = '#/agent'; useMail.getState().setScope({ kind: 'unified', title: 'Agent' }); props.onClose() } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,
         group: '前往',
@@ -225,7 +226,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
           <span>↑↓ 选择</span>
           <span>↵ 执行</span>
           <span className="flex-1" />
-          <span className="inline-flex items-center gap-1"><IconSparkles width={10} height={10} /> Mail Studio 命令面板</span>
+          <span className="inline-flex items-center gap-1"><IconSparkles width={10} height={10} /> LinkTo 命令面板</span>
         </div>
       </div>
     </div>

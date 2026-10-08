@@ -40,6 +40,10 @@ export class InsightsService {
       store: MailStore
       getAISettings(): AISettings
       event(payload: unknown): void
+      /** 可选：Agent 长期记忆注入（query 检索相关记忆） */
+      getMemoryContext?(query: string): string | null
+      /** 可选：每日商情生成后回调（用于 Agent 自动学习近期邮件） */
+      onDailyGenerated?(messageIds: string[]): void
     }
   ) {}
 
@@ -146,8 +150,10 @@ export class InsightsService {
         )
         .join('\n')
       const senders = new Set(rows.map(r => r.from_addr)).size
+      const memoryBlock = this.deps.getMemoryContext?.(rows.map(r => r.subject).join(' ')) ?? ''
       const digest = await this.json<DailyDigest>(
-        '你是邮件商情助手。分析用户近期邮件，只输出 JSON：{"highlights":["今日重点1","重点2"],"themes":[{"theme":"主题名","summary":"该主题串讲","count":3}],"memo":"给用户的一句话备忘","deleteSuggestions":[{"messageId":"必须来自列表","subject":"","from":"","reason":"为什么可以删"}]}。要求：highlights 3-6 条（按紧急/重要排序，提及截止时间）；themes 2-5 个（跨邮件按主题归纳，这是 digest 核心）；memo ≤50 字；deleteSuggestions 只挑明确无价值且可安全删除的（过期通知、旧验证码、营销噪声），最多 5 条，理由具体。全部中文。',
+        '你是邮件商情助手。分析用户近期邮件，只输出 JSON：{"highlights":["今日重点1","重点2"],"themes":[{"theme":"主题名","summary":"该主题串讲","count":3}],"memo":"给用户的一句话备忘","deleteSuggestions":[{"messageId":"必须来自列表","subject":"","from":"","reason":"为什么可以删"}]}。要求：highlights 3-6 条（按紧急/重要排序，提及截止时间）；themes 2-5 个（跨邮件按主题归纳，这是 digest 核心）；memo ≤50 字；deleteSuggestions 只挑明确无价值且可安全删除的（过期通知、旧验证码、营销噪声），最多 5 条，理由具体。全部中文。' +
+          (memoryBlock ? `分析时主动利用你对用户的长期记忆（人、事、偏好、承诺），重点照会承诺类记忆。${memoryBlock}` : ''),
         `今天是 ${new Date().toLocaleDateString('zh-CN')}。近 36 小时邮件 ${rows.length} 封、${senders} 个发件人：\n${lines}`
       )
       const clean: DailyDigest = {
@@ -169,6 +175,12 @@ export class InsightsService {
         data: clean as unknown as Record<string, unknown>,
         period
       })
+      // 商情生成后，让 Agent 自动学习今日重点邮件（日积月累）
+      const learnIds = rows
+        .filter(r => clean.highlights.some(h => r.subject && h.includes(r.subject.slice(0, 10))) || clean.themes.some(t => r.subject && t.theme && r.subject.includes(t.theme)))
+        .map(r => r.id)
+        .slice(0, 6)
+      this.deps.onDailyGenerated?.(learnIds)
       this.emitChanged()
       return { ok: true, digest: clean }
     } catch (err) {
@@ -298,10 +310,11 @@ export class InsightsService {
     }
   }
 
-  /** 批量提问：基于选中邮件回答问题，并顺手提炼 todo 清单 */
+  /** 批量提问：基于选中邮件回答问题，并顺手提炼 todo 清单（支持记忆注入） */
   async askBulk(
     ids: string[],
-    question: string
+    question: string,
+    memoryBlock = ''
   ): Promise<{ ok: boolean; error?: string; answer: string; todos: { title: string; due?: string | null }[] }> {
     if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', answer: '', todos: [] }
     if (!ids.length) return { ok: false, error: '请先选择邮件', answer: '', todos: [] }
@@ -318,7 +331,8 @@ export class InsightsService {
         }))
       const lines = rows.map((r, i) => `【邮件${i + 1}】${r.subject}（${r.from}，${r.date}）\n${r.text}`).join('\n\n')
       const result = await this.json<{ answer: string; todos: { title: string; due?: string | null }[] }>(
-        '你是邮件助手。用户选中了多封邮件并提出问题。只输出 JSON：{"answer":"基于这些邮件内容的中文回答（引用具体邮件，条理清晰，可用换行分点）","todos":[{"title":"从这些邮件中提炼的待办事项","due":"YYYY-MM-DD 或 null"}]}。todos 提炼邮件中明确需要用户行动的事项（还款、回复、参会、下单等），没有则为空数组。',
+        '你是邮件助手。用户选中了多封邮件并提出问题。只输出 JSON：{"answer":"基于这些邮件内容的中文回答（引用具体邮件，条理清晰，可用换行分点）","todos":[{"title":"从这些邮件中提炼的待办事项","due":"YYYY-MM-DD 或 null"}]}。todos 提炼邮件中明确需要用户行动的事项（还款、回复、参会、下单等），没有则为空数组。' +
+          (memoryBlock ? `回答时主动利用你对用户的长期记忆，但不要逐条罗列。${memoryBlock}` : ''),
         `用户的问题：${question}\n\n选中的 ${rows.length} 封邮件：\n${lines}`
       )
       return { ok: true, answer: String(result.answer ?? ''), todos: (result.todos ?? []).slice(0, 12).filter(t => t.title) }

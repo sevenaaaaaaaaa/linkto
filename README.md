@@ -1,10 +1,16 @@
-# Mail Studio
+# LinkTo
 
 AI 原生邮件工作台 —— LinKTo / OpenFlow 家族的邮件客户端。
 
 基础体验对齐 Canary Mail（多账户、统一收件箱、通知、签名、模板、规则、集成），在此之上叠加差异化方向：
 
 - **AI 原生**：智能分类降噪（个人 / 通知 / Newsletter / 噪声）、会话摘要、AI 起草回复、提取待办
+- **Agent 记忆成长系统**：LinkTo 不只是一次性 AI 助手，而是日积月累的个人 Agent——
+  - 从邮件中自动沉淀长期记忆（事实 / 偏好 / 人物关系 / 承诺 / 惯例），重复出现自动提升置信度
+  - 记忆注入所有 AI 能力：起草回复、知识库问答、批量提问、每日商情都会参考「你是谁、你和谁、你答应过什么」
+  - 发件人画像：关系总结 + 高频主题 + 我的回复率，随往来邮件持续更新
+  - Agent 对话：基于长期记忆 + 知识库 + 全文检索回答「我和某人的合作到哪一步了」「我答应过谁什么还没办」
+  - 全部记忆本地存储，可在 Agent 视图查看 / 编辑 / 归档
 - **智能洞察**（自配 AI 驱动）：
   - 验证码邮件弹出气泡一键复制；登录 / 魔法链接邮件一键直达，不用翻正文
   - 信用卡账单、会议通知自动提炼成待办；Newsletter 自动提取文章进阅读清单
@@ -43,6 +49,18 @@ Gmail / iCloud 需要应用专用密码；QQ / 163 / 139 需要授权码（各�
 
 AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ollama），填入 API Key，测试连接。
 
+## Agent（个人 AI Agent）
+
+侧栏「🤖 Agent」是 Agent 的成长面板：
+
+- **记忆列表**：按 事实 / 偏好 / 人物关系 / 承诺 / 惯例 五个维度沉淀，支持搜索、编辑、归档、手动记录
+- **学习邮件**：阅读窗 AI 面板 →「学习」按钮，让 Agent 从当前邮件提取值得长期记住的信息
+- **自动学习**：生成「今日商情」后，Agent 会自动学习当日重点邮件
+- **发件人画像**：输入邮箱或域名 → 关系总结、高频主题、我的回复率；关键事实自动沉淀为人物记忆
+- **Agent 对话**：基于长期记忆 + 知识库 + 近期邮件全文检索回答，回答中会标注记忆来源 [M1] / [K2] / [E3]，并主动提出新的记忆建议
+
+记忆如何被使用：AI 起草回复、知识库问答、多选提问、每日商情在生成时都会按相关性召回 top 记忆注入提示词——用得越多，Agent 越懂你。
+
 ## 快速切换风格
 
 三层换肤，全部即时生效并持久化（ThirdC 交互模式）：
@@ -78,7 +96,8 @@ AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ol
 ┌─ 主进程 (Node/TS) ──────────────────────────────────────────┐
 │  SyncEngine：每账户一个 IMAP worker（增量 UID + 存活轮询）    │
 │  MailStore：SQLite（邮件/线程/文件夹/附件 + FTS5）           │
-│  AIService / Notifier / RuleEngine / ConnectorHost          │
+│  AIService / AgentService（长期记忆）/ Notifier / RuleEngine │
+│  ConnectorHost                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,7 +129,7 @@ J/K 下一封/上一封   R 回复   A 归档   ⌫ 删除
 
 ```
 src/shared/       类型契约（types.ts / ipc.ts / presets.ts）
-src/main/         主进程（db / mail / ai / rules / connectors / ipc / notify）
+src/main/         主进程（db / mail / ai: service·insights·agent / rules / connectors / ipc / notify）
 src/preload/      contextBridge API 表
 src/renderer/     主窗口 + 设置窗口（React）
                   ├ styles/global.css   OpenFlow 设计系统（tokens + Tailwind 4 映射）

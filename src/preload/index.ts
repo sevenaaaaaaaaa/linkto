@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MailStudioApi } from '@shared/ipc'
+import type { LinkToApi } from '@shared/ipc'
 import type { ComposeDraft } from '@shared/types'
 
 const listeners = new Set<(ev: unknown) => void>()
@@ -28,11 +28,12 @@ const METHOD_NAMES = [
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction',
+  'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'openSettings', 'openCompose', 'getVersions', 'quit'
 ] as const
 
-const api = {} as MailStudioApi
+const api = {} as LinkToApi
 for (const method of METHOD_NAMES) {
   ;(api as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => ipcRenderer.invoke(`api:${method}`, ...args)
 }

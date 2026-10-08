@@ -69,7 +69,7 @@ const CLIPBOARD: BuiltinConnector = {
 /**
  * OpenFlow 家族通用连接器：声明式 Manifest + 统一执行器。
  * 每个家族产品暴露一个 Intake HTTP 入口（endpoint + X-Api-Key），
- * Mail Studio 把邮件内容 POST 过去，产品侧按 product/action 落成自己的实体
+ * LinkTo 把邮件内容 POST 过去，产品侧按 product/action 落成自己的实体
  * （inFlow 建任务、LearnFlow 收学习资料、MFlow 存笔记、PayFlow 归档账单、OpenFlow 进工作台）。
  */
 function familyConnector(opts: {

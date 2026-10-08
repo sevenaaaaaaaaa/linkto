@@ -4,16 +4,23 @@ import { MessageList } from './MessageList'
 import { Reader } from './Reader'
 import { KbView } from './KbView'
 import { InsightsView } from './InsightsView'
+import { AgentView } from './AgentView'
 import { CommandPalette } from './CommandPalette'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
 import type { ScheduledSend } from '@shared/types'
 
-type View = 'mail' | 'kb' | 'insights'
+type View = 'mail' | 'kb' | 'insights' | 'agent'
 
 const viewFromHash = (): View =>
-  location.hash.startsWith('#/kb') ? 'kb' : location.hash.startsWith('#/insights') ? 'insights' : 'mail'
+  location.hash.startsWith('#/kb')
+    ? 'kb'
+    : location.hash.startsWith('#/insights')
+      ? 'insights'
+      : location.hash.startsWith('#/agent')
+        ? 'agent'
+        : 'mail'
 
 export function MailShell() {
   const [view, setView] = useState<View>(viewFromHash)
@@ -119,7 +126,7 @@ export function MailShell() {
   return (
     <div className="h-full flex">
       <Sidebar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : (
         <>
           <MessageList />
           <Reader />

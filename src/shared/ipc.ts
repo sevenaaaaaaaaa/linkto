@@ -25,11 +25,14 @@ import type {
   ScheduledSend,
   SendResult,
   Signature,
-  BulkTodo
+  BulkTodo,
+  AgentMemory,
+  ContactProfile,
+  MemoryScope
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
-export interface MailStudioApi {
+export interface LinkToApi {
   // ---------- 账户 ----------
   listAccounts(): Promise<AccountWithStatus[]>
   addAccount(draft: AccountDraft): Promise<{ ok: boolean; error?: string; account?: AccountConfig }>
@@ -143,4 +146,18 @@ export interface MailStudioApi {
   onEvent(cb: (ev: unknown) => void): () => void
   getVersions(): Promise<{ app: string; electron: string; node: string }>
   quit(): Promise<void>
+
+  // ---------- Agent 记忆（个人 Agent 成长系统） ----------
+  listMemories(scope?: MemoryScope | 'all'): Promise<AgentMemory[]>
+  saveMemory(input: { scope: MemoryScope; title: string; content: string; entity?: string }): Promise<AgentMemory>
+  updateMemory(id: string, patch: Partial<Pick<AgentMemory, 'title' | 'content' | 'scope' | 'status'>>): Promise<void>
+  deleteMemory(id: string): Promise<void>
+  /** 记忆成长统计：总量 / 分域 / 本周新增 / 最常用 */
+  memoryStats(): Promise<{ total: number; byScope: Record<string, number>; weekNew: number; topUsed: AgentMemory[] }>
+  /** 让 Agent 学习一封邮件，沉淀长期记忆（发件人事实 / 偏好 / 承诺） */
+  agentLearn(messageId: string): Promise<{ ok: boolean; error?: string; learned: AgentMemory[] }>
+  /** 发件人画像：关系总结 + 高频主题 + 我的回复率（结果沉淀为 person 记忆） */
+  agentProfile(addr: string): Promise<{ ok: boolean; error?: string; profile?: ContactProfile }>
+  /** Agent 对话：基于长期记忆 + 知识库 + 近期邮件检索回答 */
+  agentChat(question: string, requestId: string): Promise<void>
 }
