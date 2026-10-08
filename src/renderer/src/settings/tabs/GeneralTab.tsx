@@ -197,7 +197,7 @@ function About() {  const [v, setV] = useState<{ app: string; electron: string; 
   }, [])
   return (
     <div className="text-[12.5px] text-zinc-400 leading-relaxed">
-      LinkTo {v?.app} · AI 原生邮件工作台
+      LinkTo 林可兔 {v?.app} · AI 原生邮件工作台
       <br />
       Electron {v?.electron} · Node {v?.node} · LinKTo / OpenFlow 家族
     </div>

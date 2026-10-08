@@ -146,7 +146,7 @@ function buildAppMenu() {
     {
       label: 'LinkTo',
       submenu: [
-        { role: 'about', label: '关于 LinkTo' },
+        { role: 'about', label: '关于 LinkTo（林可兔）' },
         { type: 'separator' },
         {
           label: '设置…',

@@ -151,7 +151,7 @@ export function Sidebar() {
     <div className="glass w-[248px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
       <div className="drag-region h-[52px] shrink-0 flex items-end pl-[76px] pb-1">
         <span className="text-[12.5px] font-semibold tracking-wide" style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
-          LinkTo
+          林可兔 LinkTo
         </span>
       </div>
       <div className="px-2 pb-2">

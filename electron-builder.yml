@@ -1,4 +1,4 @@
-appId: studio.mail.app
+appId: com.openflow.linkto
 productName: LinkTo
 directories:
   buildResources: build
