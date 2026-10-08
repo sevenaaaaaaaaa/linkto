@@ -1,27 +1,273 @@
+/*
+ * Mail Studio 设计系统 —— 移植自 OpenFlow assets/tokens.css（DESIGN-SYSTEM.md）
+ * 全 oklch 调色板 · 玻璃拟态 · 环境光斑 · 26/18/12 圆角 · 弹簧缓动
+ * 运行时三层换肤（ThirdC 模式）：data-theme 明暗 / theme-override 预设 / 阅读皮肤
+ */
+
 @import 'tailwindcss';
 
-:root {
-  --accent: #2563eb;
-  --bg: #f5f5f7;
-  --panel: #ffffff;
-  --border: #e4e4e7;
-  --text: #18181b;
-  --text-2: #71717a;
-  --text-3: #a1a1aa;
+/* ---------- OpenFlow 字体（自托管 woff2） ---------- */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-600.woff2') format('woff2');
 }
 
+/* ---------- OpenFlow 语义 token（浅色 = 奶油纸底） ---------- */
+:root {
+  --bg: oklch(96.5% 0.016 85);
+  --bg-soft: oklch(94% 0.02 85);
+  --surface: oklch(100% 0 0 / 0.62);
+  --surface-strong: oklch(100% 0 0 / 0.88);
+  --fg: oklch(22% 0.02 70);
+  --muted: oklch(46% 0.016 70);
+  --faint: oklch(51% 0.014 75);
+  --border: oklch(86% 0.014 80);
+  --border-strong: oklch(76% 0.02 80);
+  --border-soft: oklch(86% 0.014 80 / 0.55);
+  --hover: oklch(22% 0.02 70 / 0.055);
+  --hover-strong: oklch(22% 0.02 70 / 0.11);
+  --accent: oklch(52% 0.17 258);
+  --accent-strong: oklch(46% 0.17 258);
+  --accent-soft: oklch(52% 0.17 258 / 0.12);
+  --on-accent: oklch(100% 0 0);
+  --ok: oklch(58% 0.17 152);
+  --ok-soft: oklch(58% 0.17 152 / 0.12);
+  --warn: oklch(66% 0.15 75);
+  --warn-soft: oklch(66% 0.15 75 / 0.14);
+  --danger: oklch(55% 0.2 25);
+  --danger-soft: oklch(55% 0.2 25 / 0.12);
+  --glass: oklch(100% 0 0 / 0.5);
+  --glass-bright: oklch(100% 0 0 / 0.66);
+  --glass-border: oklch(100% 0 0 / 0.68);
+  --blob-a: oklch(72% 0.12 262 / 0.3);
+  --blob-b: oklch(70% 0.13 305 / 0.24);
+  --blob-c: oklch(74% 0.11 200 / 0.22);
+  --shadow: 0 24px 60px -24px oklch(30% 0.04 80 / 0.28);
+  --shadow-sm: 0 10px 28px -14px oklch(30% 0.04 80 / 0.22);
+  --r-lg: 26px;
+  --r-md: 18px;
+  --r-sm: 12px;
+  --font-display: 'Space Grotesk', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+}
+
+/* ---------- OpenFlow 深色（暖近黑 + 亮蓝 accent） ---------- */
+[data-theme='dark'] {
+  --bg: oklch(19% 0.014 70);
+  --bg-soft: oklch(22.5% 0.014 72);
+  --surface: oklch(27% 0.016 75 / 0.55);
+  --surface-strong: oklch(30% 0.016 75 / 0.82);
+  --fg: oklch(93% 0.008 85);
+  --muted: oklch(70% 0.014 80);
+  --faint: oklch(64% 0.014 80);
+  --border: oklch(100% 0 0 / 0.1);
+  --border-strong: oklch(100% 0 0 / 0.2);
+  --border-soft: oklch(100% 0 0 / 0.06);
+  --hover: oklch(93% 0.008 85 / 0.07);
+  --hover-strong: oklch(93% 0.008 85 / 0.13);
+  --accent: oklch(74% 0.13 258);
+  --accent-strong: oklch(80% 0.12 258);
+  --accent-soft: oklch(74% 0.13 258 / 0.15);
+  --on-accent: oklch(16% 0.03 260);
+  --ok: oklch(74% 0.15 152);
+  --ok-soft: oklch(74% 0.15 152 / 0.14);
+  --warn: oklch(76% 0.13 75);
+  --warn-soft: oklch(76% 0.13 75 / 0.16);
+  --danger: oklch(72% 0.16 25);
+  --danger-soft: oklch(72% 0.16 25 / 0.14);
+  --glass: oklch(30% 0.014 75 / 0.5);
+  --glass-bright: oklch(34% 0.014 75 / 0.62);
+  --glass-border: oklch(100% 0 0 / 0.15);
+  --blob-a: oklch(62% 0.13 262 / 0.18);
+  --blob-b: oklch(58% 0.14 305 / 0.15);
+  --blob-c: oklch(60% 0.12 200 / 0.13);
+  --shadow: 0 24px 60px -24px oklch(0% 0 0 / 0.55);
+  --shadow-sm: 0 10px 28px -14px oklch(0% 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* ---------- Tailwind 4 主题映射 ----------
+ * 把既有组件里的 zinc / blue / orange 工具类整体重定向到 OpenFlow 调色板：
+ * zinc → 暖灰（hue 80）、blue → accent、orange → warn；
+ * 深色模式下在 [data-theme] 内反转，无需逐个组件改造。 */
+@theme {
+  --color-zinc-50: oklch(97.5% 0.008 85);
+  --color-zinc-100: oklch(95% 0.01 85);
+  --color-zinc-200: oklch(91% 0.012 82);
+  --color-zinc-300: oklch(84% 0.012 80);
+  --color-zinc-400: oklch(66% 0.014 78);
+  --color-zinc-500: oklch(55% 0.014 75);
+  --color-zinc-600: oklch(46% 0.016 72);
+  --color-zinc-700: oklch(38% 0.016 70);
+  --color-zinc-800: oklch(30% 0.018 70);
+  --color-zinc-900: oklch(24% 0.02 70);
+  --color-zinc-950: oklch(20% 0.02 70);
+
+  --color-blue-50: oklch(52% 0.17 258 / 0.07);
+  --color-blue-100: oklch(52% 0.17 258 / 0.13);
+  --color-blue-200: oklch(52% 0.17 258 / 0.24);
+  --color-blue-300: oklch(70% 0.14 258);
+  --color-blue-400: oklch(62% 0.15 258);
+  --color-blue-500: oklch(56% 0.16 258);
+  --color-blue-600: var(--accent);
+  --color-blue-700: var(--accent-strong);
+  --color-blue-900: var(--accent-strong);
+
+  --color-orange-100: var(--warn-soft);
+  --color-orange-500: var(--warn);
+  --color-orange-600: var(--warn);
+
+  --color-red-50: var(--danger-soft);
+  --color-red-500: var(--danger);
+  --color-red-600: var(--danger);
+
+  --color-green-100: var(--ok-soft);
+  --color-green-600: var(--ok);
+
+  --color-violet-500: oklch(58% 0.16 285);
+  --color-violet-600: oklch(52% 0.17 285);
+
+  --color-app: var(--bg);
+  --color-panel: var(--surface-strong);
+  --color-line: var(--border);
+  --color-ink: var(--fg);
+  --color-ink-2: var(--muted);
+  --color-ink-3: var(--faint);
+
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --radius-ms-lg: var(--r-lg);
+  --radius-ms-md: var(--r-md);
+  --radius-ms-sm: var(--r-sm);
+
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* 深色模式下的中性色反转（暖灰 → 亮暖灰） */
+[data-theme='dark'] {
+  --color-zinc-50: oklch(27% 0.016 75);
+  --color-zinc-100: oklch(24% 0.014 75);
+  --color-zinc-200: oklch(32% 0.014 75);
+  --color-zinc-300: oklch(45% 0.012 78);
+  --color-zinc-400: oklch(60% 0.012 80);
+  --color-zinc-500: oklch(68% 0.012 80);
+  --color-zinc-600: oklch(76% 0.01 82);
+  --color-zinc-700: oklch(82% 0.01 83);
+  --color-zinc-800: oklch(88% 0.008 84);
+  --color-zinc-900: oklch(93% 0.008 85);
+  --color-zinc-950: oklch(96% 0.008 85);
+  --color-blue-50: oklch(74% 0.13 258 / 0.08);
+  --color-blue-100: oklch(74% 0.13 258 / 0.15);
+  --color-blue-200: oklch(74% 0.13 258 / 0.26);
+  --color-blue-300: oklch(84% 0.1 258);
+  --color-blue-400: var(--accent-strong);
+  --color-blue-500: var(--accent);
+  --color-blue-700: oklch(66% 0.13 258);
+}
+
+/* ---------- 基础壳层 ---------- */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
-  color: var(--text);
-  background: var(--bg);
+  font-family: var(--font-body);
+  color: var(--fg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
   cursor: default;
   overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+}
+
+/* OpenFlow 签名：固定环境光斑（蓝 / 紫 / 青 radial）铺在最底层 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 34% at 82% -6%, var(--blob-a), transparent 70%),
+    radial-gradient(36% 30% at -8% 18%, var(--blob-b), transparent 70%),
+    radial-gradient(40% 34% at 55% 108%, var(--blob-c), transparent 70%);
+}
+
+/* 玻璃面板（侧栏 / 卡片 / 弹层通用） */
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+.glass-strong {
+  background: var(--glass-bright);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+}
+
+/* 兼容层：旧组件里的白色面板 / 灰底统一接入主题变量（预设与深色模式自动生效） */
+.bg-white {
+  background-color: var(--surface-strong);
+}
+.bg-\[\#fafafa\] {
+  background-color: transparent;
+}
+.bg-\[\#f0f0f3\] {
+  background-color: var(--surface);
 }
 
 .selectable {
@@ -41,7 +287,7 @@ body,
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--border-strong);
   border-radius: 4px;
   background-clip: content-box;
 }
@@ -60,6 +306,19 @@ button {
   cursor: default;
 }
 
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: 9px;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -71,7 +330,21 @@ button {
   }
 }
 .fade-in {
-  animation: fade-in 0.15s ease-out;
+  animation: fade-in 0.18s var(--ease-out);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop-in {
+  animation: pop-in 0.22s var(--ease-spring);
 }
 
 @keyframes spin-slow {
@@ -86,5 +359,5 @@ button {
 /* 邮件正文（shadow DOM 内也需要的基础样式） */
 .mail-body-host {
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.75;
 }

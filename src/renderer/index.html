@@ -8,6 +8,14 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'"
     />
     <title>Mail Studio</title>
+    <script>
+      // 防闪烁：CSS 加载前同步恢复明暗偏好（auto 跟随系统）
+      try {
+        var p = localStorage.getItem('ms_theme') || 'auto'
+        var d = p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = d ? 'dark' : 'light'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

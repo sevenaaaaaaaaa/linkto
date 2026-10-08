@@ -49,7 +49,7 @@ function createMainWindow() {
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#f5f5f7',
+    backgroundColor: '#f8f3e8',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -84,7 +84,7 @@ function createSettingsWindow(tab?: string) {
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#f5f5f7',
+    backgroundColor: '#f8f3e8',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -110,7 +110,7 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
     minHeight: 460,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#ffffff',
+    backgroundColor: '#faf7f0',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

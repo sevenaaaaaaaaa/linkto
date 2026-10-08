@@ -2,12 +2,15 @@
 
 AI 原生邮件工作台 —— LinKTo / OpenFlow 家族的邮件客户端。
 
-基础体验对齐 Canary Mail（多账户、统一收件箱、通知、签名、模板、规则、集成），在此之上叠加三个差异化方向：
+基础体验对齐 Canary Mail（多账户、统一收件箱、通知、签名、模板、规则、集成），在此之上叠加差异化方向：
 
 - **AI 原生**：智能分类降噪（个人 / 通知 / Newsletter / 噪声）、会话摘要、AI 起草回复、提取待办
 - **知识库**：一键收藏邮件为知识条目（自动打标签），支持检索与基于知识库的 AI 问答
 - **Newsletter 阅读侧**：自动识别订阅邮件、订阅发件人管理、List-Unsubscribe 一键退订
-- **OpenFlow 连接器架构**：Manifest 声明式框架（鉴权 / 动作 / 事件），家族产品后续按此接入
+- **OpenFlow 设计语言**：奶油纸底 + 环境光斑 + 玻璃拟态 + Space Grotesk，全 oklch token 驱动（移植自 OpenFlow DESIGN-SYSTEM）
+- **快速切换风格**（ThirdC 模式）：明暗 / 9 款主题预设即点即换、24 款阅读信纸皮肤独立换装
+- **⌘K 命令面板**：导航 / 动作 / 邮件直达，一处入口
+- **OpenFlow 连接器架构**：Manifest 声明式框架（鉴权 / 动作 / 事件），家族产品（OpenFlow 工作台 / inFlow / LearnFlow / MFlow / PayFlow）已按统一 Intake 协议接入
 
 ## 技术栈
 
@@ -32,6 +35,19 @@ npm run dist       # 打包 dmg（electron-builder）
 Gmail / iCloud 需要应用专用密码；QQ / 163 / 139 需要授权码（各服务商设置页有引导说明）。
 
 AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ollama），填入 API Key，测试连接。
+
+## 快速切换风格
+
+三层换肤，全部即时生效并持久化（ThirdC 交互模式）：
+
+| 层 | 入口 | 作用范围 |
+| --- | --- | --- |
+| 明暗（auto / 浅色 / 深色） | 侧栏底部 🌙 · `⌘T` · 设置 → 外观 | 整个应用 |
+| 主题预设（9 款，来自 OpenFlow） | 侧栏底部 🎨 · `⌘K` → 主题预设 · 设置 → 外观 | 整个应用（token 覆盖层） |
+| 阅读风格（24 款信纸皮肤） | 阅读窗右上角「风格」· `⌘K` → 阅读风格 | 仅邮件正文（Shadow DOM） |
+
+设计系统：`src/renderer/src/styles/global.css`（OpenFlow tokens.css 移植，Tailwind 4 `@theme` 映射）；
+预设数据：`src/renderer/src/lib/theme-presets.ts`；皮肤元组：`src/renderer/src/lib/reading-styles.ts`。
 
 ## 架构
 
@@ -59,8 +75,17 @@ node scripts/cdp-shot-only.mjs    # CDP 截图（需 --remote-debugging-port=922
 
 ## 接入 OpenFlow 家族连接器
 
-在 `src/main/connectors/builtin.ts` 中注册一个 `BuiltinConnector`（Manifest + 执行器），
-设置 → 集成 页会自动出现对应卡片；阅读窗的「分享」菜单即可把邮件内容发给该连接器。
+家族产品（OpenFlow 工作台 / inFlow / LearnFlow / MFlow / PayFlow）已内置：产品侧只需暴露一个 Intake HTTP 入口，
+在 设置 → 集成 里填入 endpoint + API Key 连接；阅读窗的「分享」菜单即可把邮件内容发过去
+（`POST {product, action, payload}`，鉴权走 `X-Api-Key`）。新增连接器在 `src/main/connectors/builtin.ts`
+注册一个 `BuiltinConnector`（Manifest + 执行器），设置页会自动出现对应卡片。
+
+## 快捷键
+
+```
+⌘K 命令面板   ⌘N 写邮件   ⌘F 搜索   ⌘T 明暗切换   ⌘R 刷新   ⌘, 设置
+J/K 下一封/上一封   R 回复   A 归档   ⌫ 删除
+```
 
 ## 目录
 
@@ -69,5 +94,7 @@ src/shared/       类型契约（types.ts / ipc.ts / presets.ts）
 src/main/         主进程（db / mail / ai / rules / connectors / ipc / notify）
 src/preload/      contextBridge API 表
 src/renderer/     主窗口 + 设置窗口（React）
+                  ├ styles/global.css   OpenFlow 设计系统（tokens + Tailwind 4 映射）
+                  └ lib/                theme.ts · theme-presets.ts · reading-styles.ts
 scripts/          冒烟测试 / 演示数据 / 截图工具
 ```

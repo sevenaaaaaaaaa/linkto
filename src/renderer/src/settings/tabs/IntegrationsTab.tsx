@@ -71,8 +71,10 @@ export function IntegrationsTab() {
       <SectionTitle>关于 OpenFlow 生态</SectionTitle>
       <div className="text-[12.5px] leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">
         这里是 OpenFlow 家族的连接入口。每个连接器声明自己的鉴权方式与动作，Mail Studio
-        在阅读邮件时即可把内容一键分享到对应产品（如把一封需求邮件转成任务）。家族产品连接器即将逐步上线；
-        现在可以通过「通用 Webhook」先打通任何支持 Incoming Webhook 的工具。
+        在阅读邮件时即可把内容一键分享到对应产品：需求邮件转 inFlow 任务、账单归档进 PayFlow、
+        资料收藏到 LearnFlow、正文沉淀为 MFlow 笔记、纪要发往 OpenFlow 工作台。
+        家族产品侧只需暴露一个 Intake HTTP 入口（endpoint + X-API-Key）即可完成对接；
+        任何支持 Incoming Webhook 的外部工具也可以用「通用 Webhook」打通。
       </div>
 
       {configuring && (

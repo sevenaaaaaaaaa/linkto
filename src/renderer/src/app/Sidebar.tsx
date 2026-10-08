@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
+import { ThemeMenu } from './ThemeMenu'
 import {
   IconInbox, IconLayers, IconStar, IconUser, IconBell, IconRss, IconTrash,
-  IconArchive, IconBook, IconFolder, IconCompose, IconSettings, IconChevronDown,
+  IconBook, IconFolder, IconCompose, IconSettings, IconChevronDown,
   IconChevronRight
 } from '../components/icons'
 import type { SpecialFolder } from '@shared/types'
 
+/** 侧边栏 —— OpenFlow 玻璃侧栏（admin sidebar 交互：激活项 accent-soft 底 + 3px 左侧 accent 条） */
 function Row(props: {
   icon?: React.ReactNode
   label: string
@@ -20,12 +22,19 @@ function Row(props: {
   return (
     <button
       onClick={props.onClick}
-      className={`w-full flex items-center gap-2 px-3 py-[6px] rounded-lg text-[13px] transition-colors ${
-        props.active ? 'bg-blue-600/10 text-blue-700 font-medium' : 'text-zinc-700 hover:bg-black/5'
+      className={`relative w-full flex items-center gap-2 px-3 py-[6px] rounded-[10px] text-[13px] transition-colors ${
+        props.active ? 'font-medium' : 'hover:bg-[var(--hover)]'
       }`}
-      style={props.indent ? { paddingLeft: 12 + props.indent * 16 } : undefined}
+      style={{
+        paddingLeft: props.indent ? 12 + props.indent * 16 : undefined,
+        background: props.active ? 'var(--accent-soft)' : undefined,
+        color: props.active ? 'var(--accent-strong)' : 'var(--fg)'
+      }}
     >
-      <span className={`shrink-0 ${props.active ? 'text-blue-600' : 'text-zinc-400'}`}>
+      {props.active && (
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] rounded-[3px]" style={{ background: 'var(--accent)' }} />
+      )}
+      <span className="shrink-0" style={{ color: props.active ? 'var(--accent)' : props.color ?? 'var(--faint)' }}>
         {props.color ? (
           <span className="inline-block w-[9px] h-[9px] rounded-full" style={{ background: props.color }} />
         ) : (
@@ -34,7 +43,10 @@ function Row(props: {
       </span>
       <span className="flex-1 text-left truncate">{props.label}</span>
       {!!props.unread && props.unread > 0 && (
-        <span className={`text-[11px] tabular-nums px-1.5 rounded-full ${props.active ? 'bg-blue-600 text-white' : 'bg-zinc-200 text-zinc-600'}`}>
+        <span
+          className="text-[11px] tabular-nums px-1.5 rounded-full"
+          style={props.active ? { background: 'var(--accent)', color: 'var(--on-accent)' } : { background: 'var(--bg-soft)', color: 'var(--muted)' }}
+        >
           {props.unread > 99 ? '99+' : props.unread}
         </span>
       )}
@@ -48,7 +60,8 @@ function AccountGroup(props: { accountId: string; children: React.ReactNode; lab
     <div className="mt-1">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-1 px-3 py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-600"
+        className="w-full flex items-center gap-1 px-3 py-1 text-[10.5px] font-semibold tracking-[.08em] uppercase hover:opacity-80"
+        style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
       >
         {open ? <IconChevronDown width={12} height={12} /> : <IconChevronRight width={12} height={12} />}
         <span className="truncate">{props.label}</span>
@@ -93,14 +106,22 @@ export function Sidebar() {
   }
 
   return (
-    <div className="w-[248px] shrink-0 h-full flex flex-col bg-[#f0f0f3] border-r border-black/5">
+    <div className="glass w-[248px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
       <div className="drag-region h-[52px] shrink-0 flex items-end pl-[76px] pb-1">
-        <span className="text-[13px] font-semibold text-zinc-500">Mail Studio</span>
+        <span className="text-[12.5px] font-semibold tracking-wide" style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
+          Mail Studio
+        </span>
       </div>
       <div className="px-2 pb-2">
         <button
           onClick={() => api.openCompose()}
-          className="no-drag w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 text-white text-[13px] font-medium shadow-sm hover:bg-blue-700 active:scale-[.98] transition"
+          className="no-drag w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[13px] font-semibold active:scale-[.97] transition-all duration-200"
+          style={{
+            background: 'var(--accent)',
+            color: 'var(--on-accent)',
+            boxShadow: '0 4px 16px var(--accent-soft)',
+            fontFamily: 'var(--font-display)'
+          }}
         >
           <IconCompose width={15} height={15} /> 写邮件
         </button>
@@ -118,7 +139,9 @@ export function Sidebar() {
             setScope({ kind: 'unified', title: '统一收件箱' })
           }}
         />
-        <div className="mt-3 px-3 text-[11px] font-medium text-zinc-400">智能视图</div>
+        <div className="mt-3 px-3 pb-1 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+          智能视图
+        </div>
         <Row icon={<IconStar width={15} height={15} />} label="已加旗标" active={is({ kind: 'flagged' })} onClick={() => setScope({ kind: 'flagged', title: '已加旗标' })} />
         <Row icon={<IconUser width={15} height={15} />} label="个人邮件" active={is({ kind: 'category', category: 'personal' })} onClick={() => setScope({ kind: 'category', category: 'personal', title: '个人邮件' })} />
         <Row icon={<IconBell width={15} height={15} />} label="通知" active={is({ kind: 'category', category: 'notification' })} onClick={() => setScope({ kind: 'category', category: 'notification', title: '通知' })} />
@@ -158,7 +181,7 @@ export function Sidebar() {
                 </div>
               )}
               {!accFolders.length && (
-                <div className="px-3 py-1 text-[12px] text-zinc-400">
+                <div className="px-3 py-1 text-[12px]" style={{ color: 'var(--faint)' }}>
                   {acc.status === 'error' ? acc.statusText || '连接失败' : '同步中…'}
                 </div>
               )}
@@ -167,10 +190,11 @@ export function Sidebar() {
         })}
 
         {!accounts.length && (
-          <div className="mt-6 px-3 text-[12.5px] leading-relaxed text-zinc-400">
+          <div className="mt-6 px-3 text-[12.5px] leading-relaxed" style={{ color: 'var(--faint)' }}>
             还没有账户。
             <button
-              className="block mt-2 text-blue-600 hover:underline"
+              className="block mt-2 hover:underline"
+              style={{ color: 'var(--accent)' }}
               onClick={() => api.openSettings('accounts')}
             >
               添加第一个邮箱 →
@@ -179,19 +203,30 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-black/5 px-2 py-2 flex items-center gap-1">
+      <div className="shrink-0 border-t border-[var(--border-soft)] px-2 py-2 flex items-center gap-1">
+        <ThemeMenu />
         <button
           onClick={() => void loadAccounts()}
           title="刷新账户状态"
-          className="p-2 rounded-lg text-zinc-400 hover:bg-black/5 hover:text-zinc-600"
+          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors"
+          style={{ color: 'var(--faint)' }}
         >
           <IconLayers width={15} height={15} />
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
+          title="命令面板（⌘K）"
+          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors text-[11px] font-medium"
+          style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
+        >
+          ⌘K
         </button>
         <div className="flex-1" />
         <button
           onClick={() => api.openSettings()}
           title="设置（⌘,）"
-          className="p-2 rounded-lg text-zinc-400 hover:bg-black/5 hover:text-zinc-600"
+          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors"
+          style={{ color: 'var(--faint)' }}
         >
           <IconSettings width={15} height={15} />
         </button>
