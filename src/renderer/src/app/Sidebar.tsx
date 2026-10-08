@@ -5,7 +5,7 @@ import { ThemeMenu } from './ThemeMenu'
 import {
   IconInbox, IconLayers, IconStar, IconUser, IconBell, IconRss, IconTrash,
   IconBook, IconFolder, IconCompose, IconSettings, IconChevronDown,
-  IconChevronRight
+  IconChevronRight, IconRefresh
 } from '../components/icons'
 import type { SpecialFolder } from '@shared/types'
 
@@ -54,17 +54,59 @@ function Row(props: {
   )
 }
 
-function AccountGroup(props: { accountId: string; children: React.ReactNode; label: string }) {
+function AccountGroup(props: {
+  accountId: string
+  children: React.ReactNode
+  label: string
+  color?: string
+  unread: number
+  onSync(): void
+  onSettings(): void
+}) {
   const [open, setOpen] = useState(true)
+  const [hover, setHover] = useState(false)
   return (
-    <div className="mt-1">
+    <div className="mt-1" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-1 px-3 py-1 text-[10.5px] font-semibold tracking-[.08em] uppercase hover:opacity-80"
+        className="w-full flex items-center gap-1.5 px-3 py-1 text-[10.5px] font-semibold tracking-[.08em] uppercase hover:opacity-80"
         style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
       >
         {open ? <IconChevronDown width={12} height={12} /> : <IconChevronRight width={12} height={12} />}
+        <i className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: props.color ?? 'var(--faint)' }} />
         <span className="truncate">{props.label}</span>
+        {props.unread > 0 && (
+          <span className="text-[10px] tabular-nums px-1.5 rounded-full shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
+            {props.unread > 99 ? '99+' : props.unread}
+          </span>
+        )}
+        <span className="flex-1" />
+        {hover && (
+          <>
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                props.onSync()
+              }}
+              title="立即同步此账户"
+              className="p-0.5 rounded hover:bg-[var(--hover)]"
+              style={{ color: 'var(--muted)' }}
+            >
+              <IconRefresh width={11} height={11} />
+            </button>
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                props.onSettings()
+              }}
+              title="账户设置"
+              className="p-0.5 rounded hover:bg-[var(--hover)]"
+              style={{ color: 'var(--muted)' }}
+            >
+              <IconSettings width={11} height={11} />
+            </button>
+          </>
+        )}
       </button>
       {open && props.children}
     </div>
@@ -148,6 +190,16 @@ export function Sidebar() {
         <Row icon={<IconRss width={15} height={15} />} label="Newsletter" active={is({ kind: 'newsletter' })} onClick={() => setScope({ kind: 'newsletter', title: 'Newsletter' })} />
         <Row icon={<IconTrash width={15} height={15} />} label="噪声" active={is({ kind: 'category', category: 'noise' })} onClick={() => setScope({ kind: 'category', category: 'noise', title: '噪声' })} />
         <Row
+          icon={<span className="text-[13px] leading-none">📌</span>}
+          label="置顶"
+          active={is({ kind: 'pinned' })}
+          onClick={() => {
+            setKbView(false)
+            location.hash = '#/mail'
+            setScope({ kind: 'pinned', title: '置顶' })
+          }}
+        />
+        <Row
           icon={<span className="text-[14px] leading-none">✨</span>}
           label="智能洞察"
           active={location.hash.startsWith('#/insights')}
@@ -163,8 +215,17 @@ export function Sidebar() {
           const accFolders = folders.filter(f => f.accountId === acc.id && !f.hidden)
           const inbox = accFolders.filter(f => f.special === 'inbox')
           const others = accFolders.filter(f => f.special !== 'inbox' && f.special !== null)
+          const unreadSum = accFolders.filter(f => f.special === 'inbox').reduce((s2, f) => s2 + f.unread, 0)
           return (
-            <AccountGroup key={acc.id} accountId={acc.id} label={acc.name}>
+            <AccountGroup
+              key={acc.id}
+              accountId={acc.id}
+              label={acc.name}
+              color={acc.color}
+              unread={unreadSum}
+              onSync={() => void api.syncAccountNow(acc.id)}
+              onSettings={() => api.openSettings('accounts')}
+            >
               {inbox.map(f => (
                 <Row
                   key={f.id}

@@ -257,4 +257,73 @@ export class InsightsService {
     const r = this.deps.store.latestInsight('company', domain.trim().toLowerCase())
     return r?.data as unknown as CompanyInsight | undefined
   }
+
+  // ---------- 魔法排序 / 批量提问 ----------
+
+  /** 魔法排序：AI 按重要性/紧急度给选中邮件排序，写入 pin 顺序（同时自动置顶） */
+  async rankMessages(ids: string[]): Promise<{ ok: boolean; error?: string; ranked: { id: string; reason: string }[] }> {
+    if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', ranked: [] }
+    if (ids.length < 2) return { ok: false, error: '至少选择两封邮件再魔法排序', ranked: [] }
+    try {
+      const rows = ids
+        .map(id => this.deps.store.getMessageRow(id))
+        .filter(Boolean)
+        .map(r => ({
+          id: r.id,
+          subject: r.subject,
+          from: r.from_name || r.from_addr,
+          date: new Date(r.date).toLocaleDateString('zh-CN'),
+          snippet: String(r.snippet ?? '').slice(0, 90),
+          unread: !(r.flags ?? '').includes('\\Seen'),
+          flagged: (r.flags ?? '').includes('\\Flagged')
+        }))
+      const lines = rows
+        .map((r, i) => `${i}. [${r.id}] ${r.subject} · ${r.from} · ${r.date}${r.unread ? ' · 未读' : ''}${r.flagged ? ' · 已旗标' : ''}\n   ${r.snippet}`)
+        .join('\n')
+      const result = await this.json<{ ranked: { id: string; reason: string }[] }>(
+        '你是邮件优先级助手。用户选中了一批邮件并希望获得「更合理的排序」。只输出 JSON：{"ranked":[{"id":"必须来自列表","reason":"一句话排序理由（≤20字）"}]}。排序依据：截止时间临近 > 需要用户行动/回复 > 未读 > 财务/账单/会议 > 通知类；同类按新鲜度。每封都要出现且只出现一次。',
+        `共 ${rows.length} 封：\n${lines}`
+      )
+      const given = new Set(ids)
+      const ranked = (result.ranked ?? []).filter(r => given.has(r.id))
+      // AI 漏掉的追加在末尾，保持原顺序
+      const seen = new Set(ranked.map(r => r.id))
+      for (const id of ids) {
+        if (!seen.has(id)) ranked.push({ id, reason: '' })
+      }
+      this.deps.store.setPinnedOrder(ranked.map(r => r.id))
+      return { ok: true, ranked }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), ranked: [] }
+    }
+  }
+
+  /** 批量提问：基于选中邮件回答问题，并顺手提炼 todo 清单 */
+  async askBulk(
+    ids: string[],
+    question: string
+  ): Promise<{ ok: boolean; error?: string; answer: string; todos: { title: string; due?: string | null }[] }> {
+    if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', answer: '', todos: [] }
+    if (!ids.length) return { ok: false, error: '请先选择邮件', answer: '', todos: [] }
+    try {
+      const rows = ids
+        .map(id => this.deps.store.getMessageRow(id))
+        .filter(Boolean)
+        .map(r => ({
+          id: r.id,
+          subject: r.subject,
+          from: r.from_name || r.from_addr,
+          date: new Date(r.date).toLocaleDateString('zh-CN'),
+          text: String(r.text || r.snippet || '').slice(0, 1200)
+        }))
+      const lines = rows.map((r, i) => `【邮件${i + 1}】${r.subject}（${r.from}，${r.date}）\n${r.text}`).join('\n\n')
+      const result = await this.json<{ answer: string; todos: { title: string; due?: string | null }[] }>(
+        '你是邮件助手。用户选中了多封邮件并提出问题。只输出 JSON：{"answer":"基于这些邮件内容的中文回答（引用具体邮件，条理清晰，可用换行分点）","todos":[{"title":"从这些邮件中提炼的待办事项","due":"YYYY-MM-DD 或 null"}]}。todos 提炼邮件中明确需要用户行动的事项（还款、回复、参会、下单等），没有则为空数组。',
+        `用户的问题：${question}\n\n选中的 ${rows.length} 封邮件：\n${lines}`
+      )
+      return { ok: true, answer: String(result.answer ?? ''), todos: (result.todos ?? []).slice(0, 12).filter(t => t.title) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), answer: '', todos: [] }
+    }
+  }
 }

@@ -219,51 +219,95 @@ function TodoTab() {
   const visible = items.filter(i => (showDone ? true : i.status === 'open'))
   const openCount = items.filter(i => i.status === 'open').length
 
+  // 清单分组（批量提问 / todo 清单模式生成的成组待办）
+  const { sets, flat } = useMemo(() => {
+    const sets: { id: string; title: string; items: InsightRecord[] }[] = []
+    const byId = new Map<string, { id: string; title: string; items: InsightRecord[] }>()
+    const flat: InsightRecord[] = []
+    for (const item of visible) {
+      const setId = (item.data as { set?: string }).set
+      if (setId) {
+        let g = byId.get(setId)
+        if (!g) {
+          g = { id: setId, title: (item.data as { setTitle?: string }).setTitle ?? '待办清单', items: [] }
+          byId.set(setId, g)
+          sets.push(g)
+        }
+        g.items.push(item)
+      } else {
+        flat.push(item)
+      }
+    }
+    return { sets, flat }
+  }, [visible])
+
+  const row = (item: InsightRecord) => {
+    const d = item.data as { amount?: string | null; from?: string; link?: string | null }
+    const done = item.status === 'done'
+    return (
+      <div key={item.id} className="flex items-center gap-3">
+        <button
+          onClick={() => void api.setInsightStatus(item.id, done ? 'open' : 'done').then(load)}
+          className="w-[18px] h-[18px] rounded-full border shrink-0 flex items-center justify-center"
+          style={{ borderColor: done ? 'var(--accent)' : 'var(--border-strong)', background: done ? 'var(--accent)' : 'transparent' }}
+        >
+          {done && <span className="text-[10px]" style={{ color: 'var(--on-accent)' }}>✓</span>}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px]" style={{ color: 'var(--fg)', textDecoration: done ? 'line-through' : 'none' }}>{item.title}</div>
+          <div className="text-[11px] truncate" style={{ color: 'var(--faint)' }}>
+            {item.dueAt ? `截止 ${fmtTime(item.dueAt)}` : ''}
+            {d.amount ? ` · ${d.amount}` : ''}
+            {d.from ? ` · ${d.from}` : ''}
+          </div>
+        </div>
+        {item.messageId && (
+          <button onClick={() => openMessage(item.messageId)} className="text-[11.5px] px-2 py-0.5 rounded-lg shrink-0" style={{ background: 'var(--bg-soft)', color: 'var(--accent-strong)' }}>
+            原文
+          </button>
+        )}
+        <button onClick={() => void api.deleteInsight(item.id).then(load)} className="text-[11.5px] px-1.5 py-0.5 rounded-lg shrink-0" style={{ color: 'var(--faint)' }} title="移除">
+          ✕
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-[720px] mx-auto space-y-2">
+    <div className="max-w-[720px] mx-auto space-y-3">
       <div className="flex items-center gap-2">
-        <span className="text-[12px]" style={{ color: 'var(--faint)' }}>{openCount} 项待办 · 来自账单、会议与提醒邮件</span>
+        <span className="text-[12px]" style={{ color: 'var(--faint)' }}>{openCount} 项待办 · 来自账单/会议邮件、批量提问与清单</span>
         <div className="flex-1" />
         <button onClick={() => setShowDone(s => !s)} className="text-[12px] px-2.5 py-1 rounded-lg" style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}>
           {showDone ? '隐藏已完成' : '显示已完成'}
         </button>
       </div>
-      {visible.map(item => {
-        const d = item.data as { amount?: string | null; from?: string; link?: string | null }
-        const done = item.status === 'done'
+
+      {sets.map(g => {
+        const doneN = g.items.filter(i => i.status === 'done').length
         return (
-          <div
-            key={item.id}
-            className="flex items-center gap-3 rounded-[var(--r-sm)] border border-[var(--border-soft)] px-4 py-3 glass"
-            style={done ? { opacity: 0.55 } : undefined}
-          >
-            <button
-              onClick={() => void api.setInsightStatus(item.id, done ? 'open' : 'done').then(load)}
-              className="w-[18px] h-[18px] rounded-full border shrink-0 flex items-center justify-center"
-              style={{ borderColor: done ? 'var(--accent)' : 'var(--border-strong)', background: done ? 'var(--accent)' : 'transparent' }}
-            >
-              {done && <span className="text-[10px]" style={{ color: 'var(--on-accent)' }}>✓</span>}
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13.5px]" style={{ color: 'var(--fg)', textDecoration: done ? 'line-through' : 'none' }}>{item.title}</div>
-              <div className="text-[11.5px] truncate" style={{ color: 'var(--faint)' }}>
-                {d.from ? `${d.from} · ` : ''}
-                {item.dueAt ? `截止 ${new Date(item.dueAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
-                {d.amount ? ` · ${d.amount}` : ''}
-              </div>
+          <div key={g.id} className="rounded-[var(--r-sm)] border border-[var(--border-soft)] glass p-4">
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="text-[13.5px] font-semibold" style={{ color: 'var(--fg)' }}>📋 {g.title}</span>
+              <span
+                className="text-[11px] px-1.5 py-px rounded-full"
+                style={{ background: doneN === g.items.length ? 'var(--ok-soft)' : 'var(--accent-soft)', color: doneN === g.items.length ? 'var(--ok)' : 'var(--accent-strong)' }}
+              >
+                {doneN}/{g.items.length}
+              </span>
             </div>
-            {item.messageId && (
-              <button onClick={() => openMessage(item.messageId)} className="text-[12px] px-2.5 py-1 rounded-lg shrink-0" style={{ background: 'var(--bg-soft)', color: 'var(--accent-strong)' }}>
-                查看邮件
-              </button>
-            )}
-            <button onClick={() => void api.deleteInsight(item.id).then(load)} className="text-[12px] px-2 py-1 rounded-lg shrink-0" style={{ color: 'var(--faint)' }} title="移除">
-              ✕
-            </button>
+            <div className="space-y-2">{g.items.map(row)}</div>
           </div>
         )
       })}
-      {!visible.length && <EmptyCard text="暂无待办。阅读账单 / 会议邮件时点「提炼」，或开启 设置 → AI → 自动提炼" />}
+
+      {flat.length > 0 && (
+        <div className="space-y-2.5 rounded-[var(--r-sm)] border border-[var(--border-soft)] glass p-4">
+          {flat.map(row)}
+        </div>
+      )}
+
+      {!visible.length && <EmptyCard text="暂无待办。阅读账单 / 会议邮件时点「提炼」，多选邮件后点「提问」，或开启 设置 → AI → 自动提炼" />}
     </div>
   )
 }

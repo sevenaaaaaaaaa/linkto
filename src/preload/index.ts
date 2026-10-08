@@ -13,7 +13,7 @@ const METHOD_NAMES = [
   'listAccounts', 'addAccount', 'verifyAccount', 'updateAccount', 'setAccountEnabled',
   'deleteAccount', 'syncAccountNow',
   'listFolders', 'getMessages', 'getMessage', 'markRead', 'markFlagged', 'markAnswered',
-  'moveMessages', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
+  'moveMessages', 'moveToFolder', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
   'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
   'getGeneralSettings', 'setGeneralSettings', 'getNotificationSettings', 'setNotificationSettings',
@@ -26,6 +26,7 @@ const METHOD_NAMES = [
   'saveToKb', 'listKbItems', 'deleteKbItem', 'updateKbItem',
   'insightExtract', 'generateDaily', 'companyInsight', 'listCompanyDomains',
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
+  'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'openSettings', 'openCompose', 'getVersions', 'quit'

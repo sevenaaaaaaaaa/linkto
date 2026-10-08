@@ -20,10 +20,12 @@ import type {
   MessageQuery,
   MessageSummary,
   NotificationSettings,
+  RankedMessage,
   Rule,
   ScheduledSend,
   SendResult,
-  Signature
+  Signature,
+  BulkTodo
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -45,6 +47,8 @@ export interface MailStudioApi {
   markFlagged(ids: string[], flagged: boolean): Promise<void>
   markAnswered(id: string): Promise<void>
   moveMessages(ids: string[], targetSpecial: 'trash' | 'archive'): Promise<void>
+  /** 移动邮件到任意文件夹（IMAP MOVE） */
+  moveToFolder(ids: string[], folderId: string): Promise<{ ok: number; failed: number }>
   deleteMessages(ids: string[]): Promise<void>
   searchMessages(q: string, limit: number): Promise<MessageSummary[]>
   getAttachment(id: string): Promise<{ filename: string; contentType: string; data: ArrayBuffer } | null>
@@ -111,6 +115,15 @@ export interface MailStudioApi {
   setInsightStatus(id: string, status: 'open' | 'done'): Promise<void>
   deleteInsight(id: string): Promise<void>
   saveMemo(title: string, content: string): Promise<void>
+
+  // ---------- 置顶 / 魔法排序 / 批量提问 ----------
+  pinMessages(ids: string[], pinned: boolean): Promise<void>
+  /** 魔法排序：AI 按重要性为选中邮件排序并写入 pin 顺序 */
+  aiRankMessages(ids: string[]): Promise<{ ok: boolean; error?: string; ranked: RankedMessage[] }>
+  /** 多选提问：AI 基于选中邮件回答问题并提炼 todo 清单 */
+  aiAskBulk(ids: string[], question: string): Promise<{ ok: boolean; error?: string; answer: string; todos: BulkTodo[] }>
+  /** 把一批 todo 存为清单（智能洞察 → 待办，按清单分组展示） */
+  saveTodoSet(title: string, todos: BulkTodo[], messageId?: string | null): Promise<void>
 
   // ---------- 连接器 ----------
   listConnectorManifests(): Promise<ConnectorManifest[]>

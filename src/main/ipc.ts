@@ -282,6 +282,26 @@ export function registerIpc(ctx: AppContext) {
       for (const id of ids) await moveOrDelete(id, target)
     },
 
+    moveToFolder: async ([ids, folderId]: [string[], string]) => {
+      const folder = store.listFolders().find(f => f.id === folderId)
+      if (!folder) return { ok: 0, failed: ids.length }
+      let ok = 0
+      let failed = 0
+      for (const id of ids) {
+        const row = store.getMessageRow(id)
+        if (!row) { failed++; continue }
+        if (row.account_id !== folder.accountId) { failed++; continue }
+        const worker = engine.getWorker(row.account_id)
+        if (!worker) { failed++; continue }
+        try {
+          await worker.moveToFolder(row.folder_path, row.uid, folder.path)
+          ok++
+        } catch { failed++ }
+      }
+      ctx.event(null as never, { type: 'messages-changed' })
+      return { ok, failed }
+    },
+
     deleteMessages: async ([ids]: [string[]]) => {
       const s: GeneralSettings = appStore.get('general', DEFAULT_GENERAL)
       for (const id of ids) await moveOrDelete(id, s.deleteBehavior === 'perm' ? 'perm' : 'trash')
@@ -641,6 +661,28 @@ export function registerIpc(ctx: AppContext) {
         title: title || '备忘录',
         data: { content },
         period: new Date().toISOString().slice(0, 10)
+      })
+    },
+
+    // ================= 置顶 / 魔法排序 / 批量提问 =================
+
+    pinMessages: ([ids, pinned]: [string[], boolean]) => store.setPinned(ids, pinned),
+
+    aiRankMessages: ([ids]: [string[]]) => insights.rankMessages(ids),
+
+    aiAskBulk: ([ids, question]: [string[], string]) => insights.askBulk(ids, question),
+
+    saveTodoSet: ([title, todos, messageId]: [string, { title: string; due?: string | null }[], string | null | undefined]) => {
+      const setId = `set-${Date.now()}`
+      todos.forEach(t => {
+        store.insertInsight({
+          id: `todo-${setId}-${t.title}`.replace(/\s+/g, '_').slice(0, 120),
+          kind: 'todo',
+          messageId: messageId ?? null,
+          title: t.title,
+          data: { set: setId, setTitle: title, from: '批量提问' },
+          dueAt: t.due ? Date.parse(t.due) || null : null
+        })
       })
     },
 

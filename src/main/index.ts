@@ -215,6 +215,11 @@ async function bootstrap() {
   try {
     db.exec('ALTER TABLE drafts ADD COLUMN send_at INTEGER')
   } catch { /* 列已存在 */ }
+  // 旧库迁移：置顶（pin）与魔法排序顺序
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN pinned INTEGER DEFAULT 0')
+    db.exec('ALTER TABLE messages ADD COLUMN pinned_order INTEGER')
+  } catch { /* 列已存在 */ }
 
   sender = new MailSender()
   aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))

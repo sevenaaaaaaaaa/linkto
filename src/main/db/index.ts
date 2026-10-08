@@ -246,8 +246,31 @@ export class MailStore {
       isNewsletter: !!r.is_newsletter,
       listUnsubscribe: r.list_unsubscribe ?? null,
       savedToKb: !!r.saved_kb,
-      aiSummarized: !!r.ai_summarized
+      aiSummarized: !!r.ai_summarized,
+      pinned: !!r.pinned
     }
+  }
+
+  // ================= 置顶（pin） =================
+
+  setPinned(ids: string[], pinned: boolean) {
+    const clear = this.db.prepare('UPDATE messages SET pinned = 0, pinned_order = NULL WHERE id = ?')
+    const pin = this.db.prepare('UPDATE messages SET pinned = 1, pinned_order = ? WHERE id = ?')
+    let next = (this.db.prepare('SELECT COALESCE(MAX(pinned_order), 0) AS m FROM messages WHERE pinned = 1').get() as any).m as number
+    for (const id of ids) {
+      if (pinned) {
+        next += 1
+        pin.run(next, id)
+      } else {
+        clear.run(id)
+      }
+    }
+  }
+
+  /** 魔法排序：按给定顺序重写 pin 顺序 */
+  setPinnedOrder(ids: string[]) {
+    const stmt = this.db.prepare('UPDATE messages SET pinned = 1, pinned_order = ? WHERE id = ?')
+    ids.forEach((id, i) => stmt.run(i + 1, id))
   }
 
   getMessageRow(id: string): any | undefined {
@@ -299,6 +322,8 @@ export class MailStore {
       where.push('m.category = ?')
       params.push(query.category)
       where.push("m.folder_path = 'INBOX'")
+    } else if (query.scope === 'pinned') {
+      where.push('m.pinned = 1')
     }
     let whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const baseParams = [...params]
@@ -312,10 +337,13 @@ export class MailStore {
     const total = (
       this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...baseParams) as any
     ).c as number
+    // 置顶视图：按 pin 顺序（魔法排序写入）排列，未排序的按时间
+    const orderSql =
+      query.scope === 'pinned'
+        ? 'ORDER BY (m.pinned_order IS NULL) ASC, m.pinned_order ASC, m.date DESC'
+        : 'ORDER BY m.date DESC'
     const rows = this.db
-      .prepare(
-        `SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`
-      )
+      .prepare(`SELECT * FROM messages m ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
       .all(...baseParams, query.limit, query.offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }

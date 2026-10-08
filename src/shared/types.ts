@@ -132,6 +132,8 @@ export interface MessageSummary {
   listUnsubscribe: string | null
   savedToKb: boolean
   aiSummarized: boolean
+  /** 用户置顶（pin），在所有列表中优先显示 */
+  pinned: boolean
 }
 
 export interface MessageFull extends MessageSummary {
@@ -151,6 +153,7 @@ export type ScopeKind =
   | 'newsletter'
   | 'category'
   | 'search'
+  | 'pinned'
 
 export interface MessageQuery {
   scope: ScopeKind
@@ -428,4 +431,18 @@ export interface ScheduledSend {
   subject: string
   sendAt: number
   createdAt: number
+}
+
+// ---------- 列表排序 / 魔法排序 / 批量提问 ----------
+
+export type ListSort = 'date' | 'dateAsc' | 'unread' | 'smart'
+
+export interface RankedMessage {
+  id: string
+  reason: string
+}
+
+export interface BulkTodo {
+  title: string
+  due?: string | null
 }

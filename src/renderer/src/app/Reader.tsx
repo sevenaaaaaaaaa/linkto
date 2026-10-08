@@ -283,13 +283,42 @@ export function Reader() {
     setTimeout(() => setToast(''), 2500)
   }
 
-  if (!selectedId || !msg) {
+  if (!selectedId) {
     return (
       <div className="flex-1 h-full flex items-center justify-center">
         <div className="text-center">
           <div className="text-[15px] font-medium" style={{ color: 'var(--faint)' }}>选择一封邮件开始阅读</div>
           <div className="mt-1.5 text-[12.5px]" style={{ color: 'var(--faint)', opacity: 0.75 }}>
             ⌘K 命令面板 · J/K 切换 · R 回复 · ⌘T 明暗
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 点击后预览骨架屏：正文按需拉取时的加载反馈
+  if (!msg) {
+    return (
+      <div className="flex-1 h-full flex flex-col relative overflow-hidden">
+        <div className="drag-region h-[52px] shrink-0" />
+        <div className="shrink-0 px-6 pb-4 space-y-3">
+          <div className="h-[24px] w-[60%] rounded-lg shimmer" />
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full shimmer" />
+            <div className="space-y-1.5 flex-1">
+              <div className="h-[12px] w-[30%] rounded shimmer" />
+              <div className="h-[10px] w-[45%] rounded shimmer" />
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 px-6 pt-2">
+          <div className="h-[52px] rounded-[var(--r-md)] shimmer" />
+        </div>
+        <div className="flex-1 px-6 pt-4">
+          <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] px-6 py-5 space-y-2.5" style={{ background: 'var(--surface-strong)' }}>
+            {[92, 100, 78, 96, 64, 88, 40].map((w, i) => (
+              <div key={i} className="h-[11px] rounded shimmer" style={{ width: `${w}%` }} />
+            ))}
           </div>
         </div>
       </div>
@@ -308,6 +337,12 @@ export function Reader() {
         <ToolButton onClick={() => reply(true)} icon={<IconReplyAll width={14} height={14} />} label="全部回复" />
         <ToolButton onClick={forward} icon={<IconForward width={14} height={14} />} label="转发" />
         <div className="w-px h-4" style={{ background: 'var(--border)' }} />
+        <ToolButton
+          onClick={() => void useMail.getState().setPinned([msg.id], !msg.pinned)}
+          icon={<span className="text-[12px] leading-none">📌</span>}
+          label={msg.pinned ? '取消置顶' : '置顶'}
+          active={msg.pinned}
+        />
         <ToolButton onClick={() => act('flag')} icon={<IconFlag width={14} height={14} />} label={msg.flagged ? '取消旗标' : '旗标'} active={msg.flagged} />
         <ToolButton onClick={() => act('archive')} icon={<IconArchive width={14} height={14} />} label="归档" />
         <ToolButton onClick={() => act('trash')} icon={<IconTrash width={14} height={14} />} label="删除" danger />
@@ -584,7 +619,7 @@ function ToolButton(props: { icon: React.ReactNode; label: string; onClick(): vo
   return (
     <button
       onClick={props.onClick}
-      className="flex items-center gap-1.5 text-[12.5px] px-2.5 py-1.5 rounded-lg transition-colors hover:bg-[var(--hover)]"
+      className="flex items-center gap-1.5 text-[12.5px] px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--hover)] whitespace-nowrap shrink-0"
       style={{
         color: props.active ? 'var(--warn)' : props.danger ? 'var(--muted)' : 'var(--muted)',
         background: props.active ? 'var(--warn-soft)' : undefined

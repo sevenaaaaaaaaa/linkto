@@ -356,6 +356,23 @@ input:focus-visible {
   animation: spin-slow 1s linear infinite;
 }
 
+/* 点击预览骨架屏 */
+@keyframes shimmer {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+.shimmer {
+  background: var(--hover);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
 /* 邮件正文（shadow DOM 内也需要的基础样式） */
 .mail-body-host {
   font-size: 14px;
