@@ -13,6 +13,8 @@ mac:
     - dmg
   darkModeSupport: true
   hardenedRuntime: false
+  # 本地构建：跳过代码签名（Apple 时间戳服务不可达会导致打包失败；自用 dmg 无需签名）
+  identity: null
 npmRebuild: false
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
