@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, useMailEvent, fmtFullDate, displayName, fmtSize } from '../lib/api'
 import { useMail } from '../stores/mail'
 import { sanitizeEmailHtml, activateRemoteImages } from '../lib/sanitize'
+import { detectAuth, type AuthExtract } from '../lib/auth-detect'
 import {
   READING_STYLES, activeReadingStyleId, setActiveReadingStyleId, findReadingStyle, readingStyleCss
 } from '../lib/reading-styles'
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
-  IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh
+  IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose
 } from '../components/icons'
 import type { Attachment, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
 
@@ -87,6 +88,35 @@ export function Reader() {
     }
     return map
   }, [msg])
+
+  // 验证码 / 登录链接检测（本地正则，零成本）
+  const auth = useMemo<AuthExtract | null>(() => {
+    if (!msg) return null
+    return detectAuth(msg.subject, msg.text ?? '', msg.html, msg.from?.address)
+  }, [msg])
+  const [authDismissed, setAuthDismissed] = useState(false)
+  useEffect(() => setAuthDismissed(false), [selectedId])
+
+  // 「提炼」状态
+  const [extracting, setExtracting] = useState(false)
+
+  const runExtract = async () => {
+    if (!msg || extracting) return
+    setExtracting(true)
+    try {
+      const res = await api.insightExtract(msg.id)
+      showToast(res.ok ? (res.created.length ? `已加入${res.created.join('、')}` : '这封邮件没有可提炼的待办/文章') : res.error ?? '提炼失败')
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const copyCode = () => {
+    if (auth?.code) {
+      void navigator.clipboard.writeText(auth.code)
+      showToast(`验证码 ${auth.code} 已复制`)
+    }
+  }
 
   const skin = useMemo(() => findReadingStyle(styleId), [styleId])
 
@@ -361,6 +391,56 @@ export function Reader() {
         )}
       </div>
 
+      {/* 验证码 / 登录链接直达气泡 */}
+      {auth && !authDismissed && (
+        <div className="shrink-0 px-6 pt-3">
+          <div
+            className="flex items-center gap-3 rounded-[var(--r-md)] px-4 py-3 border shadow-[var(--shadow-sm)] pop-in"
+            style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent)' }}
+          >
+            <span className="text-[20px] leading-none">{auth.kind === 'code' ? '🔑' : '🔐'}</span>
+            {auth.kind === 'code' ? (
+              <>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px]" style={{ color: 'var(--muted)' }}>检测到验证码，点击即复制</div>
+                  <button
+                    onClick={copyCode}
+                    className="text-[22px] font-bold tracking-[.18em] font-[var(--font-mono)] hover:opacity-80"
+                    style={{ color: 'var(--accent-strong)' }}
+                  >
+                    {auth.code}
+                  </button>
+                </div>
+                <button
+                  onClick={copyCode}
+                  className="no-drag text-[12.5px] font-medium px-3.5 py-1.5 rounded-lg shrink-0"
+                  style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+                >
+                  复制验证码
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px]" style={{ color: 'var(--muted)' }}>检测到登录 / 验证链接{auth.provider ? ` · ${auth.provider}` : ''}</div>
+                  <div className="text-[13px] font-medium truncate" style={{ color: 'var(--accent-strong)' }}>一键直达，无需翻找正文</div>
+                </div>
+                <button
+                  onClick={() => auth.url && void api.openExternal(auth.url)}
+                  className="no-drag text-[12.5px] font-medium px-3.5 py-1.5 rounded-lg shrink-0"
+                  style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+                >
+                  一键登录 →
+                </button>
+              </>
+            )}
+            <button onClick={() => setAuthDismissed(true)} className="shrink-0 p-1 rounded-lg hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }} title="关闭">
+              <IconClose width={13} height={13} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* AI 面板 */}
       <div className="shrink-0 px-6 pt-3">
         <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] overflow-hidden glass shadow-[var(--shadow-sm)]">
@@ -373,6 +453,7 @@ export function Reader() {
             <AIChip label="摘要" onClick={() => runAI('summary')} active={aiMode === 'summary'} />
             <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
             <AIChip label="提取待办" onClick={() => runAI('tasks')} active={aiMode === 'tasks'} />
+            <AIChip label={extracting ? '提炼中…' : '提炼'} onClick={runExtract} active={false} />
           </div>
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">

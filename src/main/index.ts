@@ -5,7 +5,9 @@ import { AppStore, DEFAULT_GENERAL, DEFAULT_NOTIFICATIONS } from './store'
 import { MailStore } from './db'
 import { SyncEngine, friendlyError } from './mail/sync-engine'
 import { MailSender } from './mail/sender'
+import { Outbox } from './mail/outbox'
 import { AIService } from './ai/service'
+import { InsightsService } from './ai/insights'
 import { Notifier, focusMainWindow } from './notify'
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
@@ -16,6 +18,8 @@ let engine: SyncEngine
 let sender: MailSender
 let aiService: AIService
 let notifier: Notifier
+let outbox: Outbox
+let insights: InsightsService
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -207,9 +211,29 @@ async function bootstrap() {
   db.exec('PRAGMA journal_mode=WAL')
   db.exec(MailStore.SCHEMA)
   mailStore = new MailStore(db)
+  // 旧库迁移：发件队列时间戳（新库建表时已含该列）
+  try {
+    db.exec('ALTER TABLE drafts ADD COLUMN send_at INTEGER')
+  } catch { /* 列已存在 */ }
 
   sender = new MailSender()
   aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))
+
+  outbox = new Outbox({
+    store: mailStore,
+    sender,
+    engine,
+    listAccounts: () => mailStore.listAccounts(),
+    getPassword: accountId => appStore.loadSecret(`acct:${accountId}`),
+    event: payload => broadcast(payload)
+  })
+
+  insights = new InsightsService({
+    ai: aiService,
+    store: mailStore,
+    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    event: payload => broadcast(payload)
+  })
 
   engine = new SyncEngine(
     mailStore,
@@ -227,6 +251,12 @@ async function bootstrap() {
       newMail: (accountId, messageId, subject, from, category) => {
         broadcast({ type: 'new-mail', accountId, subject, from })
         notifier.notify({ accountId, messageId, subject, from, category }, 0)
+        // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
+        const ai = appStore.get('ai', DEFAULT_AI)
+        const row = mailStore.getMessageRow(messageId)
+        if (ai.enabled && ai.autoInsights && row && InsightsService.worthExtracting(row.subject, row.snippet ?? '', !!row.is_newsletter)) {
+          void insights.extractFromMessage(messageId).catch(() => {})
+        }
       }
     },
     () => mailStore.listRules()
@@ -285,6 +315,8 @@ async function bootstrap() {
     sender,
     ai: aiService,
     notifier,
+    outbox,
+    insights,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
@@ -308,6 +340,10 @@ async function bootstrap() {
     }
     engine.startAccount(account, password)
   }
+  outbox.start()
+  // 定期学习：每 30 分钟检查一次是否该生成当日商情
+  setInterval(() => void insights.maybeAutoDaily().catch(() => {}), 30 * 60_000)
+  void insights.maybeAutoDaily().catch(() => {})
   updateDockBadge()
 }
 

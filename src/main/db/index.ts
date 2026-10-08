@@ -482,14 +482,14 @@ export class MailStore {
 
   // ================= 草稿 =================
 
-  saveDraft(d: { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; updatedAt: number }) {
+  saveDraft(d: { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; updatedAt: number; sendAt?: number | null }) {
     this.db
       .prepare(
-        `INSERT INTO drafts (id, account_id, to_json, cc_json, bcc_json, subject, html, updated_at) VALUES (?,?,?,?,?,?,?,?)
+        `INSERT INTO drafts (id, account_id, to_json, cc_json, bcc_json, subject, html, updated_at, send_at) VALUES (?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET to_json=excluded.to_json, cc_json=excluded.cc_json, bcc_json=excluded.bcc_json,
-           subject=excluded.subject, html=excluded.html, updated_at=excluded.updated_at`
+           subject=excluded.subject, html=excluded.html, updated_at=excluded.updated_at, send_at=excluded.send_at`
       )
-      .run(d.id, d.accountId, JSON.stringify(d.to), JSON.stringify(d.cc), JSON.stringify(d.bcc), d.subject, d.html, d.updatedAt)
+      .run(d.id, d.accountId, JSON.stringify(d.to), JSON.stringify(d.cc), JSON.stringify(d.bcc), d.subject, d.html, d.updatedAt, d.sendAt ?? null)
   }
 
   listDrafts(): any[] {
@@ -502,12 +502,109 @@ export class MailStore {
       bcc: j<Address[]>(r.bcc_json, []),
       subject: r.subject,
       html: r.html,
-      updatedAt: r.updated_at
+      updatedAt: r.updated_at,
+      sendAt: r.send_at ?? null
     }))
   }
 
   deleteDraft(id: string) {
     this.db.prepare('DELETE FROM drafts WHERE id = ?').run(id)
+  }
+
+  // ================= 发件队列（延迟 / 定时发送） =================
+
+  private draftRowToScheduled(r: any): { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; sendAt: number } {
+    return {
+      id: r.id,
+      accountId: r.account_id,
+      to: j<Address[]>(r.to_json, []),
+      cc: j<Address[]>(r.cc_json, []),
+      bcc: j<Address[]>(r.bcc_json, []),
+      subject: r.subject,
+      html: r.html,
+      sendAt: r.send_at
+    }
+  }
+
+  listScheduled(): { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; sendAt: number }[] {
+    const rows = this.db.prepare('SELECT * FROM drafts WHERE send_at IS NOT NULL ORDER BY send_at').all() as any[]
+    return rows.map(r => this.draftRowToScheduled(r))
+  }
+
+  dueScheduled(now: number): { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; sendAt: number }[] {
+    const rows = this.db.prepare('SELECT * FROM drafts WHERE send_at IS NOT NULL AND send_at <= ? ORDER BY send_at').all(now) as any[]
+    return rows.map(r => this.draftRowToScheduled(r))
+  }
+
+  // ================= 智能洞察 =================
+
+  insertInsight(i: { id: string; kind: string; accountId?: string | null; messageId?: string | null; title: string; data: Record<string, unknown>; dueAt?: number | null; period?: string | null }) {
+    this.db
+      .prepare(
+        `INSERT INTO insights (id, kind, account_id, message_id, title, data_json, status, due_at, period, created_at)
+         VALUES (?,?,?,?,?,?, 'open', ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET title=excluded.title, data_json=excluded.data_json, due_at=excluded.due_at, period=excluded.period`
+      )
+      .run(i.id, i.kind, i.accountId ?? null, i.messageId ?? null, i.title, JSON.stringify(i.data), i.dueAt ?? null, i.period ?? null, Date.now())
+  }
+
+  listInsights(kind: string): any[] {
+    const rows =
+      kind === 'all'
+        ? (this.db.prepare('SELECT * FROM insights ORDER BY created_at DESC LIMIT 500').all() as any[])
+        : (this.db.prepare('SELECT * FROM insights WHERE kind = ? ORDER BY created_at DESC LIMIT 500').all(kind) as any[])
+    return rows.map(r => ({
+      id: r.id,
+      kind: r.kind,
+      messageId: r.message_id,
+      accountId: r.account_id,
+      title: r.title,
+      status: r.status,
+      dueAt: r.due_at,
+      period: r.period,
+      createdAt: r.created_at,
+      data: j<Record<string, unknown>>(r.data_json, {})
+    }))
+  }
+
+  setInsightStatus(id: string, status: string) {
+    this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(status, id)
+  }
+
+  deleteInsight(id: string) {
+    this.db.prepare('DELETE FROM insights WHERE id = ?').run(id)
+  }
+
+  latestInsight(kind: string, period: string): any | undefined {
+    const r = this.db
+      .prepare('SELECT * FROM insights WHERE kind = ? AND period = ? ORDER BY created_at DESC LIMIT 1')
+      .get(kind, period) as any
+    if (!r) return undefined
+    return { id: r.id, kind: r.kind, messageId: r.message_id, accountId: r.account_id, title: r.title, status: r.status, dueAt: r.due_at, period: r.period, createdAt: r.created_at, data: j<Record<string, unknown>>(r.data_json, {}) }
+  }
+
+  /** 发件人域名榜：公司洞察选择器数据源 */
+  listCompanyDomains(): { domain: string; name: string; count: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT from_addr AS addr, MAX(from_name) AS name, COUNT(*) AS count
+         FROM messages WHERE from_addr IS NOT NULL AND from_addr LIKE '%@%'
+         GROUP BY from_addr ORDER BY count DESC LIMIT 400`
+      )
+      .all() as { addr: string; name: string; count: number }[]
+    const byDomain = new Map<string, { domain: string; name: string; count: number }>()
+    for (const r of rows) {
+      const domain = r.addr.split('@').pop()!.toLowerCase()
+      if (/^(gmail|qq|163|126|outlook|hotmail|icloud|yahoo|foxmail|sina|139)\./.test(domain)) continue
+      const cur = byDomain.get(domain)
+      if (cur) {
+        cur.count += r.count
+        if (!cur.name && r.name) cur.name = r.name
+      } else {
+        byDomain.set(domain, { domain, name: r.name ?? '', count: r.count })
+      }
+    }
+    return [...byDomain.values()].sort((a, b) => b.count - a.count)
   }
 
   // ================= Newsletter 发件人 =================
@@ -741,8 +838,24 @@ export class MailStore {
     bcc_json TEXT DEFAULT '[]',
     subject TEXT DEFAULT '',
     html TEXT DEFAULT '',
-    updated_at INTEGER
+    updated_at INTEGER,
+    send_at INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS insights (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    account_id TEXT,
+    message_id TEXT,
+    title TEXT NOT NULL,
+    data_json TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'open',
+    due_at INTEGER,
+    period TEXT,
+    created_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_insights_kind ON insights(kind, status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_insights_period ON insights(period);
 
   CREATE TABLE IF NOT EXISTS newsletter_senders (
     account_id TEXT NOT NULL,

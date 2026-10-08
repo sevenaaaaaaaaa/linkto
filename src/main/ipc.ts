@@ -23,6 +23,8 @@ import type { MailSender } from './mail/sender'
 import type { AIService } from './ai/service'
 import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { presetFor, ACCOUNT_COLORS } from './mail/presets'
+import { Outbox } from './mail/outbox'
+import { InsightsService } from './ai/insights'
 import type { Notifier } from './notify'
 import type { AccountWorker } from './mail/sync-engine'
 
@@ -36,6 +38,8 @@ export interface AppContext {
   sender: MailSender
   ai: AIService
   notifier: Notifier
+  outbox: Outbox
+  insights: InsightsService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openSettings(tab?: string): void
@@ -47,7 +51,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights } = ctx
 
   // ---------- 工具 ----------
 
@@ -328,34 +332,26 @@ export function registerIpc(ctx: AppContext) {
 
     // ================= 撰写 / 发送 =================
 
-    sendMail: async ([draft]: [ComposeDraft]) => {
-      const account = accountById(draft.accountId)
-      if (!account) return { ok: false, error: '账户不存在' }
-      const password = ctx.getPassword(account.id)
-      try {
-        const info = await sender.send(account, password, draft)
-        const row = draft.relatedMessageId ? store.getMessageRow(draft.relatedMessageId) : null
-        if (row) {
-          const flags = new Set(String(row.flags ?? '').split(' ').filter(Boolean))
-          flags.add('\\Answered')
-          store.updateMessageFlags(row.id, [...flags])
-        }
-        // 尝试存入已发送
-        try {
-          const worker = engine.getWorker(account.id)
-          if (worker) {
-            const sentPath = await worker.specialFolderPath('sent')
-            if (sentPath) {
-              const raw = buildSentRaw(account, draft, info.messageId)
-              await engine.getWorker(account.id)!.appendRaw(sentPath, raw)
-            }
-          }
-        } catch { /* 存已发送失败不影响发送结果 */ }
-        return { ok: true, messageId: info.messageId }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
+    sendMail: async ([draft]: [ComposeDraft]) => outbox.sendNow(draft),
+
+    scheduleSend: ([draft, sendAt]: [ComposeDraft, number]) => {
+      if (!draft.accountId) return { ok: false, error: '账户不存在' }
+      if (!Number.isFinite(sendAt) || sendAt < Date.now() - 30_000) return { ok: false, error: '发送时间无效' }
+      outbox.schedule(draft, sendAt)
+      return { ok: true }
     },
+
+    cancelScheduledSend: ([id]: [string]) => outbox.cancel(id),
+
+    listScheduledSends: () =>
+      outbox.list().map(d => ({
+        id: d.id,
+        accountId: d.accountId,
+        to: d.to.map(a => a.address),
+        subject: d.subject,
+        sendAt: d.sendAt,
+        createdAt: d.sendAt
+      })),
 
     saveDraft: ([draft]: [ComposeDraft]) => {
       store.saveDraft({
@@ -621,6 +617,33 @@ export function registerIpc(ctx: AppContext) {
     deleteKbItem: ([id]: [string]) => store.deleteKbItem(id),
     updateKbItem: ([id, patch]: [string, Partial<Pick<KbItem, 'title' | 'content' | 'tags'>>]) => store.updateKbItem(id, patch),
 
+    // ================= 智能洞察 =================
+
+    insightExtract: ([messageId]: [string]) => insights.extractFromMessage(messageId),
+
+    generateDaily: ([force]: [boolean | undefined]) => insights.generateDaily(!!force),
+
+    companyInsight: ([domain]: [string]) => insights.companyProfile(domain),
+
+    listCompanyDomains: () => store.listCompanyDomains().slice(0, 24),
+
+    listInsights: ([kind]: [string]) => store.listInsights(kind),
+
+    setInsightStatus: ([id, status]: [string, string]) => store.setInsightStatus(id, status),
+
+    deleteInsight: ([id]: [string]) => store.deleteInsight(id),
+
+    saveMemo: ([title, content]: [string, string]) => {
+      const id = 'memo-today'
+      store.insertInsight({
+        id,
+        kind: 'memo',
+        title: title || '备忘录',
+        data: { content },
+        period: new Date().toISOString().slice(0, 10)
+      })
+    },
+
     // ================= 连接器 =================
 
     listConnectorManifests: () => BUILTIN_CONNECTORS.map(c => c.manifest),
@@ -719,24 +742,5 @@ export function registerIpc(ctx: AppContext) {
   }
 }
 
-function buildSentRaw(account: AccountConfig, draft: ComposeDraft, messageId?: string): string {
-  const addr = (a: { name?: string; address: string }) => (a.name ? `${a.name} <${a.address}>` : a.address)
-  const date = new Date().toUTCString()
-  return [
-    `From: ${addr({ name: account.name, address: account.email })}`,
-    `To: ${draft.to.map(addr).join(', ')}`,
-    draft.cc.length ? `Cc: ${draft.cc.map(addr).join(', ')}` : '',
-    `Subject: ${draft.subject}`,
-    `Date: ${date}`,
-    messageId ? `Message-ID: ${messageId}` : `Message-ID: <${randomUUID()}@mailstudio.local>`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=utf-8',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    draft.html || '<p></p>'
-  ]
-    .filter(Boolean)
-    .join('\r\n')
-}
 
 export type { Attachment }

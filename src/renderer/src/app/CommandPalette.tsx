@@ -64,6 +64,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-notification', group: '前往', label: '通知', run: go({ kind: 'category', category: 'notification' }, '通知') },
       { id: 'nav-newsletter', group: '前往', label: 'Newsletter', run: go({ kind: 'newsletter' }, 'Newsletter') },
       { id: 'nav-noise', group: '前往', label: '噪声', run: go({ kind: 'category', category: 'noise' }, '噪声') },
+      { id: 'nav-insights', group: '前往', label: '智能洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { location.hash = '#/insights'; props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { location.hash = '#/kb'; useMail.getState().setScope({ kind: 'unified', title: '知识库' }); props.onClose() } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,

@@ -68,6 +68,11 @@ export function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+export function fmtTime(ts: number): string {
+  if (!ts) return ''
+  return new Date(ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 export function displayName(a: { name?: string; address: string } | null): string {
   if (!a) return ''
   return a.name?.trim() || a.address

@@ -3,23 +3,33 @@ import { Sidebar } from './Sidebar'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
 import { KbView } from './KbView'
+import { InsightsView } from './InsightsView'
 import { CommandPalette } from './CommandPalette'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
+import type { ScheduledSend } from '@shared/types'
+
+type View = 'mail' | 'kb' | 'insights'
+
+const viewFromHash = (): View =>
+  location.hash.startsWith('#/kb') ? 'kb' : location.hash.startsWith('#/insights') ? 'insights' : 'mail'
 
 export function MailShell() {
-  const [kbMode, setKbMode] = useState(() => location.hash === '#/kb')
+  const [view, setView] = useState<View>(viewFromHash)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState('')
+  const [outbox, setOutbox] = useState<ScheduledSend[]>([])
+
+  const loadOutbox = () => void api.listScheduledSends().then(setOutbox)
 
   useEffect(() => {
-    const onHash = () => setKbMode(location.hash === '#/kb')
+    const onHash = () => setView(viewFromHash())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // 全局 toast（主题 / 预设 / 命令面板反馈）
+  // 全局 toast（主题 / 预设 / 命令面板反馈）+ 发件队列事件
   useEffect(() => {
     const onToast = (e: Event) => {
       setToast((e as CustomEvent<string>).detail)
@@ -27,6 +37,20 @@ export function MailShell() {
     }
     window.addEventListener('ms:toast', onToast)
     return () => window.removeEventListener('ms:toast', onToast)
+  }, [])
+
+  useEffect(() => {
+    loadOutbox()
+    const onEv = (ev: unknown) => {
+      const e = ev as { type: string; subject?: string; to?: string }
+      if (e.type === 'outbox-changed') loadOutbox()
+      if (e.type === 'mail-sent') {
+        setToast(`已发送：${e.subject ?? ''}`)
+        setTimeout(() => setToast(''), 2600)
+      }
+    }
+    const off = api.onEvent(onEv)
+    return () => void off()
   }, [])
 
   // 侧栏 ⌘K 按钮等入口
@@ -95,13 +119,43 @@ export function MailShell() {
   return (
     <div className="h-full flex">
       <Sidebar />
-      {kbMode ? <KbView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : (
         <>
           <MessageList />
           <Reader />
         </>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+      {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
+      {outbox.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-40 w-[300px] glass-strong rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-2 pop-in">
+          <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+            发件队列 · {outbox.length}
+          </div>
+          <div className="flex flex-col gap-0.5 max-h-[220px] overflow-y-auto">
+            {outbox.map(s => (
+              <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded-[10px]">
+                <span className="text-[14px] leading-none">⏳</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{s.subject || '（无主题）'}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--faint)' }}>
+                    {new Date(s.sendAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} → {s.to[0] ?? ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void api.cancelScheduledSend(s.id)}
+                  className="text-[11.5px] px-2 py-1 rounded-lg shrink-0 hover:bg-[var(--hover)]"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  撤销
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full glass-strong border border-[var(--glass-border)] text-[13px] shadow-[var(--shadow-sm)] fade-in" style={{ color: 'var(--fg)' }}>
           {toast}

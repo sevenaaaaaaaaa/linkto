@@ -261,6 +261,10 @@ export interface AISettings {
   model: string
   autoClassify: boolean
   autoSummary: boolean
+  /** 新邮件自动提炼：账单/会议→待办、Newsletter→阅读清单（需 AI） */
+  autoInsights: boolean
+  /** 每天自动生成当日商情（重点 / digest / 备忘录 / 清理建议）（需 AI） */
+  autoDigest: boolean
 }
 
 export interface AIChatMessage {
@@ -350,3 +354,78 @@ export type MailEvent =
   | { type: 'sync-progress'; accountId: string; text: string }
   | { type: 'ai-stream'; requestId: string; delta: string; done: boolean; error?: string }
   | { type: 'new-mail'; accountId: string; subject: string; from: string }
+  | { type: 'outbox-changed' }
+  | { type: 'mail-sent'; subject: string; to: string }
+  | { type: 'insights-changed' }
+
+// ---------- 智能洞察 ----------
+
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company'
+
+export interface InsightRecord {
+  id: string
+  kind: InsightKind
+  messageId: string | null
+  accountId: string | null
+  title: string
+  status: 'open' | 'done'
+  dueAt: number | null
+  createdAt: number
+  data: Record<string, unknown>
+}
+
+export interface TodoExtract {
+  title: string
+  due?: string | null
+  amount?: string | null
+  link?: string | null
+}
+
+export interface ReadingExtract {
+  title: string
+  url?: string | null
+  summary?: string | null
+}
+
+export interface DigestTheme {
+  theme: string
+  summary: string
+  count: number
+}
+
+export interface DeleteSuggestion {
+  messageId: string
+  subject: string
+  from: string
+  reason: string
+}
+
+export interface DailyDigest {
+  highlights: string[]
+  themes: DigestTheme[]
+  memo: string
+  deleteSuggestions: DeleteSuggestion[]
+  stats: { total: number; senders: number }
+  generatedAt: number
+}
+
+export interface CompanyInsight {
+  company: string
+  domain: string
+  summary: string
+  timeline: { period: string; event: string }[]
+  strategy: string
+  credibility: { score: number; reasons: string }
+  conversionIndex: { score: number; reasons: string }
+  mailCount: number
+  generatedAt: number
+}
+
+export interface ScheduledSend {
+  id: string
+  accountId: string
+  to: string[]
+  subject: string
+  sendAt: number
+  createdAt: number
+}

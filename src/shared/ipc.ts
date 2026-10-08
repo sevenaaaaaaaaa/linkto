@@ -4,11 +4,15 @@ import type {
   AccountWithStatus,
   AISettings,
   Attachment,
+  CompanyInsight,
   ComposeDraft,
   ConnectorInstance,
   ConnectorManifest,
+  DailyDigest,
   Folder,
   GeneralSettings,
+  InsightKind,
+  InsightRecord,
   KbItem,
   MailTemplate,
   MessageFull,
@@ -17,6 +21,7 @@ import type {
   MessageSummary,
   NotificationSettings,
   Rule,
+  ScheduledSend,
   SendResult,
   Signature
 } from './types'
@@ -48,6 +53,9 @@ export interface MailStudioApi {
 
   // ---------- 撰写 / 发送 ----------
   sendMail(draft: ComposeDraft): Promise<SendResult>
+  scheduleSend(draft: ComposeDraft, sendAt: number): Promise<{ ok: boolean; error?: string }>
+  cancelScheduledSend(id: string): Promise<void>
+  listScheduledSends(): Promise<ScheduledSend[]>
   saveDraft(draft: ComposeDraft): Promise<void>
   listDrafts(): Promise<ComposeDraft[]>
   deleteDraft(id: string): Promise<void>
@@ -89,6 +97,20 @@ export interface MailStudioApi {
   listKbItems(): Promise<KbItem[]>
   deleteKbItem(id: string): Promise<void>
   updateKbItem(id: string, patch: Partial<Pick<KbItem, 'title' | 'content' | 'tags'>>): Promise<void>
+
+  // ---------- 智能洞察（需自配 AI） ----------
+  /** 单封提炼：账单/会议 → 待办，Newsletter → 阅读清单 */
+  insightExtract(messageId: string): Promise<{ ok: boolean; error?: string; created: string[] }>
+  /** 每日商情：当日重点 + 主题 digest + 备忘录 + 清理建议 */
+  generateDaily(force?: boolean): Promise<{ ok: boolean; error?: string; digest?: DailyDigest }>
+  /** 公司洞察：时间线 + 运营策略 + 品牌可信度 + 转化指数 */
+  companyInsight(domain: string): Promise<{ ok: boolean; error?: string; insight?: CompanyInsight }>
+  /** 发件人域名榜（公司洞察选择器用） */
+  listCompanyDomains(): Promise<{ domain: string; name: string; count: number }[]>
+  listInsights(kind: InsightKind | 'all'): Promise<InsightRecord[]>
+  setInsightStatus(id: string, status: 'open' | 'done'): Promise<void>
+  deleteInsight(id: string): Promise<void>
+  saveMemo(title: string, content: string): Promise<void>
 
   // ---------- 连接器 ----------
   listConnectorManifests(): Promise<ConnectorManifest[]>

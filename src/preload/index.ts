@@ -14,7 +14,8 @@ const METHOD_NAMES = [
   'deleteAccount', 'syncAccountNow',
   'listFolders', 'getMessages', 'getMessage', 'markRead', 'markFlagged', 'markAnswered',
   'moveMessages', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
-  'sendMail', 'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
+  'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
+  'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
   'getGeneralSettings', 'setGeneralSettings', 'getNotificationSettings', 'setNotificationSettings',
   'getAISettings', 'setAISettings',
   'listSignatures', 'saveSignature', 'deleteSignature',
@@ -23,6 +24,8 @@ const METHOD_NAMES = [
   'aiStream', 'aiCancel', 'aiClassify', 'aiSummarize', 'aiDraftReply', 'aiExtractTasks',
   'aiAskKnowledgeBase', 'aiTagKbItem',
   'saveToKb', 'listKbItems', 'deleteKbItem', 'updateKbItem',
+  'insightExtract', 'generateDaily', 'companyInsight', 'listCompanyDomains',
+  'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'openSettings', 'openCompose', 'getVersions', 'quit'

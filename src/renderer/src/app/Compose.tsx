@@ -94,23 +94,25 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
       .filter(Boolean)
       .map(address => ({ address }))
 
+  const buildDraft = (html: string) => ({
+    id: draftId,
+    accountId,
+    to: parseAddrs(to),
+    cc: parseAddrs(cc),
+    bcc: parseAddrs(bcc),
+    subject,
+    html,
+    inReplyToMessageId: prefill?.inReplyToMessageId,
+    relatedMessageId: prefill?.relatedMessageId,
+    attachmentPaths: attachments.map(a => a.path)
+  })
+
   const send = async () => {
     if (!editor || sending) return
     const html = buildFullHtml(editor.getHTML(), quote, signature)
     setSending(true)
     setError('')
-    const result = await api.sendMail({
-      id: draftId,
-      accountId,
-      to: parseAddrs(to),
-      cc: parseAddrs(cc),
-      bcc: parseAddrs(bcc),
-      subject,
-      html,
-      inReplyToMessageId: prefill?.inReplyToMessageId,
-      relatedMessageId: prefill?.relatedMessageId,
-      attachmentPaths: attachments.map(a => a.path)
-    })
+    const result = await api.sendMail(buildDraft(html))
     setSending(false)
     if (result.ok) {
       if (prefill?.relatedMessageId) void api.markAnswered(prefill.relatedMessageId)
@@ -119,6 +121,48 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
       setError(result.error ?? '发送失败')
     }
   }
+
+  // ---------- 延迟 / 定时发送 ----------
+  const [sendMenu, setSendMenu] = useState(false)
+  const [schedTime, setSchedTime] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!sendMenu) return
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setSendMenu(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [sendMenu])
+
+  const schedule = async (delayMs?: number) => {
+    if (!editor) return
+    let at = Date.now() + (delayMs ?? 0)
+    if (delayMs === undefined) {
+      if (!schedTime) return
+      at = Date.parse(schedTime)
+    }
+    const html = buildFullHtml(editor.getHTML(), quote, signature)
+    const res = await api.scheduleSend(buildDraft(html), at)
+    setSendMenu(false)
+    if (res.ok) {
+      window.close()
+    } else {
+      setError(res.error ?? '定时失败')
+    }
+  }
+
+  const MenuRow = (props: { label: string; hint?: string; onClick(): void }) => (
+    <button
+      onClick={props.onClick}
+      className="w-full flex items-center gap-2 px-3 py-2 text-[12.5px] text-left hover:bg-[var(--hover)]"
+      style={{ color: 'var(--fg)' }}
+    >
+      <span className="flex-1">{props.label}</span>
+      {props.hint && <span className="text-[11px]" style={{ color: 'var(--faint)' }}>{props.hint}</span>}
+    </button>
+  )
 
   const saveDraft = async () => {
     if (!editor) return
@@ -231,7 +275,7 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
         </div>
       )}
       {error && <div className="shrink-0 px-5 py-1.5 text-[12.5px] text-red-500">{error}</div>}
-      <div className="shrink-0 px-5 py-3 border-t border-black/[0.05] flex items-center gap-2">
+      <div className="shrink-0 px-5 py-3 border-t border-black/[0.05] flex items-center gap-2 relative">
         <button onClick={pick} className="p-2 rounded-lg text-zinc-500 hover:bg-black/5" title="添加附件">
           <IconAttach width={15} height={15} />
         </button>
@@ -239,14 +283,53 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
         <button onClick={saveDraft} className="text-[13px] px-3 py-2 rounded-xl text-zinc-500 hover:bg-black/5 flex items-center gap-1.5">
           <IconSave width={14} height={14} /> 存草稿
         </button>
-        <button
-          onClick={send}
-          disabled={sending || !accountId}
-          className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
-        >
-          <IconSend width={14} height={14} />
-          {sending ? '发送中…' : '发送'}
-        </button>
+        <div className="flex items-stretch" ref={menuRef}>
+          <button
+            onClick={send}
+            disabled={sending || !accountId}
+            className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-l-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+          >
+            <IconSend width={14} height={14} />
+            {sending ? '发送中…' : '发送'}
+          </button>
+          <button
+            onClick={() => setSendMenu(m => !m)}
+            disabled={!accountId}
+            title="延迟 / 定时发送"
+            className="px-2 rounded-r-xl border-l border-white/25 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 text-[10px]"
+          >
+            ▾
+          </button>
+          {sendMenu && (
+            <div className="absolute bottom-14 right-5 z-30 w-[290px] glass-strong rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-1.5 pop-in">
+              <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                延迟 / 定时发送
+              </div>
+              <MenuRow label="30 秒后发送" hint="可撤销" onClick={() => void schedule(30_000)} />
+              <MenuRow label="1 分钟后发送" hint="可撤销" onClick={() => void schedule(60_000)} />
+              <MenuRow label="10 分钟后发送" onClick={() => void schedule(600_000)} />
+              <MenuRow label="1 小时后发送" onClick={() => void schedule(3_600_000)} />
+              <div className="px-3 pt-2 pb-1 text-[11.5px]" style={{ color: 'var(--muted)' }}>定时发送（到点自动发出）</div>
+              <div className="px-2 pb-1 flex gap-1.5">
+                <input
+                  type="datetime-local"
+                  value={schedTime}
+                  onChange={e => setSchedTime(e.target.value)}
+                  className="flex-1 text-[12px] rounded-lg px-2 py-1.5 outline-none border border-[var(--border-soft)]"
+                  style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
+                />
+                <button
+                  onClick={() => void schedule()}
+                  disabled={!schedTime}
+                  className="text-[12px] px-2.5 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                  style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+                >
+                  确定
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

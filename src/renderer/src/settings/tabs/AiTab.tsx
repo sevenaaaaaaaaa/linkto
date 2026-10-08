@@ -97,6 +97,12 @@ export function AiTab() {
       <SettingRow label="自动分类新邮件" desc="新邮件入库后自动标记：个人 / 通知 / 订阅 / 噪声">
         <Toggle checked={s.autoClassify} onChange={v => update({ autoClassify: v })} />
       </SettingRow>
+      <SettingRow label="自动提炼" desc="账单 / 会议邮件自动进待办，Newsletter 自动进阅读清单（智能洞察）">
+        <Toggle checked={s.autoInsights} onChange={v => update({ autoInsights: v })} />
+      </SettingRow>
+      <SettingRow label="每日商情" desc="每天自动整理：当日重点、主题 digest、备忘录、清理建议">
+        <Toggle checked={s.autoDigest} onChange={v => update({ autoDigest: v })} />
+      </SettingRow>
 
       <SectionTitle>隐私说明</SectionTitle>
       <div className="text-[12.5px] leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">

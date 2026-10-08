@@ -2,7 +2,9 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { NotificationAction } from '@shared/types'
+import type { AISettings, NotificationAction } from '@shared/types'
+
+export type { AISettings }
 
 export interface GeneralSettings {
   remoteImages: 'block' | 'allow'
@@ -18,15 +20,6 @@ export interface NotificationSettings {
   smart: boolean
   sound: boolean
   perAccount: Record<string, { enabled: boolean; sound: string }>
-}
-
-export interface AISettings {
-  enabled: boolean
-  baseURL: string
-  apiKey: string
-  model: string
-  autoClassify: boolean
-  autoSummary: boolean
 }
 
 export const DEFAULT_GENERAL: GeneralSettings = {
@@ -51,7 +44,9 @@ export const DEFAULT_AI: AISettings = {
   apiKey: '',
   model: 'glm-4.7',
   autoClassify: false,
-  autoSummary: false
+  autoSummary: false,
+  autoInsights: true,
+  autoDigest: true
 }
 
 /** 应用级设置 / 密钥 / 附件路径管理 */

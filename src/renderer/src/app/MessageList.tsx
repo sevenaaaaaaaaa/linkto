@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMail } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
+import { subjectIsAuth } from '../lib/auth-detect'
 import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash } from '../components/icons'
 import type { MessageSummary } from '@shared/types'
 
@@ -90,6 +91,11 @@ function MessageRow(props: {
             {displayName(msg.from) || '（未知发件人）'}
           </span>
           {msg.unread && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: 'var(--accent)' }} />}
+          {subjectIsAuth(msg.subject) && (
+            <span className="text-[10px] px-1.5 py-px rounded shrink-0 font-medium" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
+              🔑
+            </span>
+          )}
           {badge && <span className={`text-[10px] px-1.5 py-px rounded ${badge.cls}`}>{badge.label}</span>}
           {msg.hasAttachments && <IconAttach width={12} height={12} className="shrink-0" style={{ color: 'var(--faint)' }} />}
           {msg.flagged && <IconFlag width={12} height={12} className="shrink-0" style={{ color: 'var(--warn)' }} />}

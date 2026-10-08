@@ -147,6 +147,16 @@ export function Sidebar() {
         <Row icon={<IconBell width={15} height={15} />} label="通知" active={is({ kind: 'category', category: 'notification' })} onClick={() => setScope({ kind: 'category', category: 'notification', title: '通知' })} />
         <Row icon={<IconRss width={15} height={15} />} label="Newsletter" active={is({ kind: 'newsletter' })} onClick={() => setScope({ kind: 'newsletter', title: 'Newsletter' })} />
         <Row icon={<IconTrash width={15} height={15} />} label="噪声" active={is({ kind: 'category', category: 'noise' })} onClick={() => setScope({ kind: 'category', category: 'noise', title: '噪声' })} />
+        <Row
+          icon={<span className="text-[14px] leading-none">✨</span>}
+          label="智能洞察"
+          active={location.hash.startsWith('#/insights')}
+          onClick={() => {
+            setKbView(false)
+            setScope({ kind: 'unified', title: '智能洞察' })
+            location.hash = '#/insights'
+          }}
+        />
         <Row icon={<IconBook width={15} height={15} />} label="知识库" active={kbView} onClick={showKb} />
 
         {accounts.map(acc => {

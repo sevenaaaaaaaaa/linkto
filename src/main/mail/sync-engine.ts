@@ -238,13 +238,13 @@ export class AccountWorker {
         uidValidity
       })
       if (light && this.cycle % 4 !== 0 && special !== 'inbox') continue
-      await this.syncFolder(f.path, special)
+      await this.syncFolder(f.path, special, light)
     }
     this.cycle++
     this.events.changed(this.account.id)
   }
 
-  private async syncFolder(path: string, special: SpecialFolder) {
+  private async syncFolder(path: string, special: SpecialFolder, light = false) {
     const client = this.client
     if (!client) return
     const fid = folderIdOf(this.account.id, path)
@@ -271,7 +271,10 @@ export class AccountWorker {
         }
         this.store.setFolderLastSync(fid, uidNext - 1)
       }
-      await this.refreshFlags(path)
+      // 性能：旗标刷新开销大（全量 FETCH FLAGS），非收件箱文件夹仅在完整轮次执行
+      if (!light || this.cycle % 4 === 0 || special === 'inbox') {
+        await this.refreshFlags(path)
+      }
       const total = Number(mailbox.exists ?? 0)
       const unseen = ((await client.search({ seen: false }, { uid: true })) || []) as number[]
       this.store.updateFolderCounters(fid, total, unseen.length)
@@ -396,7 +399,12 @@ export class AccountWorker {
     if (inserted && special === 'inbox' && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
       this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name ?? env.from.address) : '', category)
     }
-    this.enqueueBody(folderPath, env.uid, env.date)
+    // 性能：仅近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），
+    // 避免初始同步串行下载全量正文拖慢列表可见时间
+    const recentInbox = special === 'inbox' && Date.now() - env.date < 3 * 864e5
+    if (recentInbox && this.bodyQueued.size < 40) {
+      this.enqueueBody(folderPath, env.uid, env.date)
+    }
   }
 
   private enqueueBody(folderPath: string, uid: number, date: number) {
@@ -419,7 +427,7 @@ export class AccountWorker {
         try {
           await this.downloadBody(item.folderPath, item.uid)
         } catch { /* 单条失败不阻塞队列 */ }
-        await sleep(50)
+        await sleep(20)
       }
     } finally {
       this.processingBody = false
