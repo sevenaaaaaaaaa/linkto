@@ -287,7 +287,7 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
           <button
             onClick={send}
             disabled={sending || !accountId}
-            className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-l-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+            className="btn-liquid flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-l-xl disabled:opacity-40"
           >
             <IconSend width={14} height={14} />
             {sending ? '发送中…' : '发送'}
@@ -296,12 +296,13 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
             onClick={() => setSendMenu(m => !m)}
             disabled={!accountId}
             title="延迟 / 定时发送"
-            className="px-2 rounded-r-xl border-l border-white/25 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 text-[10px]"
+            className="btn-liquid px-2 rounded-r-xl border-l border-white/25 disabled:opacity-40 text-[10px]"
+            style={{ borderRadius: '0 12px 12px 0' }}
           >
             ▾
           </button>
           {sendMenu && (
-            <div className="absolute bottom-14 right-5 z-30 w-[290px] glass-strong rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-1.5 pop-in">
+            <div className="absolute bottom-14 right-5 z-30 w-[290px] liquid-glass rounded-[var(--r-md)] p-1.5 pop-in">
               <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                 延迟 / 定时发送
               </div>

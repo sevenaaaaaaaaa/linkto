@@ -67,6 +67,26 @@ export function MailShell() {
     return () => window.removeEventListener('ms:toggle-palette', onToggle)
   }, [])
 
+  // 全局指针跟随高光：为 [data-glow] 元素写入 --mx/--my，让光斑随鼠标在玻璃表面流动
+  useEffect(() => {
+    let raf = 0
+    const onMove = (e: PointerEvent) => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const el = (e.target as HTMLElement).closest?.('[data-glow]') as HTMLElement | null
+        if (!el) return
+        const r = el.getBoundingClientRect()
+        el.style.setProperty('--mx', `${e.clientX - r.left}px`)
+        el.style.setProperty('--my', `${e.clientY - r.top}px`)
+      })
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('pointermove', onMove)
+    }
+  }, [])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
@@ -136,7 +156,7 @@ export function MailShell() {
 
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-40 w-[300px] glass-strong rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-2 pop-in">
+        <div className="fixed bottom-6 right-6 z-40 w-[300px] liquid-glass rounded-[var(--r-md)] p-2 pop-in">
           <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
             发件队列 · {outbox.length}
           </div>
@@ -164,7 +184,7 @@ export function MailShell() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full glass-strong border border-[var(--glass-border)] text-[13px] shadow-[var(--shadow-sm)] fade-in" style={{ color: 'var(--fg)' }}>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full liquid-glass text-[13px] fade-in" style={{ color: 'var(--fg)' }}>
           {toast}
         </div>
       )}

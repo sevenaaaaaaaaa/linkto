@@ -76,15 +76,24 @@ function MessageRow(props: {
       onClick={props.onSelect}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className={`relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-colors duration-150 ${
+      data-glow
+      className={`relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200 ${
         msg.unread ? '' : 'opacity-[0.78]'
       } ${props.indent ? 'pl-10' : ''}`}
       style={{
-        background: props.selected ? 'var(--accent-soft)' : hover ? 'var(--hover)' : 'transparent'
+        background: props.selected
+          ? 'linear-gradient(90deg, var(--accent-soft), transparent 75%)'
+          : hover
+            ? 'var(--hover)'
+            : 'transparent',
+        boxShadow: props.selected ? 'inset 0 1px 0 var(--spec-lo)' : undefined
       }}
     >
       {props.selected && (
-        <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: 'var(--accent)' }} />
+        <span
+          className="absolute left-0 top-[10%] bottom-[10%] w-[3px] rounded-full"
+          style={{ background: 'var(--accent-grad)', boxShadow: '0 0 10px var(--accent)' }}
+        />
       )}
       <div
         className="pt-1"
@@ -126,7 +135,7 @@ function MessageRow(props: {
 
       {/* 悬停快捷操作 */}
       {hover && !props.checked && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1 rounded-full glass-strong border border-[var(--glass-border)] shadow-[var(--shadow-sm)] fade-in">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1 rounded-full liquid-glass fade-in">
           <QuickBtn title={msg.pinned ? '取消置顶' : '置顶'} onClick={e => quick(e, 'pin')} active={msg.pinned}>
             <span className="text-[12px] leading-none">📌</span>
           </QuickBtn>
@@ -190,7 +199,8 @@ function ThreadRow(props: {
         onClick={props.onExpand}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        className="relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-colors"
+        data-glow
+        className="relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200"
         style={{ background: hover ? 'var(--hover)' : 'transparent' }}
       >
         <div
@@ -339,7 +349,13 @@ export function MessageList() {
   return (
     <div className="glass w-[380px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
       <div className="drag-region h-[52px] shrink-0 flex items-center gap-2 px-3">
-        <div className="no-drag flex-1 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2.5 py-1.5 border border-[var(--border-soft)]" style={{ background: 'var(--bg-soft)' }}>
+        <div
+          className="no-drag flex-1 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2.5 py-1.5 transition-shadow duration-200 focus-within:shadow-[0_0_0_3px_var(--accent-soft),0_0_0_1px_var(--accent)]"
+          style={{
+            background: 'var(--bg-soft)',
+            boxShadow: 'inset 0 1px 0 var(--spec-lo), inset 0 0 0 1px var(--border-soft)'
+          }}
+        >
           <IconSearch width={14} height={14} style={{ color: 'var(--faint)' }} />
           <input
             value={searchLocal}
@@ -410,8 +426,7 @@ export function MessageList() {
             onClick={aiOrganize}
             disabled={classifying || !messages.length}
             title="AI 智能整理：分类个人/通知/订阅/噪声"
-            className="no-drag flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-full text-white shadow-sm disabled:opacity-40 hover:opacity-90 transition"
-            style={{ background: 'linear-gradient(120deg, var(--accent), oklch(58% .16 285))' }}
+            className="no-drag btn-liquid flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-full disabled:opacity-40"
           >
             <IconSparkles width={12} height={12} className={classifying ? 'spinning' : ''} />
             {classifying ? '整理中…' : 'AI 整理'}
@@ -594,7 +609,7 @@ function BulkBar(props: {
       <div className="relative" ref={ref}>
         <BulkBtn onClick={() => props.setMoveMenu(!props.moveMenu)}>移动到…</BulkBtn>
         {props.moveMenu && (
-          <div className="absolute top-8 right-0 z-30 w-[230px] max-h-[300px] overflow-y-auto glass-strong rounded-[var(--r-sm)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-1.5 pop-in">
+          <div className="absolute top-8 right-0 z-30 w-[230px] max-h-[300px] overflow-y-auto liquid-glass rounded-[var(--r-sm)] p-1.5 pop-in">
             {accountIds.map(accId => {
               const accFolders = props.folders.filter(f => f.accountId === accId)
               const acc = props.accounts.find(a => a.id === accId)
@@ -683,7 +698,7 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={props.onClose}>
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[6px]" />
       <div
-        className="glass-strong relative w-[560px] max-w-[90vw] max-h-[80vh] overflow-y-auto rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-5 pop-in"
+        className="liquid-glass relative w-[560px] max-w-[90vw] max-h-[80vh] overflow-y-auto rounded-[var(--r-md)] p-5 pop-in"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">

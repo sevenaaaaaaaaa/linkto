@@ -22,17 +22,24 @@ function Row(props: {
   return (
     <button
       onClick={props.onClick}
-      className={`relative w-full flex items-center gap-2 px-3 py-[6px] rounded-[10px] text-[13px] transition-colors ${
+      data-glow
+      className={`relative w-full flex items-center gap-2 px-3 py-[6px] rounded-[12px] text-[13px] transition-all duration-200 ${
         props.active ? 'font-medium' : 'hover:bg-[var(--hover)]'
       }`}
       style={{
         paddingLeft: props.indent ? 12 + props.indent * 16 : undefined,
         background: props.active ? 'var(--accent-soft)' : undefined,
-        color: props.active ? 'var(--accent-strong)' : 'var(--fg)'
+        color: props.active ? 'var(--accent-strong)' : 'var(--fg)',
+        boxShadow: props.active
+          ? 'inset 0 1px 0 var(--spec-lo), inset 0 0 0 1px var(--accent-soft), 0 2px 10px -4px var(--accent-soft)'
+          : undefined
       }}
     >
       {props.active && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] rounded-[3px]" style={{ background: 'var(--accent)' }} />
+        <span
+          className="absolute left-[3px] top-1/2 -translate-y-1/2 w-[3px] h-[16px] rounded-[3px]"
+          style={{ background: 'var(--accent-grad)', boxShadow: '0 0 8px var(--accent)' }}
+        />
       )}
       <span className="shrink-0" style={{ color: props.active ? 'var(--accent)' : props.color ?? 'var(--faint)' }}>
         {props.color ? (
@@ -157,13 +164,8 @@ export function Sidebar() {
       <div className="px-2 pb-2">
         <button
           onClick={() => api.openCompose()}
-          className="no-drag w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[13px] font-semibold active:scale-[.97] transition-all duration-200"
-          style={{
-            background: 'var(--accent)',
-            color: 'var(--on-accent)',
-            boxShadow: '0 4px 16px var(--accent-soft)',
-            fontFamily: 'var(--font-display)'
-          }}
+          className="no-drag btn-liquid w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[13px] font-semibold"
+          style={{ fontFamily: 'var(--font-display)' }}
         >
           <IconCompose width={15} height={15} /> 写邮件
         </button>
@@ -289,7 +291,7 @@ export function Sidebar() {
         <button
           onClick={() => void loadAccounts()}
           title="刷新账户状态"
-          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors"
+          className="icon-btn p-2"
           style={{ color: 'var(--faint)' }}
         >
           <IconLayers width={15} height={15} />
@@ -297,7 +299,7 @@ export function Sidebar() {
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
           title="命令面板（⌘K）"
-          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors text-[11px] font-medium"
+          className="icon-btn p-2 text-[11px] font-medium"
           style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
         >
           ⌘K
@@ -306,7 +308,7 @@ export function Sidebar() {
         <button
           onClick={() => api.openSettings()}
           title="设置（⌘,）"
-          className="p-2 rounded-lg hover:bg-[var(--hover)] transition-colors"
+          className="icon-btn p-2"
           style={{ color: 'var(--faint)' }}
         >
           <IconSettings width={15} height={15} />

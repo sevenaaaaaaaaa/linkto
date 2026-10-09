@@ -52,7 +52,7 @@ export function ThemeMenu() {
       <button
         onClick={() => setOpen(o => !o)}
         title="主题预设（快速切换风格）"
-        className="p-2 rounded-lg text-[15px] leading-none hover:bg-[var(--hover)] transition-colors"
+        className="icon-btn p-2 text-[15px] leading-none"
         style={{ color: 'var(--muted)' }}
       >
         🎨
@@ -60,14 +60,14 @@ export function ThemeMenu() {
       <button
         onClick={cycle}
         title="明暗切换（auto / 浅色 / 深色）"
-        className="p-2 rounded-lg text-[15px] leading-none hover:bg-[var(--hover)] transition-colors"
+        className="icon-btn p-2 text-[15px] leading-none"
         style={{ color: 'var(--muted)' }}
       >
         {pref === 'auto' ? '🌗' : pref === 'light' ? '☀️' : '🌙'}
       </button>
 
       {open && (
-        <div className="glass-strong absolute bottom-10 left-0 z-40 w-[300px] rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-2 pop-in">
+        <div className="liquid-glass absolute bottom-10 left-0 z-40 w-[300px] rounded-[var(--r-md)] p-2 pop-in">
           <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
             主题预设 · 来自 OpenFlow
           </div>

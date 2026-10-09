@@ -71,9 +71,11 @@
   --border-soft: oklch(86% 0.014 80 / 0.55);
   --hover: oklch(22% 0.02 70 / 0.055);
   --hover-strong: oklch(22% 0.02 70 / 0.11);
-  --accent: oklch(52% 0.17 258);
-  --accent-strong: oklch(46% 0.17 258);
-  --accent-soft: oklch(52% 0.17 258 / 0.12);
+  --accent: oklch(54% 0.17 256);
+  --accent-strong: oklch(47% 0.17 256);
+  --accent-soft: oklch(54% 0.17 256 / 0.12);
+  --accent-2: oklch(56% 0.18 300);
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
   --on-accent: oklch(100% 0 0);
   --ok: oklch(58% 0.17 152);
   --ok-soft: oklch(58% 0.17 152 / 0.12);
@@ -84,6 +86,13 @@
   --glass: oklch(100% 0 0 / 0.5);
   --glass-bright: oklch(100% 0 0 / 0.66);
   --glass-border: oklch(100% 0 0 / 0.68);
+  /* Liquid Glass：镜面高光 / 边缘折射 / 内发光 */
+  --spec-hi: oklch(100% 0 0 / 0.75);
+  --spec-lo: oklch(100% 0 0 / 0.28);
+  --edge-hi: oklch(100% 0 0 / 0.55);
+  --edge-lo: oklch(30% 0.04 80 / 0.06);
+  --inner-glow: oklch(100% 0 0 / 0.22);
+  --glow-dot: oklch(100% 0 0 / 0.16);
   --blob-a: oklch(72% 0.12 262 / 0.3);
   --blob-b: oklch(70% 0.13 305 / 0.24);
   --blob-c: oklch(74% 0.11 200 / 0.22);
@@ -114,9 +123,11 @@
   --border-soft: oklch(100% 0 0 / 0.06);
   --hover: oklch(93% 0.008 85 / 0.07);
   --hover-strong: oklch(93% 0.008 85 / 0.13);
-  --accent: oklch(74% 0.13 258);
-  --accent-strong: oklch(80% 0.12 258);
-  --accent-soft: oklch(74% 0.13 258 / 0.15);
+  --accent: oklch(74% 0.13 256);
+  --accent-strong: oklch(80% 0.12 256);
+  --accent-soft: oklch(74% 0.13 256 / 0.15);
+  --accent-2: oklch(72% 0.15 300);
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
   --on-accent: oklch(16% 0.03 260);
   --ok: oklch(74% 0.15 152);
   --ok-soft: oklch(74% 0.15 152 / 0.14);
@@ -127,6 +138,13 @@
   --glass: oklch(30% 0.014 75 / 0.5);
   --glass-bright: oklch(34% 0.014 75 / 0.62);
   --glass-border: oklch(100% 0 0 / 0.15);
+  /* Liquid Glass（深色）：高光更收敛，边缘更亮以勾勒轮廓 */
+  --spec-hi: oklch(100% 0 0 / 0.22);
+  --spec-lo: oklch(100% 0 0 / 0.07);
+  --edge-hi: oklch(100% 0 0 / 0.18);
+  --edge-lo: oklch(0% 0 0 / 0.25);
+  --inner-glow: oklch(100% 0 0 / 0.06);
+  --glow-dot: oklch(100% 0 0 / 0.1);
   --blob-a: oklch(62% 0.13 262 / 0.18);
   --blob-b: oklch(58% 0.14 305 / 0.15);
   --blob-c: oklch(60% 0.12 200 / 0.13);
@@ -234,29 +252,149 @@ body {
   background: var(--bg);
 }
 
-/* OpenFlow 签名：固定环境光斑（蓝 / 紫 / 青 radial）铺在最底层 */
+/* OpenFlow 签名：固定环境光斑（蓝 / 紫 / 青 radial）铺在最底层，缓慢漂移呼吸 */
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
-  z-index: -1;
+  inset: -6%;
+  z-index: -2;
   pointer-events: none;
   background:
     radial-gradient(42% 34% at 82% -6%, var(--blob-a), transparent 70%),
     radial-gradient(36% 30% at -8% 18%, var(--blob-b), transparent 70%),
     radial-gradient(40% 34% at 55% 108%, var(--blob-c), transparent 70%);
+  animation: ambient-drift 52s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-/* 玻璃面板（侧栏 / 卡片 / 弹层通用） */
+/* 第二层光斑：反向漂移，叠加出「液体流动」的深度感 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: -8%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 26% at 18% 88%, var(--blob-b), transparent 70%),
+    radial-gradient(28% 24% at 92% 62%, var(--blob-c), transparent 70%);
+  animation: ambient-drift 64s ease-in-out infinite alternate-reverse;
+  will-change: transform;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-2.5%, 2%, 0) scale(1.05);
+  }
+}
+
+/* ---------- Liquid Glass 材质 ----------
+ * macOS 26+ 液体玻璃：高斯模糊 + 饱和提升 + 顶部镜面高光 + 边缘折射描边 */
 .glass {
   background: var(--surface);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(180%) brightness(1.04);
+  -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.04);
 }
 .glass-strong {
   background: var(--glass-bright);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+  -webkit-backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+}
+
+/* 浮层级液体玻璃：玻璃底 + 镜面高光(::before) + 折射描边 + 柔影 */
+.liquid-glass {
+  position: relative;
+  background: var(--glass-bright);
+  backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+  -webkit-backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+  border: 1px solid var(--edge-hi);
+  box-shadow:
+    inset 0 1px 0 var(--spec-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    inset 0 0 20px var(--inner-glow),
+    0 16px 48px -16px oklch(30% 0.04 80 / 0.25);
+}
+[data-theme='dark'] .liquid-glass {
+  box-shadow:
+    inset 0 1px 0 var(--spec-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    inset 0 0 24px var(--inner-glow),
+    0 16px 48px -16px oklch(0% 0 0 / 0.6);
+}
+/* 顶部弧形镜面高光 —— 液体玻璃的「液面反光」 */
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--spec-lo), transparent 38%);
+}
+
+/* 指针跟随高光（交互创新）：hover 时一束光随鼠标在玻璃表面流动 */
+[data-glow] {
+  position: relative;
+}
+[data-glow]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-out);
+  background: radial-gradient(130px circle at var(--mx, 50%) var(--my, 50%), var(--glow-dot), transparent 70%);
+}
+[data-glow]:hover::after {
+  opacity: 1;
+}
+
+/* 液态按钮：渐变底 + 顶部高光 + 弹簧按压回弹 */
+.btn-liquid {
+  position: relative;
+  overflow: hidden;
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.32),
+    inset 0 -1px 0 oklch(0% 0 0 / 0.12),
+    0 6px 20px -6px var(--accent);
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.25s var(--ease-out), filter 0.2s;
+}
+.btn-liquid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, oklch(100% 0 0 / 0.26), transparent 55%);
+}
+.btn-liquid:hover {
+  filter: brightness(1.07) saturate(1.1);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.4),
+    inset 0 -1px 0 oklch(0% 0 0 / 0.1),
+    0 10px 28px -8px var(--accent);
+  transform: translateY(-1px);
+}
+.btn-liquid:active {
+  transform: scale(0.96);
+  filter: brightness(0.98);
+}
+
+/* 玻璃质感图标按钮（工具栏通用） */
+.icon-btn {
+  border-radius: 10px;
+  transition: background 0.18s var(--ease-out), transform 0.18s var(--ease-spring), color 0.18s;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  transform: translateY(-1px);
+}
+.icon-btn:active {
+  transform: scale(0.92);
 }
 
 /* 兼容层：旧组件里的白色面板 / 灰底统一接入主题变量（预设与深色模式自动生效） */
@@ -283,12 +421,18 @@ body::before {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  background-clip: content-box;
+  transition: background 0.2s;
+}
+:hover::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
-  border-radius: 4px;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-track {
@@ -315,8 +459,26 @@ a:focus-visible,
 button:focus-visible,
 input:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    0 0 0 1px var(--accent);
   border-radius: 9px;
+}
+
+/* 减少动态偏好：关闭光斑漂移与微动画 */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none;
+  }
+  .fade-in,
+  .pop-in {
+    animation-duration: 0.01s;
+  }
+  .btn-liquid,
+  .icon-btn {
+    transition: none;
+  }
 }
 
 @keyframes fade-in {

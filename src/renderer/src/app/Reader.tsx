@@ -365,7 +365,7 @@ export function Reader() {
           <div className="relative">
             <ToolButton onClick={() => setConnectorMenu(m => !m)} icon={<IconPlug width={14} height={14} />} label="分享" />
             {connectorMenu && (
-              <div className="absolute top-8 left-0 z-20 w-52 glass-strong rounded-[var(--r-sm)] shadow-[var(--shadow)] border border-[var(--glass-border)] py-1 fade-in">
+              <div className="absolute top-8 left-0 z-20 w-52 liquid-glass rounded-[var(--r-sm)] py-1 fade-in">
                 {connectors.map(c => (
                   <button
                     key={c.id}
@@ -390,7 +390,7 @@ export function Reader() {
             active={!!skin}
           />
           {styleMenu && (
-            <div className="absolute top-8 right-0 z-20 w-[248px] max-h-[420px] overflow-y-auto glass-strong rounded-[var(--r-md)] shadow-[var(--shadow)] border border-[var(--glass-border)] p-1.5 pop-in">
+            <div className="absolute top-8 right-0 z-20 w-[248px] max-h-[420px] overflow-y-auto liquid-glass rounded-[var(--r-md)] p-1.5 pop-in">
               <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                 阅读风格 · {READING_STYLES.length} 款
               </div>
@@ -578,7 +578,7 @@ export function Reader() {
       </div>
 
       {toast && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full glass-strong border border-[var(--glass-border)] text-[13px] shadow-[var(--shadow-sm)] fade-in" style={{ color: 'var(--fg)' }}>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full liquid-glass text-[13px] fade-in" style={{ color: 'var(--fg)' }}>
           {toast}
         </div>
       )}
@@ -633,10 +633,11 @@ function ToolButton(props: { icon: React.ReactNode; label: string; onClick(): vo
   return (
     <button
       onClick={props.onClick}
-      className="flex items-center gap-1.5 text-[12.5px] px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--hover)] whitespace-nowrap shrink-0"
+      className="icon-btn flex items-center gap-1.5 text-[12.5px] px-2 py-1.5 whitespace-nowrap shrink-0"
       style={{
         color: props.active ? 'var(--warn)' : props.danger ? 'var(--muted)' : 'var(--muted)',
-        background: props.active ? 'var(--warn-soft)' : undefined
+        background: props.active ? 'var(--warn-soft)' : undefined,
+        boxShadow: props.active ? 'inset 0 1px 0 var(--spec-lo)' : undefined
       }}
       onMouseEnter={e => {
         if (props.danger) e.currentTarget.style.color = 'var(--danger)'

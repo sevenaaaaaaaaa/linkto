@@ -175,7 +175,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh]" onClick={props.onClose}>
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[6px]" />
       <div
-        className="glass-strong relative w-[560px] max-w-[86vw] rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] overflow-hidden pop-in"
+        className="liquid-glass relative w-[560px] max-w-[86vw] rounded-[var(--r-md)] overflow-hidden pop-in"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 px-4 h-[52px] border-b border-[var(--border-soft)]">
@@ -207,8 +207,12 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
                   data-active={i === cursor}
                   onMouseEnter={() => setCursor(i)}
                   onClick={() => c.run()}
-                  className="w-full flex items-center gap-2.5 px-4 py-[7px] text-[13px] text-left"
-                  style={{ background: i === cursor ? 'var(--accent-soft)' : 'transparent', color: 'var(--fg)' }}
+                  className="w-full flex items-center gap-2.5 px-4 py-[7px] text-[13px] text-left transition-colors duration-100"
+                  style={{
+                    background: i === cursor ? 'linear-gradient(90deg, var(--accent-soft), transparent 80%)' : 'transparent',
+                    color: 'var(--fg)',
+                    boxShadow: i === cursor ? 'inset 2px 0 0 var(--accent)' : undefined
+                  }}
                 >
                   <span className="shrink-0" style={{ color: i === cursor ? 'var(--accent)' : 'var(--faint)' }}>{c.icon ?? <IconCompose width={13} height={13} className="opacity-0" />}</span>
                   <span className="flex-1 truncate">{c.label}</span>
