@@ -12,7 +12,9 @@ import type {
   MessageQuery,
   Rule,
   SendResult,
-  Signature
+  Signature,
+  ProviderKey,
+  OAuthTokens
 } from '@shared/types'
 import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
@@ -22,10 +24,11 @@ import type { SyncEngine } from './mail/sync-engine'
 import type { MailSender } from './mail/sender'
 import type { AIService } from './ai/service'
 import { BUILTIN_CONNECTORS } from './connectors/builtin'
-import { presetFor, ACCOUNT_COLORS } from './mail/presets'
+import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
+import type { OAuthService } from './oauth'
 import type { Notifier } from './notify'
 import type { AccountWorker } from './mail/sync-engine'
 
@@ -42,6 +45,7 @@ export interface AppContext {
   outbox: Outbox
   insights: InsightsService
   agent: AgentService
+  oauth: OAuthService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openSettings(tab?: string): void
@@ -53,7 +57,13 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth } = ctx
+
+  /** 账户发送凭据：OAuth 账户取 access token，密码账户读密钥 */
+  async function credsFor(account: AccountConfig): Promise<{ pass?: string; accessToken?: string }> {
+    if (account.authType === 'oauth') return { accessToken: await oauth.validToken(account.id, account.provider) }
+    return { pass: ctx.getPassword(account.id) }
+  }
 
   // ---------- 工具 ----------
 
@@ -141,15 +151,23 @@ export function registerIpc(ctx: AppContext) {
           imap: draft.imap,
           smtp: draft.smtp,
           user: draft.user || draft.email,
+          authType: draft.authType ?? 'password',
           createdAt: Date.now()
         }
-        // 先验证再保存
-        const verify = await handlers.verifyAccount([draft], null as never)
-        const v = verify as { ok: boolean; error?: string }
-        if (!v.ok) return v
-        appStore.saveSecret(`acct:${id}`, draft.password)
+        // 先验证再保存（OAuth 账户用 token 实测，密码账户走 IMAP 密码验证）
+        if (draft.authType === 'oauth') {
+          const tokens = JSON.parse(draft.password) as OAuthTokens
+          const verify = (await handlers.verifyAccountOAuth([draft, tokens.accessToken], null as never)) as { ok: boolean; error?: string }
+          if (!verify.ok) return verify
+          oauth.saveTokens(id, tokens)
+        } else {
+          const verify = await handlers.verifyAccount([draft], null as never)
+          const v = verify as { ok: boolean; error?: string }
+          if (!v.ok) return v
+          appStore.saveSecret(`acct:${id}`, draft.password)
+        }
         store.upsertAccount(account)
-        engine.startAccount(account, draft.password)
+        engine.startAccount(account)
         return { ok: true, account }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -199,14 +217,14 @@ export function registerIpc(ctx: AppContext) {
       store.upsertAccount(next)
       if (patch.password) appStore.saveSecret(`acct:${id}`, patch.password)
       sender.drop(id)
-      engine.startAccount(next, patch.password ?? ctx.getPassword(id))
+      engine.startAccount(next)
     },
 
     setAccountEnabled: async ([id, enabled]: [string, boolean]) => {
       const current = accountById(id)
       if (!current) return
       store.upsertAccount({ ...current, enabled })
-      if (enabled) engine.startAccount(current, ctx.getPassword(id))
+      if (enabled) engine.startAccount(current)
       else engine.stopAccount(id)
     },
 
@@ -214,13 +232,108 @@ export function registerIpc(ctx: AppContext) {
       engine.stopAccount(id)
       sender.drop(id)
       appStore.deleteSecret(`acct:${id}`)
+      appStore.deleteSecret(`oauth:${id}`)
       store.deleteAccount(id)
-      appStore.pruneSecrets(new Set(store.listAccounts().map(a => `acct:${a.id}`)))
+      const valid = store.listAccounts()
+      appStore.pruneSecrets(new Set([...valid.map(a => `acct:${a.id}`), ...valid.map(a => `oauth:${a.id}`)]))
     },
 
     syncAccountNow: async ([id]: [string]) => {
       const current = accountById(id)
-      if (current?.enabled) engine.startAccount(current, ctx.getPassword(id))
+      if (current?.enabled) engine.startAccount(current)
+    },
+
+    // ================= OAuth（Gmail / Outlook 一键授权） =================
+
+    getOAuthClientConfig: () => oauth.clients(),
+
+    setOAuthClientConfig: ([cfg]: [Parameters<typeof oauth.saveClients>[0]]) => oauth.saveClients(cfg),
+
+    /** 用 access token 验证 IMAP 连接（OAuth 添加账户时） */
+    verifyAccountOAuth: async ([draft, accessToken]: [AccountDraft, string]) => {
+      const { ImapFlow } = await import('imapflow')
+      const client = new ImapFlow({
+        host: draft.imap.host,
+        port: draft.imap.port,
+        secure: draft.imap.secure,
+        auth: { user: draft.user || draft.email, accessToken },
+        logger: false,
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000
+      })
+      try {
+        await client.connect()
+        return { ok: true }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/auth|login|credentials|invalid/i.test(msg)) return { ok: false, error: 'OAuth 验证失败：token 无效或 scope 不足' }
+        if (/timeout|ETIMEDOUT/i.test(msg)) return { ok: false, error: '连接超时：请检查网络' }
+        return { ok: false, error: msg.slice(0, 160) }
+      } finally {
+        try {
+          client.close()
+        } catch { /* ignore */ }
+      }
+    },
+
+    /**
+     * 一键授权添加账户：Gmail 走回环授权弹窗，Outlook/Hotmail/M365 走设备码授权。
+     * 微软流程中通过 'oauth-device' 事件把 userCode 推给 UI 展示。
+     * 成功后自动建账户并启动同步，返回 { ok, email, accountId? }。
+     */
+    oauthAuthorize: async ([provider]: [ProviderKey]) => {
+      try {
+        let tokens: { accessToken: string; refreshToken?: string; expiresAt: number; email?: string } | undefined
+        let email = ''
+        if (provider === 'gmail') {
+          const res = await oauth.authorizeGoogle()
+          if (!res.ok || !res.tokens) return { ok: false, error: res.error }
+          tokens = res.tokens
+          email = res.email ?? ''
+        } else if (provider === 'outlook' || provider === 'hotmail' || provider === 'office365') {
+          const res = await oauth.authorizeMicrosoft(info => {
+            ctx.event(null as never, { type: 'oauth-device', userCode: info.userCode, verificationUri: info.verificationUri })
+          })
+          if (!res.ok || !res.tokens) return { ok: false, error: res.error }
+          tokens = res.tokens
+          email = res.email ?? ''
+        } else {
+          return { ok: false, error: '该服务商不支持 OAuth，请使用授权码/应用专用密码添加' }
+        }
+        if (!email) return { ok: false, error: '授权成功但未能获取邮箱地址' }
+
+        // 同邮箱重新授权：更新已有账户的 token 并重启同步
+        const existing = store.listAccounts().find(a => a.provider === provider && a.email.toLowerCase() === email.toLowerCase())
+        if (existing && tokens) {
+          oauth.saveTokens(existing.id, tokens)
+          sender.drop(existing.id)
+          engine.startAccount({ ...existing, authType: 'oauth' })
+          return { ok: true, email, accountId: existing.id, reauthorized: true }
+        }
+
+        const preset = PROVIDER_PRESETS.find(p => p.key === provider)!
+        if (!preset.imap || !preset.smtp) return { ok: false, error: '预设缺少服务器配置' }
+        const draft: AccountDraft = {
+          provider,
+          name: `${preset.label}`,
+          email,
+          color: preset.color,
+          imap: preset.imap,
+          smtp: preset.smtp,
+          user: email,
+          password: JSON.stringify(tokens),
+          authType: 'oauth'
+        }
+        // 用 token 实测 IMAP 再入库
+        const verify = (await handlers.verifyAccountOAuth([draft, tokens.accessToken], null as never)) as { ok: boolean; error?: string }
+        if (!verify.ok) return { ok: false, error: verify.error ?? '验证失败' }
+        const added = (await handlers.addAccount([draft], null as never)) as { ok: boolean; error?: string; account?: AccountConfig }
+        if (!added.ok) return { ok: false, error: added.error ?? '添加账户失败' }
+        return { ok: true, email, accountId: added.account?.id }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     },
 
     // ================= 文件夹 / 邮件 =================

@@ -10,6 +10,10 @@ export interface ProviderPreset {
   /** 常见域名自动匹配 */
   domains: string[]
   color: string
+  /** 认证方式：password 授权码/应用专用密码 · oauth-google Google 授权弹窗 · oauth-ms 微软设备码授权 */
+  auth?: 'password' | 'oauth-google' | 'oauth-ms'
+  /** 官方引导页（获取授权码/应用专用密码） */
+  guideUrl?: string
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -20,7 +24,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.gmail.com', port: 993, secure: true },
     smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
     domains: ['gmail.com', 'googlemail.com'],
-    color: '#22c55e'
+    color: '#22c55e',
+    auth: 'oauth-google',
+    guideUrl: 'https://myaccount.google.com/apppasswords'
   },
   {
     key: 'icloud',
@@ -29,7 +35,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.mail.me.com', port: 993, secure: true },
     smtp: { host: 'smtp.mail.me.com', port: 587, secure: false, },
     domains: ['icloud.com', 'me.com', 'mac.com'],
-    color: '#38bdf8'
+    color: '#38bdf8',
+    guideUrl: 'https://account.apple.com/account/manage'
   },
   {
     key: 'outlook',
@@ -38,7 +45,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['outlook.com', 'hotmail.com', 'live.com', 'live.cn'],
-    color: '#0ea5e9'
+    color: '#0ea5e9',
+    auth: 'oauth-ms'
   },
   {
     key: 'office365',
@@ -47,7 +55,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['onmicrosoft.com'],
-    color: '#2563eb'
+    color: '#2563eb',
+    auth: 'oauth-ms'
   },
   {
     key: 'hotmail',
@@ -56,7 +65,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['hotmail.com'],
-    color: '#6366f1'
+    color: '#6366f1',
+    auth: 'oauth-ms'
   },
   {
     key: 'qq',
@@ -65,7 +75,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.qq.com', port: 993, secure: true },
     smtp: { host: 'smtp.qq.com', port: 465, secure: true },
     domains: ['qq.com', 'foxmail.com'],
-    color: '#f59e0b'
+    color: '#f59e0b',
+    guideUrl: 'https://mail.qq.com'
   },
   {
     key: '163',
@@ -74,7 +85,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.163.com', port: 993, secure: true },
     smtp: { host: 'smtp.163.com', port: 465, secure: true },
     domains: ['163.com'],
-    color: '#ef4444'
+    color: '#ef4444',
+    guideUrl: 'https://mail.163.com'
   },
   {
     key: '126',
@@ -83,7 +95,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.126.com', port: 993, secure: true },
     smtp: { host: 'smtp.126.com', port: 465, secure: true },
     domains: ['126.com'],
-    color: '#10b981'
+    color: '#10b981',
+    guideUrl: 'https://www.126.com'
   },
   {
     key: '139',
@@ -92,7 +105,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.139.com', port: 993, secure: true },
     smtp: { host: 'smtp.139.com', port: 465, secure: true },
     domains: ['139.com'],
-    color: '#84cc16'
+    color: '#84cc16',
+    guideUrl: 'https://mail.139.com'
   },
   {
     key: 'sina',
@@ -101,7 +115,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imap: { host: 'imap.sina.com', port: 993, secure: true },
     smtp: { host: 'smtp.sina.com', port: 465, secure: true },
     domains: ['sina.com', 'sina.cn'],
-    color: '#e11d48'
+    color: '#e11d48',
+    guideUrl: 'https://mail.sina.com.cn'
   },
   {
     key: 'custom',

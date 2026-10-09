@@ -113,11 +113,12 @@ export class AccountWorker {
 
   constructor(
     public readonly account: { id: string; name: string; email: string; user: string },
-    private password: string,
     private imap: { host: string; port: number; secure: boolean },
     private store: MailStore,
     private appStore: AppStore,
-    private events: SyncEvents
+    private events: SyncEvents,
+    /** OAuth 账户：取有效 access token（force=true 表示认证失败后强制刷新重试）；空则走密码 */
+    private getToken?: (accountId: string, force?: boolean) => Promise<string>
   ) {}
 
   setRules(rules: Rule[]) {
@@ -135,10 +136,12 @@ export class AccountWorker {
 
   private async loop() {
     let backoff = 3000
+    let forceRefresh = false
     while (this.running) {
       try {
         this.events.status(this.account.id, 'syncing', '连接中…')
-        await this.connect()
+        await this.connect(forceRefresh)
+        forceRefresh = false
         this.events.status(this.account.id, 'syncing', '同步中…')
         await this.syncAllFolders()
         this.events.status(this.account.id, 'connected', '已连接')
@@ -151,6 +154,9 @@ export class AccountWorker {
         }
       } catch (err) {
         if (!this.running) return
+        const msg = err instanceof Error ? err.message : String(err)
+        // OAuth 认证失败 → 下次强制刷新 token 重试；密码错误则原样提示
+        if (this.getToken && /auth|login|credentials|invalid|AUTHENTICATE/i.test(msg)) forceRefresh = true
         this.events.status(this.account.id, 'error', friendlyError(err))
         try {
           this.client?.close()
@@ -162,12 +168,24 @@ export class AccountWorker {
     }
   }
 
-  private async connect() {
+  private async connect(tryForceRefresh = false) {
+    let auth: { user: string; pass?: string; accessToken?: string }
+    if (this.getToken) {
+      try {
+        auth = { user: this.account.user, accessToken: await this.getToken(this.account.id, tryForceRefresh) }
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    } else {
+      const pass = this.appStore.loadSecret(`acct:${this.account.id}`)
+      if (!pass) throw new Error('未找到登录凭证，请重新输入密码')
+      auth = { user: this.account.user, pass }
+    }
     const client = new ImapFlow({
       host: this.imap.host,
       port: this.imap.port,
       secure: this.imap.secure,
-      auth: { user: this.account.user, pass: this.password },
+      auth,
       logger: false,
       tls: { rejectUnauthorized: false },
       connectionTimeout: 20_000,
@@ -628,10 +646,12 @@ export class SyncEngine {
     private store: MailStore,
     private appStore: AppStore,
     private events: SyncEvents,
-    private getRules: () => Rule[]
+    private getRules: () => Rule[],
+    /** 账户凭据（密码 / OAuth access token），由宿主注入；force 表示 OAuth 强制刷新 */
+    private getCredentials: (account: AccountConfig, force?: boolean) => Promise<{ pass?: string; accessToken?: string }> = async () => ({})
   ) {}
 
-  startAccount(account: AccountConfig, password: string) {
+  startAccount(account: AccountConfig) {
     const existing = this.workers.get(account.id)
     if (existing) {
       existing.stop()
@@ -641,17 +661,13 @@ export class SyncEngine {
       this.events.status(account.id, 'disabled', '已停用')
       return
     }
-    if (!password) {
-      this.events.status(account.id, 'error', '未找到登录凭证，请重新输入密码')
-      return
-    }
     const worker = new AccountWorker(
       { id: account.id, name: account.name, email: account.email, user: account.user },
-      password,
       account.imap,
       this.store,
       this.appStore,
-      this.events
+      this.events,
+      account.authType === 'oauth' ? (id, force) => this.getCredentials(account, force).then(c => c.accessToken ?? '') : undefined
     )
     worker.setRules(this.getRules())
     this.workers.set(account.id, worker)

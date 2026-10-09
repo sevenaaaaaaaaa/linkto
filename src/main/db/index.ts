@@ -87,6 +87,7 @@ export class MailStore {
       imap: { host: r.imap_host, port: r.imap_port, secure: !!r.imap_secure },
       smtp: { host: r.smtp_host, port: r.smtp_port, secure: !!r.smtp_secure },
       user: r.user,
+      authType: r.auth_type ?? 'password',
       createdAt: r.created_at
     }))
   }
@@ -95,18 +96,19 @@ export class MailStore {
     this.db
       .prepare(
         `INSERT INTO accounts (id, provider, name, email, color, enabled, signature_id,
-          imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, user, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, user, auth_type, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, name=excluded.name, email=excluded.email,
            color=excluded.color, enabled=excluded.enabled, signature_id=excluded.signature_id,
            imap_host=excluded.imap_host, imap_port=excluded.imap_port, imap_secure=excluded.imap_secure,
-           smtp_host=excluded.smtp_host, smtp_port=excluded.smtp_port, smtp_secure=excluded.smtp_secure, user=excluded.user`
+           smtp_host=excluded.smtp_host, smtp_port=excluded.smtp_port, smtp_secure=excluded.smtp_secure, user=excluded.user,
+           auth_type=excluded.auth_type`
       )
       .run(
         a.id, a.provider, a.name, a.email, a.color, a.enabled ? 1 : 0, a.signatureId,
         a.imap.host, a.imap.port, a.imap.secure ? 1 : 0,
         a.smtp.host, a.smtp.port, a.smtp.secure ? 1 : 0,
-        a.user, a.createdAt
+        a.user, a.authType ?? 'password', a.createdAt
       )
   }
 

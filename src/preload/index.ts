@@ -12,6 +12,7 @@ ipcRenderer.on('event', (_e, payload) => {
 const METHOD_NAMES = [
   'listAccounts', 'addAccount', 'verifyAccount', 'updateAccount', 'setAccountEnabled',
   'deleteAccount', 'syncAccountNow',
+  'getOAuthClientConfig', 'setOAuthClientConfig', 'oauthAuthorize',
   'listFolders', 'getMessages', 'getMessage', 'markRead', 'markFlagged', 'markAnswered',
   'moveMessages', 'moveToFolder', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',

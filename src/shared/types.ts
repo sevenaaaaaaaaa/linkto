@@ -41,6 +41,8 @@ export interface AccountConfig {
   imap: ImapConfig
   smtp: SmtpConfig
   user: string
+  /** 认证方式：password 应用专用密码/授权码 · oauth OAuth 2.0（XOAUTH2） */
+  authType?: 'password' | 'oauth'
   createdAt: number
 }
 
@@ -53,6 +55,25 @@ export interface AccountDraft {
   smtp: SmtpConfig
   user: string
   password: string
+  authType?: 'password' | 'oauth'
+}
+
+// ---------- OAuth（Gmail / Outlook 授权登录） ----------
+
+export interface OAuthTokens {
+  accessToken: string
+  refreshToken?: string
+  /** 过期时间（毫秒时间戳） */
+  expiresAt: number
+  /** 授权的邮箱（从 id_token 解出） */
+  email?: string
+}
+
+export interface OAuthClientConfig {
+  /** Google Cloud OAuth 客户端（桌面应用类型） */
+  google?: { clientId: string; clientSecret: string }
+  /** Azure 应用注册的客户端 ID（公共客户端，无需密钥） */
+  ms?: { clientId: string }
 }
 
 export interface AccountWithStatus extends AccountConfig {

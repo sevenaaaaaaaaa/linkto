@@ -9,6 +9,7 @@ import { Outbox } from './mail/outbox'
 import { AIService } from './ai/service'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
+import { OAuthService } from './oauth'
 import { Notifier, focusMainWindow } from './notify'
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
@@ -22,6 +23,7 @@ let notifier: Notifier
 let outbox: Outbox
 let insights: InsightsService
 let agent: AgentService
+let oauth: OAuthService
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -222,6 +224,12 @@ async function bootstrap() {
     db.exec('ALTER TABLE messages ADD COLUMN pinned INTEGER DEFAULT 0')
     db.exec('ALTER TABLE messages ADD COLUMN pinned_order INTEGER')
   } catch { /* 列已存在 */ }
+  // 旧库迁移：OAuth 认证类型
+  try {
+    db.exec('ALTER TABLE accounts ADD COLUMN auth_type TEXT')
+  } catch { /* 列已存在 */ }
+
+  oauth = new OAuthService(appStore)
 
   sender = new MailSender()
   aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))
@@ -232,6 +240,10 @@ async function bootstrap() {
     engine,
     listAccounts: () => mailStore.listAccounts(),
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`),
+    getCreds: async account =>
+      account.authType === 'oauth'
+        ? { accessToken: await oauth.validToken(account.id, account.provider) }
+        : { pass: appStore.loadSecret(`acct:${account.id}`) },
     event: payload => broadcast(payload)
   })
 
@@ -276,7 +288,14 @@ async function bootstrap() {
         }
       }
     },
-    () => mailStore.listRules()
+    () => mailStore.listRules(),
+    // 账户凭据：OAuth 账户取有效 token（临期自动刷新），密码账户读加密密钥
+    async (account, force) => {
+      if (account.authType === 'oauth') {
+        return { accessToken: await oauth.validToken(account.id, account.provider, force) }
+      }
+      return { pass: appStore.loadSecret(`acct:${account.id}`) }
+    }
   )
 
   notifier = new Notifier(
@@ -335,6 +354,7 @@ async function bootstrap() {
     outbox,
     insights,
     agent,
+    oauth,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
@@ -351,12 +371,20 @@ async function bootstrap() {
       statuses.set(account.id, { status: 'disabled', text: '已停用' })
       continue
     }
+    if (account.authType === 'oauth') {
+      if (!oauth.loadTokens(account.id)) {
+        statuses.set(account.id, { status: 'error', text: 'OAuth 凭证缺失，请重新授权' })
+        continue
+      }
+      engine.startAccount(account)
+      continue
+    }
     const password = appStore.loadSecret(`acct:${account.id}`)
     if (!password) {
       statuses.set(account.id, { status: 'error', text: '未找到登录凭证，请重新输入密码' })
       continue
     }
-    engine.startAccount(account, password)
+    engine.startAccount(account)
   }
   outbox.start()
   // 定期学习：每 30 分钟检查一次是否该生成当日商情

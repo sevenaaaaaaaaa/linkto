@@ -28,7 +28,9 @@ import type {
   BulkTodo,
   AgentMemory,
   ContactProfile,
-  MemoryScope
+  MemoryScope,
+  OAuthClientConfig,
+  ProviderKey
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -41,6 +43,13 @@ export interface LinkToApi {
   setAccountEnabled(id: string, enabled: boolean): Promise<void>
   deleteAccount(id: string): Promise<void>
   syncAccountNow(id: string): Promise<void>
+
+  // ---------- OAuth 一键授权（Gmail / Outlook） ----------
+  /** OAuth 应用凭据（Google client id/secret、Microsoft client id） */
+  getOAuthClientConfig(): Promise<OAuthClientConfig>
+  setOAuthClientConfig(cfg: OAuthClientConfig): Promise<void>
+  /** 一键授权并添加账户；微软设备码流程中监听 'oauth-device' 事件展示 userCode */
+  oauthAuthorize(provider: ProviderKey): Promise<{ ok: boolean; error?: string; email?: string; accountId?: string }>
 
   // ---------- 文件夹与邮件 ----------
   listFolders(): Promise<Folder[]>

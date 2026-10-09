@@ -1,6 +1,6 @@
 import type { AccountConfig, Address, ComposeDraft, SendResult } from '@shared/types'
 import type { MailStore } from '../db'
-import type { MailSender } from './sender'
+import type { MailSender, MailCreds } from './sender'
 import type { SyncEngine } from './sync-engine'
 
 export interface OutboxDraft {
@@ -20,6 +20,8 @@ export interface OutboxDeps {
   engine: SyncEngine
   listAccounts(): AccountConfig[]
   getPassword(accountId: string): string
+  /** 发送凭据（OAuth 账户取 access token，密码账户取密钥） */
+  getCreds(account: AccountConfig): Promise<MailCreds>
   event(payload: unknown): void
 }
 
@@ -70,9 +72,9 @@ export class Outbox {
     const { store, sender, engine } = this.deps
     const account = this.deps.listAccounts().find(a => a.id === draft.accountId)
     if (!account) return { ok: false, error: '账户不存在' }
-    const password = this.deps.getPassword(account.id)
+    const creds = await this.deps.getCreds(account)
     try {
-      const info = await sender.send(account, password, draft)
+      const info = await sender.send(account, creds, draft)
       const row = draft.relatedMessageId ? store.getMessageRow(draft.relatedMessageId) : null
       if (row) {
         const flags = new Set(String(row.flags ?? '').split(' ').filter(Boolean))
