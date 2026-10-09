@@ -51,6 +51,14 @@ export interface LinkToApi {
   /** 一键授权并添加账户；微软设备码流程中监听 'oauth-device' 事件展示 userCode */
   oauthAuthorize(provider: ProviderKey): Promise<{ ok: boolean; error?: string; email?: string; accountId?: string }>
 
+  // ---------- 备份与恢复（账户配置跨设备迁移） ----------
+  listBackupTargets(): Promise<{ id: string; label: string; path: string; available: boolean }[]>
+  createBackup(targetId: string, passphrase: string, includeSecrets: boolean): Promise<{ ok: boolean; error?: string; path?: string; accountCount?: number }>
+  /** 打开文件选择器并返回备份文件头部信息（无需口令） */
+  restoreBackupPick(): Promise<{ ok: boolean; error?: string; path?: string; meta?: { createdAt: number; accountCount: number; hasSecrets: boolean } }>
+  /** 用口令解密并恢复账户 */
+  restoreBackupApply(path: string, passphrase: string): Promise<{ ok: boolean; error?: string; added: string[]; skipped: string[]; failed: string[] }>
+
   // ---------- 文件夹与邮件 ----------
   listFolders(): Promise<Folder[]>
   getMessages(query: MessageQuery): Promise<MessagePage>

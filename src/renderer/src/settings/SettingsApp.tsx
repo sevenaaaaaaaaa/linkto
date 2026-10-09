@@ -7,9 +7,10 @@ import { SignaturesTab, TemplatesTab } from './tabs/ContentTabs'
 import { RulesTab } from './tabs/RulesTab'
 import { AiTab } from './tabs/AiTab'
 import { IntegrationsTab } from './tabs/IntegrationsTab'
+import { BackupTab } from './tabs/BackupTab'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook,
-  IconLayers, IconSparkles, IconPlug
+  IconLayers, IconSparkles, IconPlug, IconArchive
 } from '../components/icons'
 
 const TABS = [
@@ -20,7 +21,8 @@ const TABS = [
   { id: 'templates', label: '模板', icon: IconBook },
   { id: 'rules', label: '规则', icon: IconLayers },
   { id: 'ai', label: 'AI', icon: IconSparkles },
-  { id: 'integrations', label: '集成', icon: IconPlug }
+  { id: 'integrations', label: '集成', icon: IconPlug },
+  { id: 'backup', label: '备份', icon: IconArchive }
 ] as const
 
 export default function SettingsApp() {
@@ -76,6 +78,7 @@ export default function SettingsApp() {
         {tab === 'rules' && <RulesTab />}
         {tab === 'ai' && <AiTab />}
         {tab === 'integrations' && <IntegrationsTab />}
+        {tab === 'backup' && <BackupTab />}
       </div>
     </div>
   )

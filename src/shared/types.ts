@@ -14,6 +14,10 @@ export type ProviderKey =
   | '126'
   | '139'
   | 'sina'
+  | 'exmail'
+  | 'aliyun'
+  | 'yahoo'
+  | 'zoho'
   | 'custom'
 
 export interface ImapConfig {

@@ -119,6 +119,46 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     guideUrl: 'https://mail.sina.com.cn'
   },
   {
+    key: 'exmail',
+    label: '腾讯企业邮',
+    hint: '管理员需在后台开启 IMAP/SMTP 服务；登录密码即客户端密码（安全登录开启时用客户端专用密码）。',
+    imap: { host: 'imap.exmail.qq.com', port: 993, secure: true },
+    smtp: { host: 'smtp.exmail.qq.com', port: 465, secure: true },
+    domains: ['exmail.qq.com'],
+    color: '#0284c7',
+    guideUrl: 'https://work.weixin.qq.com'
+  },
+  {
+    key: 'aliyun',
+    label: '阿里云邮箱',
+    hint: '使用邮箱登录密码；服务器与端口已按官方推荐预填。',
+    imap: { host: 'imap.mxhichina.com', port: 993, secure: true },
+    smtp: { host: 'smtp.mxhichina.com', port: 465, secure: true },
+    domains: ['aliyun.com', 'mxhichina.com'],
+    color: '#f97316',
+    guideUrl: 'https://www.aliyun.com'
+  },
+  {
+    key: 'yahoo',
+    label: 'Yahoo 邮箱',
+    hint: '需要生成「应用密码」（账户安全 → 生成应用密码），不能用登录密码。',
+    imap: { host: 'imap.mail.yahoo.com', port: 993, secure: true },
+    smtp: { host: 'smtp.mail.yahoo.com', port: 465, secure: true },
+    domains: ['yahoo.com', 'yahoo.co.jp'],
+    color: '#7c3aed',
+    guideUrl: 'https://login.yahoo.com/account/security'
+  },
+  {
+    key: 'zoho',
+    label: 'Zoho Mail',
+    hint: '在 设置 → 邮件账户 中开启 IMAP 访问，并使用应用专用密码。',
+    imap: { host: 'imap.zoho.com', port: 993, secure: true },
+    smtp: { host: 'smtp.zoho.com', port: 465, secure: true },
+    domains: ['zoho.com', 'zohomail.com'],
+    color: '#e11d48',
+    guideUrl: 'https://www.zoho.com/mail/help/imap-access.html'
+  },
+  {
     key: 'custom',
     label: '其他账户（IMAP）',
     hint: '填写服务商提供的 IMAP / SMTP 服务器信息。',

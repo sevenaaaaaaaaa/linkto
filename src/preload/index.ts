@@ -13,6 +13,7 @@ const METHOD_NAMES = [
   'listAccounts', 'addAccount', 'verifyAccount', 'updateAccount', 'setAccountEnabled',
   'deleteAccount', 'syncAccountNow',
   'getOAuthClientConfig', 'setOAuthClientConfig', 'oauthAuthorize',
+  'listBackupTargets', 'createBackup', 'restoreBackupPick', 'restoreBackupApply',
   'listFolders', 'getMessages', 'getMessage', 'markRead', 'markFlagged', 'markAnswered',
   'moveMessages', 'moveToFolder', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',

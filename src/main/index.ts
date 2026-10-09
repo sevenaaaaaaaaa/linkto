@@ -10,6 +10,7 @@ import { AIService } from './ai/service'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
 import { OAuthService } from './oauth'
+import { BackupService } from './backup'
 import { Notifier, focusMainWindow } from './notify'
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
@@ -24,6 +25,7 @@ let outbox: Outbox
 let insights: InsightsService
 let agent: AgentService
 let oauth: OAuthService
+let backupService: BackupService
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -298,6 +300,15 @@ async function bootstrap() {
     }
   )
 
+  backupService = new BackupService({
+    store: mailStore,
+    appStore,
+    engine,
+    sender,
+    oauth,
+    event: payload => broadcast(payload)
+  })
+
   notifier = new Notifier(
     () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     {
@@ -355,6 +366,7 @@ async function bootstrap() {
     insights,
     agent,
     oauth,
+    backup: backupService,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),

@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain, dialog, shell, app } from 'electron'
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { BackupService } from './backup'
 import type {
   AccountConfig,
   AccountDraft,
@@ -46,6 +47,7 @@ export interface AppContext {
   insights: InsightsService
   agent: AgentService
   oauth: OAuthService
+  backup: BackupService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openSettings(tab?: string): void
@@ -57,7 +59,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup } = ctx
 
   /** 账户发送凭据：OAuth 账户取 access token，密码账户读密钥 */
   async function credsFor(account: AccountConfig): Promise<{ pass?: string; accessToken?: string }> {
@@ -335,6 +337,17 @@ export function registerIpc(ctx: AppContext) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },
+
+    // ================= 备份与恢复 =================
+
+    listBackupTargets: () => backup.listTargets(),
+
+    createBackup: ([targetId, passphrase, includeSecrets]: [string, string, boolean]) =>
+      backup.exportTo(targetId, passphrase, includeSecrets),
+
+    restoreBackupPick: () => backup.pickForRestore(),
+
+    restoreBackupApply: ([path, passphrase]: [string, string]) => backup.restoreApply(path, passphrase),
 
     // ================= 文件夹 / 邮件 =================
 
