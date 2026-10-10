@@ -94,6 +94,8 @@ export interface LinkToApi {
   notifyTest(): Promise<boolean>
   getAISettings(): Promise<AISettings>
   setAISettings(s: AISettings): Promise<void>
+  aiProbeLocal(): Promise<{ found: boolean; baseURL: string; provider: string; models: string[] }>
+  aiListModels(): Promise<{ models: string[]; error?: string }>
 
   // ---------- 签名 / 模板 / 规则 ----------
   listSignatures(): Promise<Signature[]>

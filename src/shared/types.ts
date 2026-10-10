@@ -293,6 +293,15 @@ export interface AISettings {
   autoInsights: boolean
   /** 每天自动生成当日商情（重点 / digest / 备忘录 / 清理建议）（需 AI） */
   autoDigest: boolean
+  /** 用户自定义咒语：启用后追加到所有 AI 功能的系统提示 */
+  customPrompts: CustomPrompt[]
+}
+
+export interface CustomPrompt {
+  id: string
+  name: string
+  text: string
+  enabled: boolean
 }
 
 export interface AIChatMessage {

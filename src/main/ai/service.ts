@@ -18,7 +18,17 @@ export class AIService {
 
   async stream(requestId: string, messages: AIChatMessage[], onDelta: (delta: string) => void): Promise<string> {
     const s = this.getSettings()
-    if (!s.enabled || !s.apiKey) throw new Error('AI 未启用或未配置 API Key（请在 设置 → AI 中配置）')
+    // 本地推理端点（Ollama / LM Studio / llama.cpp）无需 API Key
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(s.baseURL)
+    if (!s.enabled || (!s.apiKey && !isLocal))
+      throw new Error(isLocal ? 'AI 未启用（请在 设置 → AI 中开启）' : 'AI 未启用或未配置 API Key（请在 设置 → AI 中配置）')
+    // 用户自定义咒语：统一追加到首条系统消息（无系统消息则注入一条）
+    const prompts = (s.customPrompts ?? []).filter(p => p.enabled && p.text.trim()).map(p => p.text.trim()).join('\n\n')
+    const msgs: AIChatMessage[] = prompts
+      ? messages[0]?.role === 'system'
+        ? [{ ...messages[0], content: `${messages[0].content}\n\n${prompts}` }, ...messages.slice(1)]
+        : [{ role: 'system', content: prompts }, ...messages]
+      : messages
     const controller = new AbortController()
     this.aborts.set(requestId, controller)
     let full = ''
@@ -30,7 +40,7 @@ export class AIService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${s.apiKey}`
         },
-        body: JSON.stringify({ model: s.model, messages, stream: true })
+        body: JSON.stringify({ model: s.model, messages: msgs, stream: true })
       })
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')

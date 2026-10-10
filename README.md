@@ -54,7 +54,11 @@ npm run dist       # 打包 dmg（electron-builder）
 
 首次使用：设置 → 账户 → 点击 + → 直接点 **Gmail / Outlook / Hotmail / Microsoft 365** 卡片，浏览器弹窗完成授权即自动添加（OAuth 一键授权，无需输入密码；Gmail 需在「OAuth 应用凭据」里填入你的 Google OAuth 客户端，Outlook 系填入 Azure Client ID）。未配置凭据时自动降级为引导式流程：点服务商卡片 → 按提示打开官方设置页生成应用专用密码/授权码粘贴即可（Gmail / iCloud 需要应用专用密码；QQ / 163 / 139 需要授权码）。
 
-AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ollama），填入 API Key，测试连接。
+AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ollama / LM Studio），填入 API Key，测试连接。
+
+**本地端侧模型**：点「探测本机推理服务」自动发现 Ollama（11434）/ LM Studio（1234）/ llama.cpp（8080），拉取模型列表一键选用；本地端点无需 API Key，邮件内容完全不出本机。推荐端侧小模型：`gemma3:4b`、`qwen3:4b`、`llama3.2:3b`（`brew install --cask ollama && ollama pull gemma3:4b`）。
+
+**自定义咒语**：设置 → AI → 自定义咒语，启用的咒语会追加到所有 AI 功能的系统提示（摘要 / 起草 / 问答 / 商情 / 洞察），如「回复保持简洁正式，不超过 120 字」。
 
 ## Agent（个人 AI Agent）
 

@@ -46,7 +46,8 @@ export const DEFAULT_AI: AISettings = {
   autoClassify: false,
   autoSummary: false,
   autoInsights: true,
-  autoDigest: true
+  autoDigest: true,
+  customPrompts: []
 }
 
 /** 应用级设置 / 密钥 / 附件路径管理 */

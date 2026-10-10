@@ -572,6 +572,52 @@ export function registerIpc(ctx: AppContext) {
     },
     getAISettings: () => appStore.get('ai', DEFAULT_AI),
     setAISettings: ([s]: [AISettings]) => appStore.set('ai', s),
+    /** 探测本机推理服务（Ollama / LM Studio / llama.cpp），返回首个在线端点与模型列表 */
+    aiProbeLocal: async () => {
+      const candidates = [
+        { baseURL: 'http://localhost:11434/v1', provider: 'Ollama', native: 'http://localhost:11434/api/tags' },
+        { baseURL: 'http://127.0.0.1:11434/v1', provider: 'Ollama', native: 'http://127.0.0.1:11434/api/tags' },
+        { baseURL: 'http://localhost:1234/v1', provider: 'LM Studio', native: '' },
+        { baseURL: 'http://127.0.0.1:8080/v1', provider: 'llama.cpp', native: '' }
+      ]
+      const fetchModels = async (url: string): Promise<string[]> => {
+        try {
+          const res = await fetch(url, { signal: AbortSignal.timeout(1200) })
+          if (!res.ok) return []
+          const j = (await res.json()) as { models?: { name?: string; model?: string }[]; data?: { id?: string }[] }
+          if (Array.isArray(j.models)) return j.models.map(m => m.model ?? m.name ?? '').filter(Boolean)
+          if (Array.isArray(j.data)) return j.data.map(m => m.id ?? '').filter(Boolean)
+          return []
+        } catch {
+          return []
+        }
+      }
+      for (const c of candidates) {
+        const models = await fetchModels(c.native || `${c.baseURL}/models`)
+        if (models.length) return { found: true, baseURL: c.baseURL, provider: c.provider, models }
+      }
+      return { found: false, baseURL: '', provider: '', models: [] }
+    },
+    /** 按当前 baseURL 拉取模型列表（OpenAI 兼容 /models，失败回退 Ollama 原生 /api/tags） */
+    aiListModels: async () => {
+      const s = appStore.get('ai', DEFAULT_AI)
+      const base = s.baseURL.replace(/\/+$/, '')
+      const tryFetch = async (url: string, native: boolean): Promise<string[]> => {
+        try {
+          const res = await fetch(url, { signal: AbortSignal.timeout(2000) })
+          if (!res.ok) return []
+          const j = (await res.json()) as { models?: { name?: string; model?: string }[]; data?: { id?: string }[] }
+          if (native && Array.isArray(j.models)) return j.models.map(m => m.model ?? m.name ?? '').filter(Boolean)
+          if (Array.isArray(j.data)) return j.data.map(m => m.id ?? '').filter(Boolean)
+          return []
+        } catch {
+          return []
+        }
+      }
+      let models = await tryFetch(`${base}/models`, false)
+      if (!models.length) models = await tryFetch(`${base.replace(/\/v1$/, '')}/api/tags`, true)
+      return { models, error: models.length ? undefined : '未拉取到模型（服务未在线或端点不支持）' }
+    },
 
     // ================= 签名 / 模板 / 规则 =================
 
