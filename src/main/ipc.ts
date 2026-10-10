@@ -59,7 +59,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier } = ctx
 
   /** 账户发送凭据：OAuth 账户取 access token，密码账户读密钥 */
   async function credsFor(account: AccountConfig): Promise<{ pass?: string; accessToken?: string }> {
@@ -553,6 +553,14 @@ export function registerIpc(ctx: AppContext) {
     setGeneralSettings: ([s]: [GeneralSettings]) => appStore.set('general', s),
     getNotificationSettings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     setNotificationSettings: ([s]: [NotificationSettings]) => appStore.set('notifications', s),
+    notifyTest: async () => {
+      notifier.notify(
+        { accountId: '__test__', messageId: '', subject: '测试通知 🔔', from: '这是一条来自林可兔的通知测试', category: 'personal' },
+        0,
+        true
+      )
+      return true
+    },
     getAISettings: () => appStore.get('ai', DEFAULT_AI),
     setAISettings: ([s]: [AISettings]) => appStore.set('ai', s),
 

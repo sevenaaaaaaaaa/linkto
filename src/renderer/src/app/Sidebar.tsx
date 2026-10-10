@@ -156,9 +156,8 @@ export function Sidebar() {
 
   return (
     <div className="glass w-[248px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
-      <div className="drag-region h-[52px] shrink-0 flex items-end pl-[76px] pb-1.5">
-        <img src="/logo.png" alt="LinkTo" draggable={false} className="w-[22px] h-[22px] rounded-[6px] shadow-[var(--shadow-sm)]" />
-      </div>
+      {/* 仅留窗口拖拽区（红绿灯区域），不再放 logo / 标题 */}
+      <div className="drag-region h-[52px] shrink-0" />
       <div className="px-2 pb-2">
         <button
           onClick={() => api.openCompose()}

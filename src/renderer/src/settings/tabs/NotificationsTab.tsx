@@ -20,6 +20,7 @@ const SOUNDS = [
 export function NotificationsTab() {
   const [s, setS] = useState<NotificationSettings | null>(null)
   const [accounts, setAccounts] = useState<{ id: string; name: string; email: string }[]>([])
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     void api.getNotificationSettings().then(setS)
@@ -60,6 +61,22 @@ export function NotificationsTab() {
       </SettingRow>
       <SettingRow label="通知声音">
         <Toggle checked={s.sound} onChange={v => update({ sound: v })} />
+      </SettingRow>
+      <SettingRow label="测试通知" desc="立即发送一条系统通知，用于确认 macOS 通知权限是否可用">
+        <button
+          onClick={async () => {
+            setTesting(true)
+            try {
+              await api.notifyTest()
+            } finally {
+              setTimeout(() => setTesting(false), 1200)
+            }
+          }}
+          disabled={testing}
+          className="no-drag text-[12.5px] px-3 py-1.5 rounded-lg border border-black/[0.08] bg-white hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {testing ? '已发送' : '发送测试通知'}
+        </button>
       </SettingRow>
 
       <SectionTitle>通知操作</SectionTitle>

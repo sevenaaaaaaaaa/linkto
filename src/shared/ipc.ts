@@ -91,6 +91,7 @@ export interface LinkToApi {
   setGeneralSettings(s: GeneralSettings): Promise<void>
   getNotificationSettings(): Promise<NotificationSettings>
   setNotificationSettings(s: NotificationSettings): Promise<void>
+  notifyTest(): Promise<boolean>
   getAISettings(): Promise<AISettings>
   setAISettings(s: AISettings): Promise<void>
 

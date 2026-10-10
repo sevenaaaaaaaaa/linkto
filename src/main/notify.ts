@@ -1,4 +1,5 @@
 import { Notification, BrowserWindow } from 'electron'
+import { execFile } from 'child_process'
 import type { NotificationSettings } from '@shared/types'
 
 export interface NewMailInfo {
@@ -23,13 +24,13 @@ export class Notifier {
     }
   ) {}
 
-  notify(info: NewMailInfo, unreadTotal: number) {
+  notify(info: NewMailInfo, unreadTotal: number, force = false) {
     const s = this.getSettings()
-    if (!s.enabled) return
+    if (!s.enabled && !force) return
     const per = s.perAccount[info.accountId]
-    if (per && per.enabled === false) return
-    if (s.smart && info.category !== 'personal') return
-    if (!per && s.smart && info.category !== 'personal') return
+    if (!force && per && per.enabled === false) return
+    if (!force && s.smart && info.category !== 'personal') return
+    if (!force && !per && s.smart && info.category !== 'personal') return
 
     const title = info.subject || '（无主题）'
     const body = info.from
@@ -48,7 +49,32 @@ export class Notifier {
     })
     notification.on('click', () => this.handlers.focus())
     notification.show()
+    // macOS 未签名应用无法显示系统通知（UNUserNotificationCenter 需要签名 bundle）。
+    // 触发 'failed' 或 1.5s 内未 'show' 则降级为 AppleScript 通知（经通知中心，点击不可定位窗口）。
+    let shown = false
+    const fallback = () => {
+      if (shown) return
+      shown = true
+      this.appleScriptNotify(title, body)
+    }
+    const timer = setTimeout(fallback, 1500)
+    notification.on('show', () => {
+      shown = true
+      clearTimeout(timer)
+    })
+    notification.on('failed', () => {
+      clearTimeout(timer)
+      fallback()
+    })
     void unreadTotal
+  }
+
+  /** AppleScript 兜底：display notification 走系统通知中心（宿主为 Script Editor） */
+  private appleScriptNotify(title: string, body: string) {
+    if (process.platform !== 'darwin') return
+    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const script = `display notification "${esc(body)}" with title "林可兔 LinkTo" subtitle "${esc(title)}"`
+    execFile('osascript', ['-e', script], () => {})
   }
 
   private async runAction(action: string, info: NewMailInfo) {

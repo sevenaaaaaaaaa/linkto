@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
-import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder } from '../components/icons'
+import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
@@ -280,7 +280,21 @@ export function MessageList() {
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [moveMenu, setMoveMenu] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
+  const [narrow, setNarrow] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+
+  // 工具栏响应式：宽度不足时按钮只留图标（文字收进 title 提示），避免挤压标题
+  useEffect(() => {
+    const el = toolbarRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 0
+      setNarrow(w < 620)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // 当前视图下账户的实时同步进度（来自 sync-progress 事件）
   const progressText = useMemo(() => {
@@ -395,7 +409,7 @@ export function MessageList() {
         </div>
       </div>
 
-      <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-soft)]">
+      <div ref={toolbarRef} className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-soft)]">
         {/* 全选 */}
         <button
           onClick={selectAll}
@@ -418,31 +432,50 @@ export function MessageList() {
           </span>
         )}
         <div className="flex-1" />
-        {/* 会话聚合 */}
+        {/* 会话聚合（窄屏只留图标） */}
         <button
           onClick={() => setGroupThreads(!groupThreads)}
           title="按会话聚合"
-          className="text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1"
+          className={`text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${narrow ? 'px-1.5' : ''}`}
           style={{
             borderColor: groupThreads ? 'var(--accent)' : 'var(--border)',
             color: groupThreads ? 'var(--accent-strong)' : 'var(--muted)',
             background: groupThreads ? 'var(--accent-soft)' : 'transparent'
           }}
         >
-          <IconChat width={11} height={11} /> 会话
+          <IconChat width={11} height={11} />
+          {!narrow && '会话'}
         </button>
-        {/* 排序 */}
-        <select
-          value={sort}
-          onChange={e => setSort(e.target.value as ListSort)}
-          title="排序方式"
-          className="no-drag text-[11.5px] rounded-full px-2 py-1 outline-none border"
-          style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)', color: sort === 'smart' ? 'var(--accent-strong)' : 'var(--muted)' }}
-        >
-          {(Object.keys(SORT_LABEL) as ListSort[]).map(s => (
-            <option key={s} value={s}>{SORT_LABEL[s]}</option>
-          ))}
-        </select>
+        {/* 排序（窄屏换成图标循环切换） */}
+        {narrow ? (
+          <button
+            onClick={() => {
+              const ks = Object.keys(SORT_LABEL) as ListSort[]
+              setSort(ks[(ks.indexOf(sort) + 1) % ks.length])
+            }}
+            title={`排序：${SORT_LABEL[sort]}（点击切换）`}
+            className="text-[11.5px] px-1.5 py-1 rounded-full border inline-flex items-center"
+            style={{
+              borderColor: sort === 'smart' ? 'var(--accent)' : 'var(--border)',
+              color: sort === 'smart' ? 'var(--accent-strong)' : 'var(--muted)',
+              background: sort === 'smart' ? 'var(--accent-soft)' : 'transparent'
+            }}
+          >
+            {sort === 'smart' ? <IconSparkles width={12} height={12} /> : sort === 'unread' ? <IconInbox width={12} height={12} /> : <IconClock width={12} height={12} />}
+          </button>
+        ) : (
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value as ListSort)}
+            title="排序方式"
+            className="no-drag text-[11.5px] rounded-full px-2 py-1 outline-none border"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)', color: sort === 'smart' ? 'var(--accent-strong)' : 'var(--muted)' }}
+          >
+            {(Object.keys(SORT_LABEL) as ListSort[]).map(s => (
+              <option key={s} value={s}>{SORT_LABEL[s]}</option>
+            ))}
+          </select>
+        )}
         {(scope.kind === 'unified' || scope.kind === 'folder' || scope.kind === 'category') && (
           <button
             onClick={aiOrganize}
@@ -451,7 +484,7 @@ export function MessageList() {
             className="no-drag btn-liquid flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-full disabled:opacity-40"
           >
             <IconSparkles width={12} height={12} className={classifying ? 'spinning' : ''} />
-            {classifying ? '整理中…' : 'AI 整理'}
+            {!narrow && (classifying ? '整理中…' : 'AI 整理')}
           </button>
         )}
       </div>
