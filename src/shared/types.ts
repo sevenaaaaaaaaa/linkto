@@ -394,6 +394,7 @@ export type MailEvent =
   | { type: 'outbox-changed' }
   | { type: 'mail-sent'; subject: string; to: string }
   | { type: 'insights-changed' }
+  | { type: 'connectors-changed' }
 
 // ---------- 智能洞察 ----------
 

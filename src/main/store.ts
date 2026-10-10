@@ -55,6 +55,7 @@ export class AppStore {
   readonly dataDir: string
   readonly attachmentDir: string
   readonly emlDir: string
+  readonly connectorsDir: string
   readonly dbPath: string
   private kv!: DatabaseSync
 
@@ -63,9 +64,11 @@ export class AppStore {
     this.dataDir = join(app.getPath('userData'), 'mail-studio')
     this.attachmentDir = join(this.dataDir, 'attachments')
     this.emlDir = join(this.dataDir, 'eml')
+    this.connectorsDir = join(this.dataDir, 'connectors')
     this.dbPath = join(this.dataDir, 'mail.db')
     mkdirSync(this.attachmentDir, { recursive: true })
     mkdirSync(this.emlDir, { recursive: true })
+    mkdirSync(this.connectorsDir, { recursive: true })
     const secretDir = join(this.dataDir, 'secrets')
     mkdirSync(secretDir, { recursive: true })
     this.secretDir = secretDir

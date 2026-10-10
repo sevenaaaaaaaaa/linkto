@@ -25,6 +25,7 @@ import type { SyncEngine } from './mail/sync-engine'
 import type { MailSender } from './mail/sender'
 import type { AIService } from './ai/service'
 import { BUILTIN_CONNECTORS } from './connectors/builtin'
+import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
@@ -933,12 +934,34 @@ export function registerIpc(ctx: AppContext) {
 
     // ================= 连接器 =================
 
-    listConnectorManifests: () => BUILTIN_CONNECTORS.map(c => c.manifest),
+    listConnectorManifests: () => [...BUILTIN_CONNECTORS.map(c => c.manifest), ...loadUserConnectors(ctx.appStore).map(c => c.manifest)],
+
+    listUserConnectors: () => listUserConnectorFiles(ctx.appStore),
+
+    installUserConnector: async ([jsonText]: [string]) => {
+      const res = installUserConnector(ctx.appStore, jsonText)
+      if (res.ok) ctx.event(null as never, { type: 'connectors-changed' })
+      return res
+    },
+
+    removeUserConnector: async ([id]: [string]) => {
+      const res = removeUserConnector(ctx.appStore, id)
+      if (res.ok) {
+        // 顺带清理该连接器的实例配置
+        for (const inst of store.listConnectorInstances().filter(i => i.manifestId === id)) {
+          store.deleteConnectorInstance(inst.id)
+        }
+        ctx.event(null as never, { type: 'connectors-changed' })
+      }
+      return res
+    },
+
+    getUserConnectorTemplate: () => USER_CONNECTOR_TEMPLATE,
 
     listConnectorInstances: () => store.listConnectorInstances(),
 
     connectConnector: async ([manifestId, config]: [string, Record<string, string>]) => {
-      const manifest = BUILTIN_CONNECTORS.find(c => c.manifest.id === manifestId)
+      const manifest = [...BUILTIN_CONNECTORS, ...loadUserConnectors(ctx.appStore)].find(c => c.manifest.id === manifestId)
       if (!manifest) return { ok: false, error: '未知连接器' }
       const required = manifest.manifest.settingsFields?.filter(f => f.required) ?? []
       for (const f of required) {
@@ -953,8 +976,8 @@ export function registerIpc(ctx: AppContext) {
     runConnectorAction: async ([instanceId, actionId, params, messageId]: [string, string, Record<string, string>, string | undefined]) => {
       const instance = store.listConnectorInstances().find(i => i.id === instanceId)
       if (!instance) return { ok: false, error: '连接器未配置' }
-      const builtin = BUILTIN_CONNECTORS.find(c => c.manifest.id === instance.manifestId)
-      if (!builtin) return { ok: false, error: '未知连接器' }
+      const connector = [...BUILTIN_CONNECTORS, ...loadUserConnectors(ctx.appStore)].find(c => c.manifest.id === instance.manifestId)
+      if (!connector) return { ok: false, error: '未知连接器' }
       let payload: unknown = params
       if (messageId) {
         const full = store.getMessageFull(messageId)
@@ -971,7 +994,7 @@ export function registerIpc(ctx: AppContext) {
         }
       }
       try {
-        const result = await builtin.exec(actionId, params, instance.config, payload)
+        const result = await connector.exec(actionId, params, instance.config, payload)
         return { ok: true, result }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

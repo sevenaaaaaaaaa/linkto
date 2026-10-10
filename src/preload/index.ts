@@ -28,7 +28,7 @@ const METHOD_NAMES = [
   'insightExtract', 'generateDaily', 'companyInsight', 'listCompanyDomains',
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
-  'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction',
+  'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'openSettings', 'openCompose', 'getVersions', 'quit'

@@ -154,6 +154,11 @@ export interface LinkToApi {
   connectConnector(manifestId: string, config: Record<string, string>): Promise<{ ok: boolean; error?: string }>
   disconnectConnector(instanceId: string): Promise<void>
   runConnectorAction(instanceId: string, actionId: string, params: Record<string, string>, messageId?: string): Promise<{ ok: boolean; error?: string; result?: unknown }>
+  /** 用户自定义连接器：安装（粘贴 JSON）/ 清单 / 卸载 / 示例模板 */
+  installUserConnector(jsonText: string): Promise<{ ok: boolean; error?: string; id?: string }>
+  listUserConnectors(): Promise<{ id: string; name: string; error?: string }[]>
+  removeUserConnector(id: string): Promise<{ ok: boolean; error?: string }>
+  getUserConnectorTemplate(): Promise<string>
 
   // ---------- Newsletter ----------
   unsubscribe(messageId: string, method: 'http' | 'mailto'): Promise<{ ok: boolean; error?: string }>
