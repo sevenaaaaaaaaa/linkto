@@ -20,6 +20,7 @@
     "@tiptap/starter-kit": "^3.31.4",
     "imapflow": "^2.2.6",
     "mailparser": "^3.9.36",
+    "node-llama-cpp": "^3.22.1",
     "nodemailer": "^10.0.15",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

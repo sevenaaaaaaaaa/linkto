@@ -56,7 +56,9 @@ npm run dist       # 打包 dmg（electron-builder）
 
 AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ollama / LM Studio），填入 API Key，测试连接。
 
-**本地端侧模型**：点「探测本机推理服务」自动发现 Ollama（11434）/ LM Studio（1234）/ llama.cpp（8080），拉取模型列表一键选用；本地端点无需 API Key，邮件内容完全不出本机。推荐端侧小模型：`gemma3:4b`、`qwen3:4b`、`llama3.2:3b`（`brew install --cask ollama && ollama pull gemma3:4b`）。
+**本地端侧模型**：两种方式——
+1. **内置引擎（推荐，开箱即用）**：设置 → AI → 内置引擎，选一个模型点「下载」（断点续传，国内走镜像加速），下载完点「启用」。应用自带 node-llama-cpp 推理（Metal GPU 加速），无需安装 Ollama，断网可用，内容完全不出本机。推荐 `Gemma 3 4B` / `Qwen3 4B`（q4 量化，约 2–2.5 GB）。
+2. **外接 Ollama / LM Studio**：点「探测本机推理服务」自动发现（11434/1234/8080），拉取模型列表一键选用；本地端点无需 API Key。
 
 **自定义咒语**：设置 → AI → 自定义咒语，启用的咒语会追加到所有 AI 功能的系统提示（摘要 / 起草 / 问答 / 商情 / 洞察），如「回复保持简洁正式，不超过 120 字」。
 

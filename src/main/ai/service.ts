@@ -10,14 +10,26 @@ interface SSEPart {
   error?: { message?: string }
 }
 
-/** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可） */
+/** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()
+  private local: { stream(modelId: string, messages: AIChatMessage[], onDelta: (d: string) => void): Promise<string> } | null = null
 
   constructor(private getSettings: () => AISettings) {}
 
+  /** 注入内置本地推理引擎（LocalEngine），在 bootstrap 时调用 */
+  attachLocalEngine(engine: NonNullable<AIService['local']>) {
+    this.local = engine
+  }
+
   async stream(requestId: string, messages: AIChatMessage[], onDelta: (delta: string) => void): Promise<string> {
     const s = this.getSettings()
+    // 内置本地引擎：模型推理完全在本机，无需 Key、断网可用
+    if (s.baseURL === 'builtin-local') {
+      if (!s.enabled) throw new Error('AI 未启用（请在 设置 → AI 中开启）')
+      if (!this.local) throw new Error('本地引擎初始化失败')
+      return this.local.stream(s.model, messages, onDelta)
+    }
     // 本地推理端点（Ollama / LM Studio / llama.cpp）无需 API Key
     const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(s.baseURL)
     if (!s.enabled || (!s.apiKey && !isLocal))

@@ -6,7 +6,9 @@ directories:
 files:
   - out/**
   - package.json
-asarUnpack: []
+asarUnpack:
+  - node_modules/node-llama-cpp/**
+  - node_modules/@node-llama-cpp/**
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns

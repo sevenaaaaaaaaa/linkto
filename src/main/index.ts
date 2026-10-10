@@ -7,6 +7,7 @@ import { SyncEngine, friendlyError } from './mail/sync-engine'
 import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
 import { AIService } from './ai/service'
+import { LocalEngine } from './ai/local-engine'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
 import { OAuthService } from './oauth'
@@ -20,6 +21,7 @@ let appStore: AppStore
 let mailStore: MailStore
 let engine: SyncEngine
 let sender: MailSender
+let localEngine: LocalEngine
 let aiService: AIService
 let notifier: Notifier
 let outbox: Outbox
@@ -244,7 +246,9 @@ async function bootstrap() {
   oauth = new OAuthService(appStore)
 
   sender = new MailSender()
+  localEngine = new LocalEngine(appStore)
   aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))
+  aiService.attachLocalEngine(localEngine)
 
   outbox = new Outbox({
     store: mailStore,
@@ -371,6 +375,7 @@ async function bootstrap() {
     engine,
     sender,
     ai: aiService,
+    localEngine,
     notifier,
     outbox,
     insights,

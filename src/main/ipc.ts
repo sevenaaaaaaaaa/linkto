@@ -33,6 +33,7 @@ import type { AgentService } from './ai/agent'
 import type { OAuthService } from './oauth'
 import type { Notifier } from './notify'
 import { applyLoginItem } from './native-integration'
+import { LocalEngine, type DownloadProgress } from './ai/local-engine'
 import type { AccountWorker } from './mail/sync-engine'
 
 const SEP = '::'
@@ -44,6 +45,7 @@ export interface AppContext {
   engine: SyncEngine
   sender: MailSender
   ai: AIService
+  localEngine: LocalEngine
   notifier: Notifier
   outbox: Outbox
   insights: InsightsService
@@ -61,7 +63,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine } = ctx
 
   /** 账户发送凭据：OAuth 账户取 access token，密码账户读密钥 */
   async function credsFor(account: AccountConfig): Promise<{ pass?: string; accessToken?: string }> {
@@ -573,6 +575,18 @@ export function registerIpc(ctx: AppContext) {
     },
     getAISettings: () => appStore.get('ai', DEFAULT_AI),
     setAISettings: ([s]: [AISettings]) => appStore.set('ai', s),
+    // ---- 内置本地引擎 ----
+    aiLocalStatus: () => localEngine.localStatus(),
+    aiLocalDownload: async ([modelId]: [string]) => {
+      const onProgress = (p: DownloadProgress) => ctx.event(null as never, { type: 'ai-local-download', ...p })
+      const res = await localEngine.download(modelId, onProgress)
+      return res
+    },
+    aiLocalCancelDownload: () => {
+      localEngine.cancelDownload()
+      return true
+    },
+    aiLocalRemove: ([modelId]: [string]) => localEngine.removeModel(modelId),
     /** 探测本机推理服务（Ollama / LM Studio / llama.cpp），返回首个在线端点与模型列表 */
     aiProbeLocal: async () => {
       const candidates = [

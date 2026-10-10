@@ -18,7 +18,7 @@ const METHOD_NAMES = [
   'moveMessages', 'moveToFolder', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
   'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
-  'getGeneralSettings', 'setGeneralSettings', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels',
+  'getGeneralSettings', 'setGeneralSettings', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove',
   'listSignatures', 'saveSignature', 'deleteSignature',
   'listTemplates', 'saveTemplate', 'deleteTemplate',
   'listRules', 'saveRule', 'deleteRule', 'reorderRules',

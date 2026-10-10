@@ -395,6 +395,7 @@ export type MailEvent =
   | { type: 'mail-sent'; subject: string; to: string }
   | { type: 'insights-changed' }
   | { type: 'connectors-changed' }
+  | { type: 'ai-local-download'; modelId: string; received: number; total: number; percent: number; done?: boolean; error?: string }
 
 // ---------- 智能洞察 ----------
 

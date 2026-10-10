@@ -96,6 +96,11 @@ export interface LinkToApi {
   setAISettings(s: AISettings): Promise<void>
   aiProbeLocal(): Promise<{ found: boolean; baseURL: string; provider: string; models: string[] }>
   aiListModels(): Promise<{ models: string[]; error?: string }>
+  /** 内置本地引擎（node-llama-cpp + Metal） */
+  aiLocalStatus(): Promise<{ models: { id: string; label: string; desc: string; downloaded: boolean; sizeBytes: number; sizeText: string }[] }>
+  aiLocalDownload(modelId: string): Promise<{ ok: boolean; error?: string }>
+  aiLocalCancelDownload(): Promise<boolean>
+  aiLocalRemove(modelId: string): Promise<{ ok: boolean; error?: string }>
 
   // ---------- 签名 / 模板 / 规则 ----------
   listSignatures(): Promise<Signature[]>

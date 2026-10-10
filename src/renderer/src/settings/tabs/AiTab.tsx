@@ -22,9 +22,34 @@ export function AiTab() {
   const [probeInfo, setProbeInfo] = useState<{ provider: string; baseURL: string; models: string[] } | null>(null)
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [fetchMsg, setFetchMsg] = useState('')
+  const [localModels, setLocalModels] = useState<{ id: string; label: string; desc: string; downloaded: boolean; sizeBytes: number; sizeText: string }[]>([])
+  const [dl, setDl] = useState<{ modelId: string; percent: number; done: boolean; error?: string } | null>(null)
 
+  const reloadLocal = () => void api.aiLocalStatus().then(r => setLocalModels(r.models))
   useEffect(() => {
     void api.getAISettings().then(setS)
+    reloadLocal()
+  }, [])
+  // 下载进度事件 → 进度条 / 完成刷新
+  useEffect(() => {
+    const off = api.onEvent(raw => {
+      const e = raw as { type?: string; modelId?: string; received?: number; total?: number; done?: boolean; error?: string }
+      if (e.type !== 'ai-local-download') return
+      const total = e.total ?? 0
+      const received = e.received ?? 0
+      setDl({ modelId: e.modelId ?? '', percent: e.done ? 100 : total ? Math.round((received / total) * 100) : 0, done: !!e.done, error: e.error })
+      if (e.done) {
+        if (e.error) {
+          // 失败信息保留一段时间供用户看到
+          setDl({ modelId: e.modelId ?? '', percent: 0, done: true, error: e.error })
+          setTimeout(() => setDl(null), 6000)
+        } else {
+          setDl(null)
+          reloadLocal()
+        }
+      }
+    })
+    return () => { off?.() }
   }, [])
 
   if (!s) return null
@@ -34,7 +59,8 @@ export function AiTab() {
     void api.setAISettings(next)
   }
 
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(s.baseURL)
+  const isBuiltinLocal = s.baseURL === 'builtin-local'
+  const isLocal = isBuiltinLocal || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(s.baseURL)
 
   const probeLocal = async () => {
     setProbe('probing')
@@ -118,6 +144,69 @@ export function AiTab() {
                 {p.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 内置本地引擎：开箱即用（模型按需下载，无需安装 Ollama） */}
+        <div className="py-3 border-b border-black/[0.04]">
+          <div className="flex items-center gap-3">
+            <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">内置引擎</span>
+            <span className="text-[12px] text-zinc-500 flex-1">应用自带推理（Metal GPU 加速），模型下载到本机，无需安装 Ollama、断网可用、内容不出机</span>
+          </div>
+          <div className="mt-2 ml-[112px] space-y-2">
+            {localModels.map(m => {
+              const active = isBuiltinLocal && s.model === m.id
+              const downloading = dl?.modelId === m.id && !dl.done
+              return (
+                <div key={m.id} className="flex items-center gap-2.5 rounded-xl bg-zinc-50 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-zinc-800">{m.label}</span>
+                      <span className="text-[11.5px] text-zinc-400">{m.desc} · {m.sizeText}</span>
+                      {active && <span className="text-[11px] px-1.5 py-px rounded bg-green-100 text-green-600">使用中</span>}
+                      {m.downloaded && !active && <span className="text-[11px] text-zinc-400">已下载</span>}
+                    </div>
+                    {downloading && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-zinc-200 overflow-hidden">
+                          <div className="h-full bg-blue-600 transition-all" style={{ width: `${dl?.percent ?? 0}%` }} />
+                        </div>
+                        <span className="text-[11.5px] text-zinc-500 tabular-nums w-9">{dl?.percent ?? 0}%</span>
+                        <button onClick={() => void api.aiLocalCancelDownload()} className="text-[11.5px] text-zinc-400 hover:text-red-500">取消</button>
+                      </div>
+                    )}
+                    {dl?.done && dl.error && dl.modelId === m.id && <div className="text-[11.5px] text-red-500 mt-1">{dl.error}</div>}
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {downloading ? null : m.downloaded ? (
+                      <>
+                        {!active && (
+                          <button onClick={() => update({ baseURL: 'builtin-local', model: m.id })} className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                            启用
+                          </button>
+                        )}
+                        <button
+                          onClick={async () => {
+                            await api.aiLocalRemove(m.id)
+                            reloadLocal()
+                          }}
+                          className="text-[12px] text-zinc-400 hover:text-red-500"
+                        >
+                          删除
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void api.aiLocalDownload(m.id)}
+                        className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                      >
+                        下载
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
