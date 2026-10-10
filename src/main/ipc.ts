@@ -8,6 +8,7 @@ import type {
   AccountDraft,
   AIChatMessage,
   Attachment,
+  CloudDriveConfig,
   ComposeDraft,
   KbItem,
   MessageQuery,
@@ -26,6 +27,7 @@ import type { MailSender } from './mail/sender'
 import type { AIService } from './ai/service'
 import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
+import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
@@ -1014,6 +1016,51 @@ export function registerIpc(ctx: AppContext) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },
+
+    // ================= 网盘备份 =================
+
+    listCloudDrives: () => listDrives(ctx.appStore),
+
+    saveCloudDrive: async ([cfg, secret]: [CloudDriveConfig, string]) => {
+      const res = saveDrive(ctx.appStore, { ...cfg, id: cfg.id || randomUUID() }, secret)
+      if (res.ok) {
+        // 保存成功即自动测一次连接，把结果透出给 UI
+        const probe = await driveTest(ctx.appStore, cfg.id)
+        return probe.ok ? { ok: true } : { ok: true, error: `已保存，但连接测试未通过：${probe.error ?? '未知原因'}` }
+      }
+      return res
+    },
+
+    removeCloudDrive: ([id]: [string]) => removeDrive(ctx.appStore, id),
+
+    testCloudDrive: ([id]: [string]) => driveTest(ctx.appStore, id),
+
+    cloudUpload: async ([messageId, driveId, what, attachmentId]: [string, string, 'eml' | 'attachment' | 'attachments', string | undefined]) => {
+      const full = ctx.store.getMessageFull(messageId)
+      if (!full) return { ok: false, error: '邮件不存在' }
+      if (what === 'eml') {
+        const p = ctx.appStore.emlPath(full.accountId, full.folderPath, full.uid)
+        return uploadEml(ctx.appStore, p, full.subject, full.uid, full.date, driveId)
+      }
+      if (what === 'attachment') {
+        const att = full.attachments.find(a => a.id === attachmentId)
+        if (!att) return { ok: false, error: '附件不存在' }
+        return uploadAttachment(ctx.appStore, ctx.appStore.attachmentPath(att.id), att.filename, driveId)
+      }
+      // 全部附件
+      const atts = full.attachments.filter(a => !a.inline)
+      if (!atts.length) return { ok: false, error: '这封邮件没有附件' }
+      let okCount = 0
+      let lastErr = ''
+      for (const att of atts) {
+        const res = await uploadAttachment(ctx.appStore, ctx.appStore.attachmentPath(att.id), att.filename, driveId)
+        if (res.ok) okCount++
+        else lastErr = res.error ?? '未知错误'
+      }
+      return okCount ? { ok: true, count: okCount, error: okCount < atts.length ? `${atts.length - okCount} 个失败：${lastErr}` : undefined } : { ok: false, error: lastErr }
+    },
+
+    cloudSyncEml: ([driveId]: [string]) => syncEmlMirror(ctx.appStore, driveId),
 
     // ================= Newsletter =================
 

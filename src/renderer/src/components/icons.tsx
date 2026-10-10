@@ -264,6 +264,12 @@ export const IconClock = (p: P) => (
   </svg>
 )
 
+export const IconCloud = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6.5 19a4.5 4.5 0 0 1-.42-8.98 6 6 0 0 1 11.7-1.6A4.3 4.3 0 0 1 17.7 19H6.5z" />
+  </svg>
+)
+
 export const IconPalette = (p: P) => (
   <svg {...base(p)}>
     <circle cx="13.5" cy="6.5" r="0.9" fill="currentColor" stroke="none" />

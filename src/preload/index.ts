@@ -29,6 +29,7 @@ const METHOD_NAMES = [
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
+  'listCloudDrives', 'saveCloudDrive', 'removeCloudDrive', 'testCloudDrive', 'cloudUpload', 'cloudSyncEml',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'openSettings', 'openCompose', 'getVersions', 'quit'

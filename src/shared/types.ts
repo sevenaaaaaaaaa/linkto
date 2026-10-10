@@ -359,6 +359,22 @@ export interface ConnectorInstance {
   config: Record<string, string>
 }
 
+// ---------- 网盘备份（WebDAV / Dropbox，存 eml 原文与附件） ----------
+
+export type CloudDriveKind = 'webdav' | 'dropbox'
+
+export interface CloudDriveConfig {
+  id: string
+  kind: CloudDriveKind
+  name: string
+  /** WebDAV 服务器根 URL（如 https://nas.local:5006）；Dropbox 留空 */
+  url: string
+  /** WebDAV 用户名；Dropbox 留空 */
+  username: string
+  /** 远端根目录（如 /LinkTo） */
+  remotePath: string
+}
+
 // ---------- 撰写 ----------
 
 export interface ComposeDraft {

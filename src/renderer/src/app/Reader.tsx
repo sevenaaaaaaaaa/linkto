@@ -9,9 +9,9 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock
+  IconPin, IconPalette, IconKey, IconLock, IconCloud
 } from '../components/icons'
-import type { Attachment, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
+import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
 
 interface AIState {
   text: string
@@ -27,6 +27,8 @@ export function Reader() {
   const [aiMode, setAiMode] = useState<'summary' | 'draft' | 'tasks' | null>(null)
   const [connectors, setConnectors] = useState<ConnectorInstance[]>([])
   const [manifests, setManifests] = useState<ConnectorManifest[]>([])
+  const [drives, setDrives] = useState<CloudDriveConfig[]>([])
+  const [driveMenu, setDriveMenu] = useState(false)
   const [connectorMenu, setConnectorMenu] = useState(false)
   const [styleMenu, setStyleMenu] = useState(false)
   const [styleId, setStyleId] = useState(activeReadingStyleId())
@@ -68,6 +70,7 @@ export function Reader() {
     void api.getGeneralSettings().then(setSettings)
     void api.listConnectorInstances().then(setConnectors)
     void api.listConnectorManifests().then(setManifests)
+    void api.listCloudDrives().then(setDrives)
   }, [])
 
   // 命令面板 / 快捷键唤起风格切换浮层
@@ -304,6 +307,25 @@ export function Reader() {
     showToast(res.ok ? '已通过连接器发送' : `连接器失败：${res.error}`)
   }
 
+  /** 上传到网盘：eml 原文或全部附件 */
+  const uploadToDrive = async (driveId: string, driveName: string, what: 'eml' | 'attachments') => {
+    if (!msg) return
+    setDriveMenu(false)
+    showToast(what === 'eml' ? `正在上传 eml 原文到 ${driveName}…` : `正在上传附件到 ${driveName}…`)
+    const res = await api.cloudUpload(msg.id, driveId, what)
+    showToast(
+      res.ok
+        ? `已存入 ${driveName}${res.path ? `：${res.path}` : ''}${res.count ? `（${res.count} 个附件）` : ''}`
+        : `上传失败：${res.error ?? '未知错误'}`
+    )
+  }
+
+  /** 附件卡单件上传 */
+  const uploadOneAttachment = async (att: Attachment, drive: CloudDriveConfig) => {
+    const res = await api.cloudUpload(att.messageId, drive.id, 'attachment', att.id)
+    showToast(res.ok ? `已存入 ${drive.name}：${att.filename}` : `上传失败：${res.error ?? '未知错误'}`)
+  }
+
   const unsubscribe = async () => {
     if (!msg) return
     const hasHttp = /<https?:/i.test(msg.listUnsubscribe ?? '')
@@ -404,6 +426,39 @@ export function Reader() {
                     分享到 {manifests.find(m => m.id === c.manifestId)?.name ?? c.manifestId}
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+        {drives.length > 0 && (
+          <div className="relative">
+            <ToolButton onClick={() => setDriveMenu(m => !m)} icon={<IconCloud width={14} height={14} />} label="存网盘" />
+            {driveMenu && (
+              <div className="absolute top-8 left-0 z-20 w-56 liquid-glass rounded-[var(--r-sm)] py-1 fade-in">
+                <div className="px-3 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  保存到网盘
+                </div>
+                {drives.map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => void uploadToDrive(d.id, d.name, 'eml')}
+                    className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--hover)]"
+                    style={{ color: 'var(--fg)' }}
+                  >
+                    eml 原文 → {d.name}
+                  </button>
+                ))}
+                {atts.length > 0 &&
+                  drives.map(d => (
+                    <button
+                      key={`${d.id}-atts`}
+                      onClick={() => void uploadToDrive(d.id, d.name, 'attachments')}
+                      className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--hover)]"
+                      style={{ color: 'var(--fg)' }}
+                    >
+                      全部附件（{atts.length}）→ {d.name}
+                    </button>
+                  ))}
               </div>
             )}
           </div>
@@ -569,7 +624,7 @@ export function Reader() {
       {atts.length > 0 && (
         <div className="shrink-0 px-6 pt-3 flex flex-wrap gap-2">
           {atts.map(a => (
-            <AttachmentCard key={a.id} att={a} />
+            <AttachmentCard key={a.id} att={a} drives={drives} onUpload={uploadOneAttachment} />
           ))}
         </div>
       )}
@@ -697,29 +752,66 @@ function ToolButton(props: { icon: React.ReactNode; label: string; onClick(): vo
   )
 }
 
-function AttachmentCard(props: { att: Attachment }) {
+function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; onUpload(att: Attachment, drive: CloudDriveConfig): void }) {
   const a = props.att
+  const [driveMenu, setDriveMenu] = useState(false)
+  const hasDrive = props.drives.length > 0
   return (
-    <button
-      onClick={() => void api.saveAttachment(a.id)}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border transition-colors group"
-      style={{ background: 'var(--surface-strong)', borderColor: 'var(--border-soft)' }}
-      title="点击保存"
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = 'var(--accent)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'var(--border-soft)'
-      }}
-    >
-      <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-soft)', color: 'var(--faint)' }}>
-        <IconAttach width={14} height={14} />
-      </span>
-      <span className="text-left">
-        <span className="block max-w-[180px] truncate text-[12.5px]" style={{ color: 'var(--fg)' }}>{a.filename}</span>
-        <span className="block text-[11px]" style={{ color: 'var(--faint)' }}>{fmtSize(a.size)}</span>
-      </span>
-    </button>
+    <div className="relative group">
+      <button
+        onClick={() => void api.saveAttachment(a.id)}
+        className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border transition-colors group"
+        style={{ background: 'var(--surface-strong)', borderColor: 'var(--border-soft)' }}
+        title="点击保存"
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = 'var(--accent)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = 'var(--border-soft)'
+        }}
+      >
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-soft)', color: 'var(--faint)' }}>
+          <IconAttach width={14} height={14} />
+        </span>
+        <span className="text-left">
+          <span className="block max-w-[180px] truncate text-[12.5px]" style={{ color: 'var(--fg)' }}>{a.filename}</span>
+          <span className="block text-[11px]" style={{ color: 'var(--faint)' }}>{fmtSize(a.size)}</span>
+        </span>
+      </button>
+      {hasDrive && (
+        <button
+          title="上传到网盘"
+          onClick={e => {
+            e.stopPropagation()
+            setDriveMenu(m => !m)
+          }}
+          className="absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full liquid-glass items-center justify-center hidden group-hover:flex"
+          style={{ color: 'var(--accent)' }}
+        >
+          <IconCloud width={11} height={11} />
+        </button>
+      )}
+      {driveMenu && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setDriveMenu(false)} />
+          <div className="absolute top-5 right-0 z-30 w-44 liquid-glass rounded-[var(--r-sm)] py-1 pop-in">
+            {props.drives.map(d => (
+              <button
+                key={d.id}
+                onClick={() => {
+                  setDriveMenu(false)
+                  props.onUpload(a, d)
+                }}
+                className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-[var(--hover)] truncate"
+                style={{ color: 'var(--fg)' }}
+              >
+                上传到 {d.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 

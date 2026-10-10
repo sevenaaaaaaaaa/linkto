@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, useMailEvent } from '../../lib/api'
 import { SectionTitle } from './GeneralTab'
-import type { ConnectorInstance, ConnectorManifest } from '@shared/types'
+import type { CloudDriveConfig, CloudDriveKind, ConnectorInstance, ConnectorManifest } from '@shared/types'
 
 /** 集成页：连接器卡片式管理（对齐 Canary 集成交互），OpenFlow 家族产品将从这里接入 */
 export function IntegrationsTab() {
@@ -159,6 +159,9 @@ export function IntegrationsTab() {
           }}
         />
       )}
+
+      <CloudDrivesSection />
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-zinc-900/90 text-white text-[13px] shadow-lg fade-in">
           {toast}
@@ -242,5 +245,197 @@ function ConnectorConfigDialog(props: { manifest: ConnectorManifest; onClose(): 
         </div>
       </div>
     </div>
+  )
+}
+
+/** 网盘备份：WebDAV（NAS/Nextcloud/Alist/坚果云）+ Dropbox，保存 eml 原文与附件 */
+const DRIVE_KIND_LABEL: Record<CloudDriveKind, string> = {
+  webdav: 'WebDAV / NAS',
+  dropbox: 'Dropbox'
+}
+
+function CloudDrivesSection() {
+  const [drives, setDrives] = useState<CloudDriveConfig[]>([])
+  const [adding, setAdding] = useState(false)
+  const [kind, setKind] = useState<CloudDriveKind>('webdav')
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [secret, setSecret] = useState('')
+  const [remotePath, setRemotePath] = useState('/LinkTo')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const reload = async () => setDrives(await api.listCloudDrives())
+  useEffect(() => void reload(), [])
+
+  const save = async () => {
+    setBusy(true)
+    setMsg(null)
+    const res = await api.saveCloudDrive({ id: '', kind, name, url, username, remotePath }, secret)
+    setBusy(false)
+    if (res.ok) {
+      setMsg({ ok: !res.error, text: res.error ?? `已保存并通过连接测试：${name}` })
+      setName('')
+      setUrl('')
+      setUsername('')
+      setSecret('')
+      await reload()
+    } else {
+      setMsg({ ok: false, text: res.error ?? '保存失败' })
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle>网盘备份</SectionTitle>
+      <div className="text-[12.5px] text-zinc-500 mb-2">
+        把邮件 eml 原文与附件存到你自己的网盘 / NAS：支持 WebDAV（群晖、威联通、Nextcloud、Alist、坚果云等）与
+        Dropbox。保存后可在阅读窗一键上传，也可全量增量同步 eml 镜像。Proton Drive 无公开 API 暂不支持。
+      </div>
+
+      {drives.length > 0 && (
+        <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm divide-y divide-black/[0.04] mb-3">
+          {drives.map(d => (
+            <div key={d.id} className="px-5 py-3.5 flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl flex items-center justify-center text-[16px] bg-sky-100">☁️</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13.5px] font-semibold text-zinc-800">{d.name}</span>
+                  <span className="text-[11px] px-1.5 py-px rounded bg-zinc-100 text-zinc-500">{DRIVE_KIND_LABEL[d.kind]}</span>
+                </div>
+                <div className="text-[11.5px] text-zinc-400 mt-0.5 font-mono truncate">
+                  {d.kind === 'webdav' ? `${d.url} → ${d.remotePath}` : `Dropbox → ${d.remotePath}`}
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setMsg(null)
+                  const res = await api.testCloudDrive(d.id)
+                  setMsg({ ok: res.ok, text: res.ok ? `${d.name} 连接正常` : `${d.name} 连接失败：${res.error ?? '未知原因'}` })
+                }}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0"
+              >
+                测试
+              </button>
+              <button
+                onClick={async () => {
+                  setBusy(true)
+                  const res = await api.cloudSyncEml(d.id)
+                  setBusy(false)
+                  setMsg({
+                    ok: res.ok,
+                    text: res.ok ? `${d.name} eml 同步完成：上传 ${res.uploaded ?? 0} 封，远端已有跳过 ${res.skipped ?? 0} 封` : `同步失败：${res.error ?? '未知原因'}`
+                  })
+                }}
+                disabled={busy}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0 disabled:opacity-40"
+              >
+                同步 eml
+              </button>
+              <button
+                onClick={async () => {
+                  await api.removeCloudDrive(d.id)
+                  await reload()
+                }}
+                className="text-[12px] text-zinc-400 hover:text-red-500 shrink-0"
+              >
+                删除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-3">
+        {!adding ? (
+          <button onClick={() => setAdding(true)} className="text-[12.5px] px-3.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+            添加网盘
+          </button>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="flex gap-2">
+              {(['webdav', 'dropbox'] as CloudDriveKind[]).map(k => (
+                <button
+                  key={k}
+                  onClick={() => setKind(k)}
+                  className={`text-[12.5px] px-3 py-1.5 rounded-lg border ${kind === k ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-zinc-50 border-black/[0.06] text-zinc-500'}`}
+                >
+                  {DRIVE_KIND_LABEL[k]}
+                </button>
+              ))}
+            </div>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="名称（如：群晖 NAS）"
+              className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06]"
+            />
+            {kind === 'webdav' ? (
+              <>
+                <input
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  placeholder="服务器地址（如 https://nas.local:5006）"
+                  className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06] font-mono"
+                />
+                <input
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="用户名"
+                  className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06]"
+                />
+                <input
+                  value={secret}
+                  onChange={e => setSecret(e.target.value)}
+                  type="password"
+                  placeholder="密码 / 应用密码（经钥匙串加密存储）"
+                  className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06]"
+                />
+              </>
+            ) : (
+              <input
+                value={secret}
+                onChange={e => setSecret(e.target.value)}
+                type="password"
+                placeholder="Dropbox 访问令牌（App Console → Generated access token）"
+                className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06] font-mono"
+              />
+            )}
+            <input
+              value={remotePath}
+              onChange={e => setRemotePath(e.target.value)}
+              placeholder="远端根目录（如 /LinkTo）"
+              className="w-full text-[13px] bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-black/[0.06] font-mono"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={save}
+                disabled={busy}
+                className="text-[12.5px] px-3.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
+              >
+                {busy ? '保存中…' : '保存并测试'}
+              </button>
+              <button
+                onClick={() => {
+                  setAdding(false)
+                  setMsg(null)
+                }}
+                className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              >
+                取消
+              </button>
+              {msg && <span className={`text-[12px] ${msg.ok ? 'text-green-600' : 'text-red-500'}`}>{msg.text}</span>}
+            </div>
+            {msg && !adding && <span className={`text-[12.5px] ${msg.ok ? 'text-green-600' : 'text-red-500'}`}>{msg.text}</span>}
+          </div>
+        )}
+        {!adding && msg && (
+          <div className="mt-2 text-[12.5px]">
+            <span className={msg.ok ? 'text-green-600' : 'text-red-500'}>{msg.text}</span>
+          </div>
+        )}
+      </div>
+    </>
   )
 }

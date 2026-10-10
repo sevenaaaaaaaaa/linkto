@@ -8,6 +8,7 @@ import type {
   ComposeDraft,
   ConnectorInstance,
   ConnectorManifest,
+  CloudDriveConfig,
   DailyDigest,
   Folder,
   GeneralSettings,
@@ -164,6 +165,16 @@ export interface LinkToApi {
   listUserConnectors(): Promise<{ id: string; name: string; error?: string }[]>
   removeUserConnector(id: string): Promise<{ ok: boolean; error?: string }>
   getUserConnectorTemplate(): Promise<string>
+
+  // ---------- 网盘备份（WebDAV / Dropbox，存 eml 原文与附件） ----------
+  listCloudDrives(): Promise<CloudDriveConfig[]>
+  saveCloudDrive(cfg: CloudDriveConfig, secret: string): Promise<{ ok: boolean; error?: string }>
+  removeCloudDrive(id: string): Promise<void>
+  testCloudDrive(id: string): Promise<{ ok: boolean; error?: string }>
+  /** what: 'eml' 单封原文 / 'attachment' 单个附件 / 'attachments' 全部附件 */
+  cloudUpload(messageId: string, driveId: string, what: 'eml' | 'attachment' | 'attachments', attachmentId?: string): Promise<{ ok: boolean; error?: string; path?: string; count?: number }>
+  /** 全量增量同步本地 eml 镜像到网盘 */
+  cloudSyncEml(driveId: string): Promise<{ ok: boolean; error?: string; uploaded?: number; skipped?: number }>
 
   // ---------- Newsletter ----------
   unsubscribe(messageId: string, method: 'http' | 'mailto'): Promise<{ ok: boolean; error?: string }>
