@@ -3,10 +3,15 @@ import { shell } from 'electron'
 import type { AppStore } from '../store'
 import type { OAuthClientConfig, OAuthTokens, ProviderKey } from '@shared/types'
 
-/** OAuth 应用凭据：默认空，可在 设置 → 账户 → OAuth 应用 中配置，或用环境变量覆盖 */
+/** OAuth 应用凭据：默认空，可在 设置 → 账户 → OAuth 应用 中配置，或用环境变量覆盖。
+ *  构建官方分发版时可用 LINKTO_BUILTIN_GOOGLE_CLIENT_ID / SECRET、LINKTO_BUILTIN_MS_CLIENT_ID 注入内置凭据，
+ *  让用户零配置即可一键授权。 */
 const DEFAULT_CLIENTS: OAuthClientConfig = {
-  google: { clientId: process.env.LINKTO_GOOGLE_CLIENT_ID ?? '', clientSecret: process.env.LINKTO_GOOGLE_CLIENT_SECRET ?? '' },
-  ms: { clientId: process.env.LINKTO_MS_CLIENT_ID ?? '' }
+  google: {
+    clientId: process.env.LINKTO_BUILTIN_GOOGLE_CLIENT_ID ?? process.env.LINKTO_GOOGLE_CLIENT_ID ?? '',
+    clientSecret: process.env.LINKTO_BUILTIN_GOOGLE_CLIENT_SECRET ?? process.env.LINKTO_GOOGLE_CLIENT_SECRET ?? ''
+  },
+  ms: { clientId: process.env.LINKTO_BUILTIN_MS_CLIENT_ID ?? process.env.LINKTO_MS_CLIENT_ID ?? '' }
 }
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'

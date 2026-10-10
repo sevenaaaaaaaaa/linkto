@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, useMailEvent } from '../../lib/api'
-import { IconPlus, IconMinus, IconRefresh, IconCheck, IconClose } from '../../components/icons'
+import { IconPlus, IconMinus, IconRefresh, IconCheck, IconClose, IconKey, IconSparkles } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
-import { PROVIDER_PRESETS } from '@shared/presets'
+import { PROVIDER_PRESETS, presetFor } from '@shared/presets'
 import { ACCOUNT_COLORS } from '@shared/presets'
 import type { AccountDraft, AccountWithStatus, OAuthClientConfig, ProviderKey } from '@shared/types'
 
@@ -236,20 +236,102 @@ function ToggleMini(props: { checked: boolean; onChange(v: boolean): void }) {
 
 type OAuthKind = 'oauth-google' | 'oauth-ms' | null
 
+function oauthKindOf(key: ProviderKey): OAuthKind {
+  if (key === 'gmail') return 'oauth-google'
+  if (key === 'outlook' || key === 'hotmail' || key === 'office365') return 'oauth-ms'
+  return null
+}
+
+/** 选择页：顶部快速邮箱输入（自动识别服务商）+ 服务商卡片（标注门槛） */
+function QuickPick(props: {
+  onPick(key: ProviderKey, email: string): void
+  onPickKey(key: ProviderKey): void
+  onCancel(): void
+}) {
+  const [quick, setQuick] = useState('')
+  const [err, setErr] = useState('')
+
+  const quickGo = () => {
+    const mail = quick.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+      setErr('请输入完整的邮箱地址')
+      return
+    }
+    const p = presetFor(mail)
+    setErr('')
+    props.onPick(p.key, mail)
+  }
+
+  return (
+    <div>
+      <SectionTitle>添加邮箱</SectionTitle>
+
+      {/* 快速开始：输入地址直接走 */}
+      <div className="max-w-[560px] rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-3 mb-4">
+        <div className="text-[13px] text-zinc-700 mb-2">直接输入邮箱地址，自动识别服务商并进入对应流程：</div>
+        <div className="flex gap-2">
+          <input
+            value={quick}
+            onChange={e => { setQuick(e.target.value); setErr('') }}
+            onKeyDown={e => e.key === 'Enter' && quickGo()}
+            placeholder="you@qq.com · you@gmail.com · …"
+            className="flex-1 text-[13px] bg-zinc-50 rounded-xl px-3 py-2.5 outline-none border border-black/[0.05] focus:border-blue-400 focus:bg-white transition"
+          />
+          <button
+            onClick={quickGo}
+            className="text-[13px] font-medium px-4 py-2 rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+            disabled={!quick.trim()}
+          >
+            开始添加
+          </button>
+        </div>
+        {err && <div className="mt-2 text-[12.5px] text-red-500">{err}</div>}
+      </div>
+
+      <div className="text-[11px] font-semibold tracking-[.08em] uppercase text-zinc-400 mb-2">或选择服务商</div>
+      <div className="grid grid-cols-3 gap-2.5 max-w-[560px]">
+        {PROVIDER_PRESETS.map(p => {
+          const kind = oauthKindOf(p.key)
+          return (
+            <button
+              key={p.key}
+              onClick={() => props.onPickKey(p.key)}
+              className="relative flex flex-col items-center gap-2 py-4 rounded-2xl bg-white border border-black/[0.06] shadow-sm hover:border-blue-300 transition"
+            >
+              <span
+                className={`absolute top-2 right-2 text-[9.5px] px-1.5 py-px rounded-full font-medium inline-flex items-center gap-0.5 ${
+                  kind ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {kind ? (
+                  <><IconSparkles width={9} height={9} /> 一键授权</>
+                ) : (
+                  <><IconKey width={9} height={9} /> 授权码</>
+                )}
+              </span>
+              <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-medium" style={{ background: p.color }}>
+                {p.label[0]}
+              </span>
+              <span className="text-[13px] text-zinc-700">{p.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <button onClick={props.onCancel} className="mt-5 text-[13px] text-zinc-500 hover:underline">取消</button>
+    </div>
+  )
+}
+
 function AddAccount(props: { onDone(): void; onCancel(): void }) {
   const [step, setStep] = useState<'pick' | 'oauth' | 'form'>('pick')
   const [provider, setProvider] = useState<ProviderKey>('gmail')
   const [oauthCfg, setOauthCfg] = useState<OAuthClientConfig>({})
+  /** 快速输入识别出的邮箱，透传给后续表单 */
+  const [pickEmail, setPickEmail] = useState('')
 
   useEffect(() => {
     void api.getOAuthClientConfig().then(setOauthCfg)
   }, [])
-
-  const oauthKindOf = (key: ProviderKey): OAuthKind => {
-    if (key === 'gmail') return 'oauth-google'
-    if (key === 'outlook' || key === 'hotmail' || key === 'office365') return 'oauth-ms'
-    return null
-  }
 
   const pick = (key: ProviderKey) => {
     setProvider(key)
@@ -266,32 +348,16 @@ function AddAccount(props: { onDone(): void; onCancel(): void }) {
 
   if (step === 'pick') {
     return (
-      <div>
-        <SectionTitle>选择邮件服务商</SectionTitle>
-        <div className="grid grid-cols-3 gap-2.5 max-w-[560px]">
-          {PROVIDER_PRESETS.map(p => {
-            const kind = oauthKindOf(p.key)
-            return (
-              <button
-                key={p.key}
-                onClick={() => pick(p.key)}
-                className="relative flex flex-col items-center gap-2 py-4 rounded-2xl bg-white border border-black/[0.06] shadow-sm hover:border-blue-300 transition"
-              >
-                {kind && (
-                  <span className="absolute top-2 right-2 text-[9.5px] px-1.5 py-px rounded-full bg-green-100 text-green-700 font-medium">
-                    一键授权
-                  </span>
-                )}
-                <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-medium" style={{ background: p.color }}>
-                  {p.label[0]}
-                </span>
-                <span className="text-[13px] text-zinc-700">{p.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        <button onClick={props.onCancel} className="mt-5 text-[13px] text-zinc-500 hover:underline">取消</button>
-      </div>
+      <QuickPick
+        onPick={(key, email) => {
+          setProvider(key)
+          setPickEmail(email)
+          const kind = oauthKindOf(key)
+          setStep(kind ? 'oauth' : 'form')
+        }}
+        onPickKey={pick}
+        onCancel={props.onCancel}
+      />
     )
   }
 
@@ -305,6 +371,7 @@ function AddAccount(props: { onDone(): void; onCancel(): void }) {
         kind={kind}
         configured={oauthConfigured}
         oauthCfg={oauthCfg}
+        pickEmail={pickEmail}
         onConfigSaved={setOauthCfg}
         onFallback={() => setStep('form')}
         onBack={() => setStep('pick')}
@@ -317,6 +384,7 @@ function AddAccount(props: { onDone(): void; onCancel(): void }) {
     <PasswordForm
       provider={provider}
       preset={preset}
+      presetEmail={pickEmail}
       onBack={() => setStep(kind ? 'oauth' : 'pick')}
       onDone={props.onDone}
     />
@@ -329,6 +397,7 @@ function OAuthStep(props: {
   kind: Exclude<OAuthKind, null>
   configured: boolean
   oauthCfg: OAuthClientConfig
+  pickEmail?: string
   onConfigSaved(cfg: OAuthClientConfig): void
   onFallback(): void
   onBack(): void
@@ -394,6 +463,11 @@ function OAuthStep(props: {
       ) : (
         <>
           <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm p-5">
+            {props.pickEmail && (
+              <div className="mb-3 inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
+                <IconCheck width={11} height={11} /> {props.pickEmail}
+              </div>
+            )}
             <p className="text-[13.5px] text-zinc-700 leading-relaxed mb-4">
               点击下方按钮，将在浏览器打开 {kind === 'oauth-google' ? 'Google' : 'Microsoft'} 授权页面，确认后自动完成添加——无需手动输入密码。
             </p>
@@ -480,17 +554,19 @@ function OAuthCredsForm(props: { cfg: OAuthClientConfig; kind: Exclude<OAuthKind
 function PasswordForm(props: {
   provider: ProviderKey
   preset: (typeof PROVIDER_PRESETS)[number]
+  presetEmail?: string
   onBack(): void
   onDone(): void
 }) {
   const { preset } = props
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(props.presetEmail ?? '')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [imap, setImap] = useState(preset.imap ?? { host: '', port: 993, secure: true })
   const [smtp, setSmtp] = useState(preset.smtp ?? { host: '', port: 465, secure: true })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(!preset.imap)
 
   const detectPreset = (mail: string) => {
     setEmail(mail)
@@ -501,6 +577,25 @@ function PasswordForm(props: {
       if (!name) setName(`${p.label}`)
     }
   }
+
+  // 粘贴智能识别：根据格式动态提示（QQ/163 的 16 位授权码、Apple 的分组密码等）
+  const pasteFeedback = (() => {
+    const v = password.trim()
+    if (!v) return null
+    if (/^[A-Za-z0-9]{16}$/.test(v)) {
+      return { ok: true, text: '检测到 16 位授权码格式 ✓（QQ / 网易 / Yahoo 常见格式）' }
+    }
+    if (/^[a-z]{4}-[a-z]{4}-[a-z]{4}-[a-z]{4}$/.test(v)) {
+      return { ok: true, text: '检测到 Apple App 专用密码格式 ✓' }
+    }
+    if (preset.codeHint && v.length < 6) {
+      return { ok: false, text: `长度偏短：${preset.label}的${preset.passwordLabel ?? '授权码'}通常为${preset.codeHint}` }
+    }
+    if (/^[\u4e00-\u9fa5]/.test(v)) {
+      return { ok: false, text: '粘贴内容包含中文，请确认复制的是纯授权码（不是短信验证码文字）' }
+    }
+    return null
+  })()
 
   const submit = async () => {
     setBusy(true)
@@ -525,7 +620,40 @@ function PasswordForm(props: {
   return (
     <div className="max-w-[520px]">
       <SectionTitle>添加 {preset.label}</SectionTitle>
-      {preset.hint && (
+
+      {/* 分步教学：应用内直达，降低授权码获取门槛 */}
+      {preset.steps && preset.steps.length > 0 && (
+        <div className="mb-4 rounded-2xl bg-amber-50 border border-amber-200/60 px-4 py-3.5">
+          <div className="text-[12.5px] font-semibold text-amber-800 mb-2">
+            获取{preset.passwordLabel ?? '授权码'}的 {preset.steps.length} 个步骤：
+          </div>
+          <ol className="space-y-1.5">
+            {preset.steps.map((s, i) => (
+              <li key={i} className="flex gap-2 text-[12.5px] leading-relaxed text-amber-800">
+                <span className="shrink-0 w-[18px] h-[18px] rounded-full bg-amber-200 text-amber-900 text-[10.5px] font-semibold flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </ol>
+          {preset.guideLinks && preset.guideLinks.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {preset.guideLinks.map(l => (
+                <button
+                  key={l.url}
+                  onClick={() => void api.openExternal(l.url)}
+                  className="text-[11.5px] px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition"
+                >
+                  {l.label} ↗
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!preset.steps && preset.hint && (
         <div className="mb-3 text-[12.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
           {preset.hint}
           {preset.guideUrl && (
@@ -535,14 +663,38 @@ function PasswordForm(props: {
           )}
         </div>
       )}
+
       <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1">
         <Field label="邮箱地址" value={email} onChange={v => detectPreset(v)} placeholder="you@example.com" />
-        <Field label="密码 / 授权码" value={password} onChange={setPassword} type="password" placeholder="应用专用密码或授权码" />
+        <Field
+          label={preset.passwordLabel ?? '密码 / 授权码'}
+          value={password}
+          onChange={setPassword}
+          type="password"
+          placeholder={preset.passwordPlaceholder ?? '应用专用密码或授权码'}
+        />
+        {pasteFeedback && (
+          <div className={`flex items-center gap-1.5 pb-2.5 -mt-1 text-[12px] ${pasteFeedback.ok ? 'text-green-600' : 'text-amber-600'}`}>
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: pasteFeedback.ok ? '#16a34a' : '#d97706' }} />
+            {pasteFeedback.text}
+          </div>
+        )}
         <Field label="显示名称" value={name} onChange={setName} placeholder="如 Seven Gmail" />
-        <Field label="IMAP 服务器" value={imap.host} onChange={v => setImap({ ...imap, host: v })} />
-        <Field label="IMAP 端口" value={String(imap.port)} onChange={v => setImap({ ...imap, port: Number(v) || 993 })} />
-        <Field label="SMTP 服务器" value={smtp.host} onChange={v => setSmtp({ ...smtp, host: v })} />
-        <Field label="SMTP 端口" value={String(smtp.port)} onChange={v => setSmtp({ ...smtp, port: Number(v) || 465 })} />
+        <button
+          onClick={() => setShowAdvanced(s => !s)}
+          className="w-full flex items-center justify-between py-2.5 border-b border-black/[0.04] text-[13px] text-zinc-500 hover:text-zinc-700"
+        >
+          服务器设置{preset.imap ? '（已按官方推荐预填）' : ''}
+          <span>{showAdvanced ? '▴' : '▾'}</span>
+        </button>
+        {showAdvanced && (
+          <>
+            <Field label="IMAP 服务器" value={imap.host} onChange={v => setImap({ ...imap, host: v })} />
+            <Field label="IMAP 端口" value={String(imap.port)} onChange={v => setImap({ ...imap, port: Number(v) || 993 })} />
+            <Field label="SMTP 服务器" value={smtp.host} onChange={v => setSmtp({ ...smtp, host: v })} />
+            <Field label="SMTP 端口" value={String(smtp.port)} onChange={v => setSmtp({ ...smtp, port: Number(v) || 465 })} />
+          </>
+        )}
       </div>
       {error && <div className="mt-3 text-[13px] text-red-500">{error}</div>}
       <div className="mt-4 flex gap-2">
