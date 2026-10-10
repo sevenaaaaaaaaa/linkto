@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
@@ -28,6 +29,11 @@ export function MailShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [outbox, setOutbox] = useState<ScheduledSend[]>([])
+
+  // Liquid Glass 真折射滤镜（lensing）：Electron/Chromium 下启用，其余环境纯 blur 降级
+  useEffect(() => {
+    initLiquidGlass()
+  }, [])
 
   const loadOutbox = () => void api.listScheduledSends().then(setOutbox)
 

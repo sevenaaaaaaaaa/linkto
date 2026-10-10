@@ -291,7 +291,12 @@ body::after {
 }
 
 /* ---------- Liquid Glass 材质 ----------
- * macOS 26+ 液体玻璃：高斯模糊 + 饱和提升 + 顶部镜面高光 + 边缘折射描边 */
+ * 规范依据：Apple WWDC25《Meet Liquid Glass》/ HIG Materials
+ * - Glass 是「导航/控件层」材质：浮于内容之上，同屏少而精
+ * - Regular 变体（默认）：模糊 + 亮度调节保证可读性；Clear 变体：高透，仅用于富媒体背景之上
+ * - Lensing：边缘弯折背景光线（SVG 位移滤镜，见 lib/liquid-glass.ts），中心保持清晰
+ * - Morph 语义：元素变大（菜单从按钮弹出）→ 材质变厚：更深阴影、更强折射、更柔散射（.pop-in.liquid-glass 自动视为 thick）
+ * - 无障碍：prefers-reduced-transparency 降级为近实心面板 */
 .glass {
   background: var(--surface);
   backdrop-filter: blur(20px) saturate(180%) brightness(1.04);
@@ -323,6 +328,12 @@ body::after {
     inset 0 0 24px var(--inner-glow),
     0 16px 48px -16px oklch(0% 0 0 / 0.6);
 }
+/* Chromium（Electron）下启用真折射：边缘 lensing 由 SVG 位移滤镜完成 */
+.lg-refract .liquid-glass {
+  backdrop-filter: url(#lg-lens) saturate(180%) brightness(1.06);
+  -webkit-backdrop-filter: url(#lg-lens) saturate(180%) brightness(1.06);
+}
+
 /* 顶部弧形镜面高光 —— 液体玻璃的「液面反光」 */
 .liquid-glass::before {
   content: '';
@@ -331,6 +342,40 @@ body::after {
   border-radius: inherit;
   pointer-events: none;
   background: linear-gradient(180deg, var(--spec-lo), transparent 38%);
+}
+
+/* Clear 变体：高透（HIG：仅用于富媒体背景之上的浮层，让内容透出来） */
+.liquid-glass-clear {
+  background: oklch(100% 0 0 / 0.16);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  border: 1px solid oklch(100% 0 0 / 0.4);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.45),
+    0 12px 32px -12px oklch(0% 0 0 / 0.35);
+}
+[data-theme='dark'] .liquid-glass-clear {
+  background: oklch(20% 0 0 / 0.3);
+}
+
+/* Morph 变厚：浮层（pop-in）从按钮弹出时模拟更厚材质——更深阴影、更强折射、更柔散射 */
+.liquid-glass.pop-in {
+  box-shadow:
+    inset 0 1px 0 var(--spec-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    inset 0 0 28px var(--inner-glow),
+    0 28px 64px -20px oklch(30% 0.04 80 / 0.38);
+}
+[data-theme='dark'] .liquid-glass.pop-in {
+  box-shadow:
+    inset 0 1px 0 var(--spec-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    inset 0 0 32px var(--inner-glow),
+    0 28px 64px -20px oklch(0% 0 0 / 0.7);
+}
+.lg-refract .liquid-glass.pop-in {
+  backdrop-filter: url(#lg-lens-thick) saturate(185%) brightness(1.08);
+  -webkit-backdrop-filter: url(#lg-lens-thick) saturate(185%) brightness(1.08);
 }
 
 /* 指针跟随高光（交互创新）：hover 时一束光随鼠标在玻璃表面流动 */
@@ -481,6 +526,21 @@ input:focus-visible {
   }
 }
 
+/* 系统降低透明度：玻璃降级为近实心面板（保留形态与层次，去掉通透） */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .liquid-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--surface);
+  }
+  .liquid-glass::before,
+  [data-glow]::after {
+    display: none;
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -496,17 +556,22 @@ input:focus-visible {
 }
 
 @keyframes pop-in {
-  from {
+  /* 液态生成：按 WWDC25 规范以「光线弯折调制」渐显——体积先收缩后回弹，玻璃从薄到厚落位 */
+  0% {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(6px) scale(0.92);
   }
-  to {
+  60% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.015);
+  }
+  100% {
     opacity: 1;
     transform: none;
   }
 }
 .pop-in {
-  animation: pop-in 0.22s var(--ease-spring);
+  animation: pop-in 0.32s var(--ease-spring);
 }
 
 @keyframes spin-slow {
