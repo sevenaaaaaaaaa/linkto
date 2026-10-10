@@ -131,6 +131,7 @@ export class AccountWorker {
 
   stop() {
     this.running = false
+    this.stopWatchdog()
     this.client?.close()
   }
 
@@ -142,6 +143,7 @@ export class AccountWorker {
         this.events.status(this.account.id, 'syncing', '连接中…')
         await this.connect(forceRefresh)
         forceRefresh = false
+        this.startWatchdog()
         this.events.status(this.account.id, 'syncing', '同步中…')
         await this.syncAllFolders()
         this.events.status(this.account.id, 'connected', '已连接')
@@ -155,6 +157,7 @@ export class AccountWorker {
         }
       } catch (err) {
         if (!this.running) return
+        this.stopWatchdog()
         const msg = err instanceof Error ? err.message : String(err)
         // OAuth 认证失败 → 下次强制刷新 token 重试；密码错误则原样提示
         if (this.getToken && /auth|login|credentials|invalid|AUTHENTICATE/i.test(msg)) forceRefresh = true
@@ -209,6 +212,28 @@ export class AccountWorker {
     this.kickRequested = true
   }
 
+  /** 看门狗：同步活动超过 5 分钟无进展 → 强制断线重连（兜底任何未知挂起，绝不永久卡死） */
+  private watchdogTimer: NodeJS.Timeout | null = null
+  private lastActivity = 0
+  private touchActivity() {
+    this.lastActivity = Date.now()
+  }
+  private startWatchdog() {
+    this.stopWatchdog()
+    this.lastActivity = Date.now()
+    this.watchdogTimer = setInterval(() => {
+      if (Date.now() - this.lastActivity > 5 * 60_000) {
+        try { this.client?.close() } catch { /* ignore */ }
+      }
+    }, 30_000)
+  }
+  private stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer)
+      this.watchdogTimer = null
+    }
+  }
+
   /** 分片 sleep：running=false 或 kick 立即返回 */
   private async sleepInterruptible(ms: number) {
     const step = 500
@@ -239,6 +264,7 @@ export class AccountWorker {
     )
     for (const f of sorted) {
       if (!this.running) return
+      this.touchActivity()
       const special = specialFor(f)
       if (special === 'drafts' || special === 'all') {
         // 本地管理草稿；All Mail 与 INBOX 重复，跳过同步
