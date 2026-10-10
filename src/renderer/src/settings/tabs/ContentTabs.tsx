@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
-import { IconPlus, IconMinus } from '../../components/icons'
+import { IconPlus, IconMinus, IconLink, IconClose, IconList, IconListOrdered } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
 import type { MailTemplate, Signature } from '@shared/types'
 
@@ -33,12 +33,12 @@ function Toolbar(props: { target: React.RefObject<HTMLDivElement | null> }) {
     props.target.current?.focus()
     document.execCommand(cmd, false, value)
   }
-  const btn = (label: string, cmd: string, value?: string, style?: string) => (
+  const btn = (label: React.ReactNode, cmd: string, value?: string, style?: string) => (
     <button
       type="button"
       onMouseDown={e => e.preventDefault()}
       onClick={() => exec(cmd, value)}
-      className={`w-7 h-7 rounded-md text-[13px] text-zinc-600 hover:bg-black/5 ${style ?? ''}`}
+      className={`w-7 h-7 rounded-md text-[13px] text-zinc-600 hover:bg-black/5 inline-flex items-center justify-center ${style ?? ''}`}
     >
       {label}
     </button>
@@ -48,13 +48,13 @@ function Toolbar(props: { target: React.RefObject<HTMLDivElement | null> }) {
       {btn('B', 'bold', undefined, 'font-bold')}
       {btn('I', 'italic', undefined, 'italic')}
       {btn('U', 'underline', undefined, 'underline')}
-      {btn('S', 'strikeThrough')}
+      {btn('S', 'strikeThrough', undefined, 'line-through')}
       <div className="w-px h-4 bg-black/10 mx-1" />
-      {btn('•', 'insertUnorderedList')}
-      {btn('1.', 'insertOrderedList')}
+      {btn(<IconList width={14} height={14} />, 'insertUnorderedList')}
+      {btn(<IconListOrdered width={14} height={14} />, 'insertOrderedList')}
       <div className="w-px h-4 bg-black/10 mx-1" />
-      {btn('🔗', 'createLink', window.prompt('链接地址') ?? undefined)}
-      {btn('✕', 'unlink')}
+      {btn(<IconLink width={13} height={13} />, 'createLink', window.prompt('链接地址') ?? undefined)}
+      {btn(<IconClose width={13} height={13} />, 'unlink')}
       <div className="flex-1" />
       {btn('HTML', 'formatBlock', 'pre', 'font-mono text-[11px]')}
     </div>

@@ -5,7 +5,7 @@ import { ThemeMenu } from './ThemeMenu'
 import {
   IconInbox, IconLayers, IconStar, IconUser, IconBell, IconRss, IconTrash,
   IconBook, IconFolder, IconCompose, IconSettings, IconChevronDown,
-  IconChevronRight, IconRefresh
+  IconChevronRight, IconRefresh, IconPin, IconSparkles, IconRobot
 } from '../components/icons'
 import type { SpecialFolder } from '@shared/types'
 
@@ -156,11 +156,7 @@ export function Sidebar() {
 
   return (
     <div className="glass w-[248px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
-      <div className="drag-region h-[52px] shrink-0 flex items-end pl-[76px] pb-1">
-        <span className="text-[12.5px] font-semibold tracking-wide" style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
-          林可兔 LinkTo
-        </span>
-      </div>
+      <div className="drag-region h-[52px] shrink-0" />
       <div className="px-2 pb-2">
         <button
           onClick={() => api.openCompose()}
@@ -192,7 +188,7 @@ export function Sidebar() {
         <Row icon={<IconRss width={15} height={15} />} label="Newsletter" active={is({ kind: 'newsletter' })} onClick={() => setScope({ kind: 'newsletter', title: 'Newsletter' })} />
         <Row icon={<IconTrash width={15} height={15} />} label="噪声" active={is({ kind: 'category', category: 'noise' })} onClick={() => setScope({ kind: 'category', category: 'noise', title: '噪声' })} />
         <Row
-          icon={<span className="text-[13px] leading-none">📌</span>}
+          icon={<IconPin width={14} height={14} />}
           label="置顶"
           active={is({ kind: 'pinned' })}
           onClick={() => {
@@ -202,7 +198,7 @@ export function Sidebar() {
           }}
         />
         <Row
-          icon={<span className="text-[14px] leading-none">✨</span>}
+          icon={<IconSparkles width={15} height={15} />}
           label="智能洞察"
           active={location.hash.startsWith('#/insights')}
           onClick={() => {
@@ -213,7 +209,7 @@ export function Sidebar() {
         />
         <Row icon={<IconBook width={15} height={15} />} label="知识库" active={kbView} onClick={showKb} />
         <Row
-          icon={<span className="text-[13px] leading-none">🤖</span>}
+          icon={<IconRobot width={15} height={15} />}
           label="Agent"
           active={location.hash.startsWith('#/agent')}
           onClick={() => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
-import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash } from '../components/icons'
+import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
@@ -36,10 +36,14 @@ function RowMeta(props: { msg: MessageSummary }) {
   return (
     <>
       {msg.unread && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: 'var(--accent)' }} />}
-      {msg.pinned && <span className="text-[11px] leading-none shrink-0" title="已置顶">📌</span>}
+      {msg.pinned && (
+        <span className="leading-none shrink-0 inline-flex" title="已置顶" style={{ color: 'var(--accent)' }}>
+          <IconPin width={11} height={11} />
+        </span>
+      )}
       {subjectIsAuth(msg.subject) && (
-        <span className="text-[10px] px-1.5 py-px rounded shrink-0 font-medium" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
-          🔑
+        <span className="px-1.5 py-px rounded shrink-0 font-medium inline-flex items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }} title="疑似验证码 / 登录链接">
+          <IconKey width={10} height={10} />
         </span>
       )}
       {badge && <span className={`text-[10px] px-1.5 py-px rounded ${badge.cls}`}>{badge.label}</span>}
@@ -137,7 +141,7 @@ function MessageRow(props: {
       {hover && !props.checked && (
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1 rounded-full liquid-glass fade-in">
           <QuickBtn title={msg.pinned ? '取消置顶' : '置顶'} onClick={e => quick(e, 'pin')} active={msg.pinned}>
-            <span className="text-[12px] leading-none">📌</span>
+            <IconPin width={13} height={13} />
           </QuickBtn>
           <QuickBtn title="归档" onClick={e => quick(e, 'archive')}>
             <IconArchive width={13} height={13} />
@@ -231,10 +235,10 @@ function ThreadRow(props: {
               {participants.length > 1 ? `${participants[0]} 等 ${participants.length} 人` : displayName(latest.from)}
             </span>
             <span
-              className="text-[10.5px] px-1.5 py-px rounded-full shrink-0 font-medium"
+              className="text-[10.5px] px-1.5 py-px rounded-full shrink-0 font-medium inline-flex items-center gap-1"
               style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}
             >
-              💬 {msgs.length} 封
+              <IconChat width={10} height={10} /> {msgs.length} 封
             </span>
             <RowMeta msg={latest} />
             <span className="ml-auto shrink-0 text-[11.5px] tabular-nums" style={{ color: 'var(--faint)' }}>{fmtDate(latest.date)}</span>
@@ -400,14 +404,14 @@ export function MessageList() {
         <button
           onClick={() => setGroupThreads(!groupThreads)}
           title="按会话聚合"
-          className="text-[11.5px] px-2 py-1 rounded-full border transition-colors"
+          className="text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1"
           style={{
             borderColor: groupThreads ? 'var(--accent)' : 'var(--border)',
             color: groupThreads ? 'var(--accent-strong)' : 'var(--muted)',
             background: groupThreads ? 'var(--accent-soft)' : 'transparent'
           }}
         >
-          💬 会话
+          <IconChat width={11} height={11} /> 会话
         </button>
         {/* 排序 */}
         <select
@@ -454,7 +458,7 @@ export function MessageList() {
               return
             }
             const top = res.ranked[0]
-            window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ 魔法排序完成：${top ? `「${useMail.getState().messages.find(m => m.id === top.id)?.subject ?? ''}」最优先` : '已更新 pin 顺序'}` }))
+            window.dispatchEvent(new CustomEvent('ms:toast', { detail: `魔法排序完成：${top ? `「${useMail.getState().messages.find(m => m.id === top.id)?.subject ?? ''}」最优先` : '已更新 pin 顺序'}` }))
             // 自动 pin 选中邮件并切换到置顶视图查看结果
             await useMail.getState().setPinned(ids, true)
             useMail.getState().setScope({ kind: 'pinned', title: '置顶' })
@@ -497,7 +501,7 @@ export function MessageList() {
               <div className="mt-2 text-[12px]" style={{ color: 'var(--faint)' }}>收件箱同步后会出现在这里</div>
             )}
             {scope.kind === 'pinned' && (
-              <div className="mt-2 text-[12px]" style={{ color: 'var(--faint)' }}>悬停邮件点 📌 或多选后点「置顶」，重要的邮件会固定在这里</div>
+              <div className="mt-2 text-[12px]" style={{ color: 'var(--faint)' }}>悬停邮件点图钉图标，或多选后点「置顶」，重要的邮件会固定在这里</div>
             )}
           </div>
         )}
@@ -626,10 +630,12 @@ function BulkBar(props: {
                     <button
                       key={f.id}
                       onClick={() => props.onMoveToFolder(f)}
-                      className="w-full text-left px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)] truncate"
+                      className="w-full text-left px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)] truncate inline-flex items-center gap-1.5"
                       style={{ color: 'var(--fg)' }}
                     >
-                      {f.special === 'inbox' ? '📥 ' : f.special === 'trash' ? '🗑 ' : f.special === 'archive' ? '📦 ' : '📁 '}
+                      <span className="shrink-0 inline-flex" style={{ color: 'var(--faint)' }}>
+                        {f.special === 'inbox' ? <IconInbox width={12} height={12} /> : f.special === 'trash' ? <IconTrash width={12} height={12} /> : f.special === 'archive' ? <IconArchive width={12} height={12} /> : <IconFolder width={12} height={12} />}
+                      </span>
                       {f.name}
                     </button>
                   ))}
@@ -639,8 +645,12 @@ function BulkBar(props: {
           </div>
         )}
       </div>
-      <BulkBtn onClick={props.onMagicSort} accent>✨ 魔法排序</BulkBtn>
-      <BulkBtn onClick={props.onAsk} accent>💬 提问</BulkBtn>
+      <BulkBtn onClick={props.onMagicSort} accent>
+        <span className="inline-flex items-center gap-1"><IconSparkles width={12} height={12} /> 魔法排序</span>
+      </BulkBtn>
+      <BulkBtn onClick={props.onAsk} accent>
+        <span className="inline-flex items-center gap-1"><IconChat width={12} height={12} /> 提问</span>
+      </BulkBtn>
       <BulkBtn onClick={props.onArchive}>归档</BulkBtn>
       <BulkBtn onClick={props.onDelete} danger>删除</BulkBtn>
       <BulkBtn onClick={props.onClear} muted>取消</BulkBtn>
@@ -702,7 +712,7 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <span className="text-[16px]">💬</span>
+          <span className="inline-flex" style={{ color: 'var(--accent)' }}><IconChat width={16} height={16} /></span>
           <span className="text-[14px] font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>就 {props.ids.length} 封邮件提问</span>
           <div className="flex-1" />
           <button onClick={props.onClose} className="p-1.5 rounded-lg hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }}>

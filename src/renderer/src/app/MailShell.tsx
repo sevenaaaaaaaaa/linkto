@@ -9,6 +9,7 @@ import { CommandPalette } from './CommandPalette'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
+import { IconClock } from '../components/icons'
 import type { ScheduledSend } from '@shared/types'
 
 type View = 'mail' | 'kb' | 'insights' | 'agent'
@@ -163,7 +164,7 @@ export function MailShell() {
           <div className="flex flex-col gap-0.5 max-h-[220px] overflow-y-auto">
             {outbox.map(s => (
               <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded-[10px]">
-                <span className="text-[14px] leading-none">⏳</span>
+                <span className="leading-none shrink-0" style={{ color: 'var(--warn)' }}><IconClock width={14} height={14} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{s.subject || '（无主题）'}</div>
                   <div className="text-[11px]" style={{ color: 'var(--faint)' }}>

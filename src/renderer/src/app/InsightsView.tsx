@@ -2,15 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, fmtTime } from '../lib/api'
 import { useMailEvent } from '../lib/api'
 import { useMail } from '../stores/mail'
+import {
+  IconSunrise, IconCheckSquare, IconBook, IconBuilding, IconStar, IconLayers,
+  IconFileText, IconTrash, IconShield, IconTarget, IconTrendingUp, IconBrain
+} from '../components/icons'
 import type { CompanyInsight, DailyDigest, InsightRecord } from '@shared/types'
 
 type Tab = 'daily' | 'todo' | 'reading' | 'company'
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'daily', label: '今日商情', icon: '🌤' },
-  { id: 'todo', label: '待办', icon: '✅' },
-  { id: 'reading', label: '阅读清单', icon: '📚' },
-  { id: 'company', label: '公司洞察', icon: '🏢' }
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'daily', label: '今日商情', icon: <IconSunrise width={13} height={13} /> },
+  { id: 'todo', label: '待办', icon: <IconCheckSquare width={13} height={13} /> },
+  { id: 'reading', label: '阅读清单', icon: <IconBook width={13} height={13} /> },
+  { id: 'company', label: '公司洞察', icon: <IconBuilding width={13} height={13} /> }
 ]
 
 function openMessage(messageId: string | null) {
@@ -44,7 +48,7 @@ export function InsightsView() {
                 ? { background: 'var(--surface-strong)', color: 'var(--accent-strong)', boxShadow: 'var(--shadow-sm)', fontWeight: 600 }
                 : { color: 'var(--muted)' }}
             >
-              <span className="text-[13px] leading-none">{t.icon}</span>
+              <span className="leading-none inline-flex">{t.icon}</span>
               {t.label}
             </button>
           ))}
@@ -138,7 +142,7 @@ function DailyTab() {
           </div>
           {error && <div className="text-[12.5px]" style={{ color: 'var(--danger)' }}>{error}</div>}
 
-          <Panel title="今日重点" icon="⭐">
+          <Panel title="今日重点" icon={<IconStar width={14} height={14} />}>
             <ul className="space-y-1.5">
               {digest.highlights.map((h, i) => (
                 <li key={i} className="flex gap-2 text-[13px] leading-relaxed" style={{ color: 'var(--fg)' }}>
@@ -150,7 +154,7 @@ function DailyTab() {
             </ul>
           </Panel>
 
-          <Panel title="主题 Digest" icon="🧵">
+          <Panel title="主题 Digest" icon={<IconLayers width={14} height={14} />}>
             <div className="space-y-3">
               {digest.themes.map(t => (
                 <div key={t.theme} className="pl-3 border-l-2" style={{ borderColor: 'var(--accent)' }}>
@@ -165,7 +169,7 @@ function DailyTab() {
             </div>
           </Panel>
 
-          <Panel title="备忘录" icon="📝">
+          <Panel title="备忘录" icon={<IconFileText width={14} height={14} />}>
             <textarea
               value={memoText}
               onChange={e => setMemoText(e.target.value)}
@@ -177,11 +181,11 @@ function DailyTab() {
             />
           </Panel>
 
-          <Panel title="清理建议" icon="🧹">
+          <Panel title="清理建议" icon={<IconTrash width={14} height={14} />}>
             <div className="space-y-2">
               {digest.deleteSuggestions.map(d => (
                 <div key={d.messageId} className="flex items-center gap-2.5">
-                  <span className="text-[14px]">🗑</span>
+                  <span className="inline-flex" style={{ color: 'var(--faint)' }}><IconTrash width={14} height={14} /></span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{d.subject}</div>
                     <div className="text-[11.5px] truncate" style={{ color: 'var(--faint)' }}>{d.from} · {d.reason}</div>
@@ -473,11 +477,11 @@ function CompanyReport(props: { insight: CompanyInsight }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <ScoreCard title="品牌价值可信度" score={c.credibility.score} reasons={c.credibility.reasons} icon="🛡" />
-        <ScoreCard title="你的转化指数" score={c.conversionIndex.score} reasons={c.conversionIndex.reasons} icon="🎯" />
+        <ScoreCard title="品牌价值可信度" score={c.credibility.score} reasons={c.credibility.reasons} icon={<IconShield width={15} height={15} />} />
+        <ScoreCard title="你的转化指数" score={c.conversionIndex.score} reasons={c.conversionIndex.reasons} icon={<IconTarget width={15} height={15} />} />
       </div>
 
-      <Panel title="运营策略时间线" icon="📈">
+      <Panel title="运营策略时间线" icon={<IconTrendingUp width={14} height={14} />}>
         <div className="space-y-0">
           {c.timeline.map((t, i) => (
             <div key={i} className="flex gap-3">
@@ -495,19 +499,19 @@ function CompanyReport(props: { insight: CompanyInsight }) {
         </div>
       </Panel>
 
-      <Panel title="运营策略剖析" icon="🧠">
+      <Panel title="运营策略剖析" icon={<IconBrain width={14} height={14} />}>
         <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>{c.strategy}</p>
       </Panel>
     </div>
   )
 }
 
-function ScoreCard(props: { title: string; score: number; reasons: string; icon: string }) {
+function ScoreCard(props: { title: string; score: number; reasons: string; icon: React.ReactNode }) {
   const hue = props.score >= 70 ? 'var(--ok)' : props.score >= 40 ? 'var(--warn)' : 'var(--danger)'
   return (
     <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] glass p-4">
       <div className="flex items-center gap-2">
-        <span className="text-[15px]">{props.icon}</span>
+        <span className="inline-flex" style={{ color: hue }}>{props.icon}</span>
         <span className="text-[12.5px] font-medium" style={{ color: 'var(--muted)' }}>{props.title}</span>
         <div className="flex-1" />
         <span className="text-[26px] font-bold leading-none font-[var(--font-mono)]" style={{ color: hue }}>{props.score}</span>
@@ -522,11 +526,11 @@ function ScoreCard(props: { title: string; score: number; reasons: string; icon:
 
 // ================= 通用 =================
 
-function Panel(props: { title: string; icon: string; children: React.ReactNode }) {
+function Panel(props: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] glass p-5">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-[14px]">{props.icon}</span>
+        <span className="inline-flex" style={{ color: 'var(--accent)' }}>{props.icon}</span>
         <span className="text-[13px] font-semibold" style={{ color: 'var(--fg)' }}>{props.title}</span>
       </div>
       {props.children}

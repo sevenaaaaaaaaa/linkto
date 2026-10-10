@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { THEME_PRESETS, BUILTIN_PRESET_ID } from '../lib/theme-presets'
 import { activePresetId, setPreset, onThemeChange, getThemePref, cycleTheme, themeLabel, type ThemePref } from '../lib/theme'
+import { IconPalette, IconSun, IconMoon, IconSunMoon } from '../components/icons'
 
 /** 主题快速切换浮层 —— ThirdC「主题预设」交互移植：
  *  每个预设一张卡（名称 + 浅底/accent/深底 三色小样），激活项 accent 描边，再点一次恢复内置，切换即 toast。 */
@@ -52,18 +53,18 @@ export function ThemeMenu() {
       <button
         onClick={() => setOpen(o => !o)}
         title="主题预设（快速切换风格）"
-        className="icon-btn p-2 text-[15px] leading-none"
+        className="icon-btn p-2 leading-none"
         style={{ color: 'var(--muted)' }}
       >
-        🎨
+        <IconPalette width={15} height={15} />
       </button>
       <button
         onClick={cycle}
         title="明暗切换（auto / 浅色 / 深色）"
-        className="icon-btn p-2 text-[15px] leading-none"
+        className="icon-btn p-2 leading-none"
         style={{ color: 'var(--muted)' }}
       >
-        {pref === 'auto' ? '🌗' : pref === 'light' ? '☀️' : '🌙'}
+        {pref === 'auto' ? <IconSunMoon width={15} height={15} /> : pref === 'light' ? <IconSun width={15} height={15} /> : <IconMoon width={15} height={15} />}
       </button>
 
       {open && (

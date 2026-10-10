@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAsync, fmtFullDate } from '../lib/api'
 import { api } from '../lib/api'
-import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave } from '../components/icons'
+import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave, IconPin, IconHeart, IconUsers, IconBellRing, IconRefresh } from '../components/icons'
 import type { AgentMemory, ContactProfile, MemoryScope } from '@shared/types'
 
-const SCOPE_META: Record<MemoryScope, { label: string; emoji: string; color: string }> = {
-  fact: { label: '事实', emoji: '📌', color: '#2563eb' },
-  preference: { label: '偏好', emoji: '💛', color: '#d97706' },
-  person: { label: '人物关系', emoji: '🤝', color: '#7c3aed' },
-  commitment: { label: '承诺', emoji: '⏰', color: '#dc2626' },
-  routine: { label: '惯例', emoji: '🔁', color: '#059669' }
+const SCOPE_META: Record<MemoryScope, { label: string; icon: React.ReactNode; color: string }> = {
+  fact: { label: '事实', icon: <IconPin width={11} height={11} />, color: '#2563eb' },
+  preference: { label: '偏好', icon: <IconHeart width={11} height={11} />, color: '#d97706' },
+  person: { label: '人物关系', icon: <IconUsers width={11} height={11} />, color: '#7c3aed' },
+  commitment: { label: '承诺', icon: <IconBellRing width={11} height={11} />, color: '#dc2626' },
+  routine: { label: '惯例', icon: <IconRefresh width={11} height={11} />, color: '#059669' }
 }
 
 const FILTERS: (MemoryScope | 'all')[] = ['all', 'fact', 'preference', 'person', 'commitment', 'routine']
@@ -116,7 +116,7 @@ export function AgentView() {
                 color: active ? '#2563eb' : '#71717a'
               }}
             >
-              {f !== 'all' && <span className="mr-1">{SCOPE_META[f].emoji}</span>}
+              {f !== 'all' && <span className="mr-1 inline-flex align-[-1.5px]">{SCOPE_META[f].icon}</span>}
               {label}
               {typeof count === 'number' ? ` · ${count}` : ''}
             </button>
@@ -202,7 +202,7 @@ export function AgentView() {
             <span className="text-[11.5px] text-zinc-400">Agent 最常用：</span>
             {stats.topUsed.map(m => (
               <span key={m.id} className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500 truncate max-w-[220px]" title={m.content}>
-                {SCOPE_META[m.scope]?.emoji} {m.title}
+                <span className="inline-flex align-[-1.5px] mr-0.5">{SCOPE_META[m.scope]?.icon}</span> {m.title}
               </span>
             ))}
           </div>
@@ -227,8 +227,8 @@ export function AgentView() {
             return (
               <div key={m.id} className="rounded-2xl bg-white border border-black/[0.06] shadow-sm p-4 group">
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="text-[10px] px-1.5 py-px rounded" style={{ background: `${meta.color}14`, color: meta.color }}>
-                    {meta.emoji} {meta.label}
+                  <span className="text-[10px] px-1.5 py-px rounded inline-flex items-center gap-1" style={{ background: `${meta.color}14`, color: meta.color }}>
+                    {meta.icon} {meta.label}
                   </span>
                   {m.source === 'manual' && <span className="text-[10px] px-1.5 py-px rounded bg-zinc-100 text-zinc-500">手动</span>}
                   {m.entity && <span className="text-[10px] text-zinc-300 truncate max-w-[140px]">{m.entity}</span>}
@@ -321,7 +321,7 @@ function MemoryEditor(props: { item: AgentMemory | null; defaultScope: MemorySco
           >
             {FILTERS.filter(f => f !== 'all').map(f => (
               <option key={f} value={f}>
-                {SCOPE_META[f].emoji} {SCOPE_META[f].label}
+                <span className="inline-flex align-[-1.5px] mr-0.5">{SCOPE_META[f].icon}</span> {SCOPE_META[f].label}
               </option>
             ))}
           </select>

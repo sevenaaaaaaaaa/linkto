@@ -7,7 +7,7 @@ import Image from '@tiptap/extension-image'
 import { api, useAsync, displayName } from '../lib/api'
 import { parseComposePrefill } from '../preload/parse'
 import { sanitizeEmailHtml } from '../lib/sanitize'
-import { IconSend, IconAttach, IconClose, IconSave } from '../components/icons'
+import { IconSend, IconAttach, IconClose, IconSave, IconLink, IconQuote, IconList, IconListOrdered } from '../components/icons'
 import type { Address, MailTemplate, MessageFull } from '@shared/types'
 
 export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/types').ComposeDraft> }) {
@@ -358,29 +358,29 @@ function AddrRow(props: { label: string; value: string; onChange(v: string): voi
 
 function EditorToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null
-  const btn = (label: string, active: boolean, onClick: () => void) => (
+  const btn = (label: React.ReactNode, active: boolean, onClick: () => void, textCls = 'text-[13px]') => (
     <button
       type="button"
       onMouseDown={e => e.preventDefault()}
       onClick={onClick}
-      className={`w-7 h-7 rounded-md text-[13px] ${active ? 'bg-blue-600/10 text-blue-600' : 'text-zinc-500 hover:bg-black/5'}`}
+      className={`w-7 h-7 rounded-md inline-flex items-center justify-center ${textCls} ${active ? 'bg-blue-600/10 text-blue-600' : 'text-zinc-500 hover:bg-black/5'}`}
     >
       {label}
     </button>
   )
   return (
     <div className="flex items-center gap-0.5 pb-1.5 border-b border-black/[0.05]">
-      {btn('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run())}
-      {btn('I', editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run())}
-      {btn('S', editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run())}
-      {btn('•', editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
-      {btn('1.', editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-      {btn('❝', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
-      {btn('🔗', editor.isActive('link'), () => {
+      {btn('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'text-[13px] font-semibold')}
+      {btn('I', editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'text-[13px] italic')}
+      {btn('S', editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'text-[13px] line-through')}
+      {btn(<IconList width={14} height={14} />, editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), '')}
+      {btn(<IconListOrdered width={14} height={14} />, editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), '')}
+      {btn(<IconQuote width={13} height={13} />, editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '')}
+      {btn(<IconLink width={13} height={13} />, editor.isActive('link'), () => {
         const url = window.prompt('链接地址')
         if (url) editor.chain().focus().setLink({ href: url }).run()
         else editor.chain().focus().unsetLink().run()
-      })}
+      }, '')}
     </div>
   )
 }

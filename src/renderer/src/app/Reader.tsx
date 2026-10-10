@@ -8,7 +8,8 @@ import {
 } from '../lib/reading-styles'
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
-  IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose
+  IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
+  IconPin, IconPalette, IconKey, IconLock
 } from '../components/icons'
 import type { Attachment, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
 
@@ -352,7 +353,7 @@ export function Reader() {
         <div className="w-px h-4" style={{ background: 'var(--border)' }} />
         <ToolButton
           onClick={() => void useMail.getState().setPinned([msg.id], !msg.pinned)}
-          icon={<span className="text-[12px] leading-none">📌</span>}
+          icon={<IconPin width={13} height={13} />}
           label={msg.pinned ? '取消置顶' : '置顶'}
           active={msg.pinned}
         />
@@ -385,7 +386,7 @@ export function Reader() {
         <div ref={styleRootRef} className="relative">
           <ToolButton
             onClick={() => setStyleMenu(m => !m)}
-            icon={<span className="text-[13px] leading-none">🎨</span>}
+            icon={<IconPalette width={13} height={13} />}
             label={skin ? skin[1] : '风格'}
             active={!!skin}
           />
@@ -446,7 +447,9 @@ export function Reader() {
             className="flex items-center gap-3 rounded-[var(--r-md)] px-4 py-3 border shadow-[var(--shadow-sm)] pop-in"
             style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent)' }}
           >
-            <span className="text-[20px] leading-none">{auth.kind === 'code' ? '🔑' : '🔐'}</span>
+            <span className="leading-none inline-flex" style={{ color: 'var(--accent)' }}>
+              {auth.kind === 'code' ? <IconKey width={20} height={20} /> : <IconLock width={20} height={20} />}
+            </span>
             {auth.kind === 'code' ? (
               <>
                 <div className="flex-1 min-w-0">
