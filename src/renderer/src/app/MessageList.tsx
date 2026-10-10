@@ -18,6 +18,9 @@ const SORT_LABEL: Record<ListSort, string> = {
   smart: '重要优先'
 }
 
+/** 标签过滤维度：AI 分类 + 状态切片 */
+type ListFilter = 'all' | 'personal' | 'notification' | 'newsletter' | 'noise' | 'unread' | 'attach' | 'flagged' | 'pinned'
+
 function Avatar({ name, color }: { name: string; color?: string }) {
   const letter = [...name.trim()][0]?.toUpperCase() ?? '?'
   return (
@@ -311,12 +314,48 @@ export function MessageList() {
   const colorByAccount = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a.color])), [accounts])
   const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
 
+  // ---- 标签过滤（按 AI 分类 / 状态维度快速切片） ----
+  const [filter, setFilter] = useState<ListFilter>('all')
+  const filterDefs: { key: ListFilter; label: string }[] = useMemo(
+    () => [
+      { key: 'all', label: '全部' },
+      { key: 'personal', label: '个人' },
+      { key: 'notification', label: '通知' },
+      { key: 'newsletter', label: '订阅' },
+      { key: 'noise', label: '噪声' },
+      { key: 'unread', label: '未读' },
+      { key: 'attach', label: '附件' },
+      { key: 'flagged', label: '星标' },
+      { key: 'pinned', label: '置顶' }
+    ],
+    []
+  )
+  const filterCounts = useMemo(() => {
+    const c = { all: sorted.length, personal: 0, notification: 0, newsletter: 0, noise: 0, unread: 0, attach: 0, flagged: 0, pinned: 0 } as Record<ListFilter, number>
+    for (const m of sorted) {
+      c[m.category] = (c[m.category] ?? 0) + 1
+      if (m.unread) c.unread++
+      if (m.hasAttachments) c.attach++
+      if (m.flagged) c.flagged++
+      if (m.pinned) c.pinned++
+    }
+    return c
+  }, [sorted])
+  const filtered = useMemo(() => {
+    if (filter === 'all') return sorted
+    if (filter === 'unread') return sorted.filter(m => m.unread)
+    if (filter === 'attach') return sorted.filter(m => m.hasAttachments)
+    if (filter === 'flagged') return sorted.filter(m => m.flagged)
+    if (filter === 'pinned') return sorted.filter(m => m.pinned)
+    return sorted.filter(m => m.category === filter)
+  }, [sorted, filter])
+
   // 会话聚合：同线程折叠（按排序后顺序取代表 = 最新一封）
   const view = useMemo(() => {
-    if (!groupThreads) return sorted.map(m => ({ kind: 'msg' as const, msg: m }))
+    if (!groupThreads) return filtered.map(m => ({ kind: 'msg' as const, msg: m }))
     const groups: { key: string; msgs: MessageSummary[] }[] = []
     const index = new Map<string, number>()
-    for (const m of sorted) {
+    for (const m of filtered) {
       const key = m.threadId || m.id
       const i = index.get(key)
       if (i === undefined) {
@@ -331,7 +370,7 @@ export function MessageList() {
         ? ({ kind: 'thread' as const, msgs: g.msgs, key: g.key })
         : ({ kind: 'msg' as const, msg: g.msgs[0] })
     )
-  }, [sorted, groupThreads])
+  }, [filtered, groupThreads])
 
   useEffect(() => setSearchLocal(searchQuery), [searchQuery])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
@@ -488,6 +527,32 @@ export function MessageList() {
           </button>
         )}
       </div>
+
+      {/* 标签过滤行：AI 分类 + 状态切片（计数实时跟随当前视图） */}
+      <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-[var(--border-soft)] overflow-x-auto no-scrollbar">
+          {filterDefs.map(f => {
+            const active = filter === f.key
+            const count = filterCounts[f.key] ?? 0
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                title={`${f.label}（${count}）`}
+                className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border transition-colors inline-flex items-center gap-1 ${
+                  active ? 'font-medium' : ''
+                }`}
+                style={{
+                  borderColor: active ? 'var(--accent)' : 'transparent',
+                  color: active ? 'var(--accent-strong)' : count === 0 && f.key !== 'all' ? 'var(--faint)' : 'var(--muted)',
+                  background: active ? 'var(--accent-soft)' : 'transparent'
+                }}
+              >
+                {f.label}
+                <span className="tabular-nums opacity-70">{count}</span>
+              </button>
+            )
+          })}
+        </div>
 
       {checkedAll && (
         <BulkBar

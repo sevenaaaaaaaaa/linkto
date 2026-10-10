@@ -540,3 +540,11 @@ input:focus-visible {
   font-size: 14px;
   line-height: 1.75;
 }
+
+/* 过滤标签行：隐藏横向滚动条（保留滚动能力） */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
