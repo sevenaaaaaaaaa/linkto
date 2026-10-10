@@ -363,7 +363,16 @@ export function registerIpc(ctx: AppContext) {
         const row = store.getMessageRow(id)
         const worker = engine.getWorker(row.account_id)
         if (worker) {
-          await worker.downloadBody(row.folder_path, row.uid).catch(() => {})
+          try {
+            await worker.downloadBody(row.folder_path, row.uid)
+          } catch (err) {
+            // 失败原因广播给 UI（Reader 显示可重试提示），不再静默
+            ctx.event(null as never, {
+              type: 'body-download-error',
+              messageId: id,
+              error: err instanceof Error ? err.message : String(err)
+            })
+          }
           full = store.getMessageFull(id)
         }
       }

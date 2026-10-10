@@ -105,7 +105,7 @@ export class AccountWorker {
   private client: ImapFlow | null = null
   private running = true
   private queue: Promise<unknown> = Promise.resolve()
-  private bodyQueue: { folderPath: string; uid: number; messageId: string | null }[] = []
+  private bodyQueue: { folderPath: string; uid: number; messageId: string | null; attempt?: number }[] = []
   private bodyQueued = new Set<string>()
   private processingBody = false
   private cycle = 0
@@ -449,10 +449,10 @@ export class AccountWorker {
     if (inserted && special === 'inbox' && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
       this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name ?? env.from.address) : '', category)
     }
-    // 性能：仅近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），
+    // 性能：近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），
     // 避免初始同步串行下载全量正文拖慢列表可见时间
-    const recentInbox = special === 'inbox' && Date.now() - env.date < 3 * 864e5
-    if (recentInbox && this.bodyQueued.size < 40) {
+    const recentInbox = special === 'inbox' && Date.now() - env.date < 7 * 864e5
+    if (recentInbox && this.bodyQueued.size < 120) {
       this.enqueueBody(folderPath, env.uid, env.date)
     }
   }
@@ -473,10 +473,14 @@ export class AccountWorker {
     this.processingBody = true
     try {
       while (this.bodyQueue.length && this.running) {
-        const item = this.bodyQueue.shift()!
+        const item = this.bodyQueue.shift()! as { folderPath: string; uid: number; messageId: string | null; attempt?: number }
         try {
           await this.downloadBody(item.folderPath, item.uid)
-        } catch { /* 单条失败不阻塞队列 */ }
+        } catch {
+          // 单条失败重试（最多 2 次，放回队尾），避免同步高峰期一次性失败全部沦为空正文
+          const attempt = (item.attempt ?? 0) + 1
+          if (attempt < 3) this.bodyQueue.push({ ...item, attempt })
+        }
         await sleep(20)
       }
     } finally {
@@ -495,7 +499,9 @@ export class AccountWorker {
   }
 
   private async downloadRaw(client: ImapFlow, folderPath: string, uid: number): Promise<Buffer | null> {
-    const lock = await client.getMailboxLock(folderPath)
+    // 同步循环可能正持有该 mailbox 的锁（首次同步 300 封要数分钟）；排队 30s 拿不到即失败，
+    // 由上层报错并可重试，避免 UI 无限等待后静默显示空正文
+    const lock = await client.getMailboxLock(folderPath, { acquireTimeout: 30_000 })
     try {
       const res = await client.download(String(uid), undefined, { uid: true })
       if (!res?.content) return null

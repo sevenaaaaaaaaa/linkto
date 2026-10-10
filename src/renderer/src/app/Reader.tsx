@@ -33,9 +33,36 @@ export function Reader() {
   const [toast, setToast] = useState('')
   const [showRemote, setShowRemote] = useState(false)
   const [remoteCount, setRemoteCount] = useState(0)
+  const [bodyError, setBodyError] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef('')
   const styleRootRef = useRef<HTMLDivElement>(null)
+
+  // 正文按需下载失败时主进程会广播错误，匹配当前邮件则显示重试提示
+  useEffect(() => {
+    if (!msg?.id) return
+    const off = api.onEvent((raw: unknown) => {
+      const ev = raw as { type?: string; messageId?: string; error?: string }
+      if (ev.type === 'body-download-error' && ev.messageId === msg.id) setBodyError(ev.error ?? '未知错误')
+    })
+    return () => { off?.() }
+  }, [msg?.id])
+
+  const retryBody = async () => {
+    if (!msg || retrying) return
+    setRetrying(true)
+    setBodyError(null)
+    try {
+      const full = await api.getMessage(msg.id)
+      if (full) setMsg(full)
+      if (!full?.text && !full?.html) setBodyError('仍无正文，请稍后重试')
+    } catch (err) {
+      setBodyError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   useEffect(() => {
     void api.getGeneralSettings().then(setSettings)
@@ -572,6 +599,21 @@ export function Reader() {
                 }
           }
         >
+          {!msg.text && !msg.html && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 14px', borderRadius: 'var(--r-md)', background: bodyError ? 'color-mix(in srgb, #ef4444 10%, transparent)' : 'color-mix(in srgb, #71717a 8%, transparent)', fontSize: 13 }}>
+              <span style={{ flex: 1, color: 'var(--fg)' }}>
+                {bodyError ? `正文加载失败：${bodyError}` : '正文尚未下载（可能仍在同步中）'}
+              </span>
+              <button
+                className="btn-liquid"
+                onClick={retryBody}
+                disabled={retrying}
+                style={{ padding: '6px 14px', fontSize: 12 }}
+              >
+                {retrying ? '正在拉取…' : '重新加载正文'}
+              </button>
+            </div>
+          )}
           <div
             ref={bodyRef}
             className="mail-body-host selectable"
