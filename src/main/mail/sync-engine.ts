@@ -1,5 +1,4 @@
 import { ImapFlow, ListResponse } from 'imapflow'
-import { simpleParser, ParsedMail } from 'mailparser'
 import { createHash, randomUUID } from 'node:crypto'
 import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import type { AccountConfig, Address, Folder, MessageCategory, SpecialFolder } from '@shared/types'
@@ -7,6 +6,7 @@ import type { MailStore, MessageInsert } from '../db'
 import type { AppStore } from '../store'
 import { heuristicClassify, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
+import { parseEmailRaw } from './parse-pool'
 import type { Rule } from '@shared/types'
 
 const SEP = '::'
@@ -146,6 +146,7 @@ export class AccountWorker {
         this.startWatchdog()
         this.events.status(this.account.id, 'syncing', '同步中…')
         await this.syncAllFolders()
+        await this.replayPendingOps()
         this.events.status(this.account.id, 'connected', '已连接')
         backoff = 3000
         while (this.running && this.client?.usable) {
@@ -153,6 +154,7 @@ export class AccountWorker {
           if (!this.running || !this.client?.usable) break
           this.kickRequested = false
           await this.syncAllFolders(true)
+          await this.replayPendingOps()
           this.events.status(this.account.id, 'connected', '已连接')
         }
       } catch (err) {
@@ -535,13 +537,13 @@ export class AccountWorker {
     try {
       writeFileSync(this.appStore.emlPath(this.account.id, folderPath, uid), raw)
     } catch { /* 磁盘失败仅影响离线镜像，不阻塞入库 */ }
-    let parsed: ParsedMail
+    let parsed
     try {
-      parsed = await simpleParser(raw)
+      parsed = await parseEmailRaw(raw)
     } catch {
       return
     }
-    const text = (typeof parsed.text === 'string' && parsed.text ? parsed.text : stripHtml(typeof parsed.html === 'string' ? parsed.html : '')).slice(0, 200_000)
+    const text = (parsed.text && parsed.text.trim() ? parsed.text : stripHtml(parsed.html ?? '')).slice(0, 200_000)
     const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 180)
     for (const [i, att] of (parsed.attachments ?? []).entries()) {
       const attId = createHash('sha1')
@@ -563,62 +565,135 @@ export class AccountWorker {
         path
       })
     }
-    this.store.updateMessageBody(id, { html: typeof parsed.html === 'string' ? parsed.html : null, text, snippet })
+    this.store.updateMessageBody(id, { html: parsed.html ?? null, text, snippet })
     this.bodyQueued.delete(`${folderPath}${SEP}${uid}`)
   }
 
   // ---------- 命令（渲染进程调用） ----------
 
+  /** 断网/网络失败时入队待同步操作，并提示用户 */
+  private queueOfflineOp(op: string, folderPath: string, uid: number, args: Record<string, unknown>, messageId?: string) {
+    this.store.addPendingOp({ accountId: this.account.id, folderPath, uid, op, args, messageId })
+    const count = this.store.listPendingOps(this.account.id).length
+    this.events.progress(this.account.id, `离线暂存：${count} 项操作待同步`)
+  }
+
   async setFlags(folderPath: string, uid: number, add: string[], remove: string[]) {
+    const id = messageIdOf(this.account.id, folderPath, uid)
+    // 本地乐观更新（离线也立即生效；重放/后续同步以服务器为准收敛）
+    const row = this.store.getMessageRow(id)
+    if (row) {
+      const flags = new Set(String(row.flags ?? '').split(' ').filter(Boolean))
+      for (const f of add) flags.add(f)
+      for (const f of remove) flags.delete(f)
+      this.store.updateMessageFlags(id, [...flags])
+    }
     await this.serialized(async () => {
       const client = this.client
-      if (!client?.usable) return
+      if (!client?.usable) {
+        this.queueOfflineOp('flags', folderPath, uid, { add, remove }, id)
+        return
+      }
       const lock = await client.getMailboxLock(folderPath)
       try {
         if (add.length) await client.messageFlagsAdd(String(uid), add, { uid: true })
         if (remove.length) await client.messageFlagsRemove(String(uid), remove, { uid: true })
+      } catch (err) {
+        // 网络抖动：入队稍后重放（本地已乐观生效）
+        this.queueOfflineOp('flags', folderPath, uid, { add, remove }, id)
+        throw err
       } finally {
         lock.release()
-      }
-      const id = messageIdOf(this.account.id, folderPath, uid)
-      const row = this.store.getMessageRow(id)
-      if (row) {
-        const flags = new Set(String(row.flags ?? '').split(' ').filter(Boolean))
-        for (const f of add) flags.add(f)
-        for (const f of remove) flags.delete(f)
-        this.store.updateMessageFlags(id, [...flags])
       }
     })
   }
 
   async moveToFolder(folderPath: string, uid: number, targetPath: string) {
-    await this.serialized(async () => {
-      const client = this.client
-      if (!client?.usable) return
-      const lock = await client.getMailboxLock(folderPath)
-      try {
-        await client.messageMove(String(uid), targetPath, { uid: true })
-      } finally {
-        lock.release()
-      }
-      this.store.deleteMessageCascade(messageIdOf(this.account.id, folderPath, uid))
-      this.events.changed(this.account.id)
-    })
+    const id = messageIdOf(this.account.id, folderPath, uid)
+    try {
+      await this.serialized(async () => {
+        const client = this.client
+        if (!client?.usable) {
+          this.queueOfflineOp('move', folderPath, uid, { target: targetPath }, id)
+          return
+        }
+        const lock = await client.getMailboxLock(folderPath)
+        try {
+          await client.messageMove(String(uid), targetPath, { uid: true })
+        } catch (err) {
+          this.queueOfflineOp('move', folderPath, uid, { target: targetPath }, id)
+          throw err
+        } finally {
+          lock.release()
+        }
+      })
+    } catch { /* 网络错误已入队，保持乐观视图 */ }
+    // 无论服务器成功还是离线入队：本地立即移除（重放成功后由同步拉取新位置）
+    this.store.deleteMessageCascade(id)
+    this.events.changed(this.account.id)
   }
 
   async deletePermanent(folderPath: string, uid: number) {
-    await this.serialized(async () => {
-      const client = this.client
-      if (!client?.usable) return
-      const lock = await client.getMailboxLock(folderPath)
+    const id = messageIdOf(this.account.id, folderPath, uid)
+    try {
+      await this.serialized(async () => {
+        const client = this.client
+        if (!client?.usable) {
+          this.queueOfflineOp('delete', folderPath, uid, {}, id)
+          return
+        }
+        const lock = await client.getMailboxLock(folderPath)
+        try {
+          await client.messageDelete(String(uid), { uid: true })
+        } catch (err) {
+          this.queueOfflineOp('delete', folderPath, uid, {}, id)
+          throw err
+        } finally {
+          lock.release()
+        }
+      })
+    } catch { /* 网络错误已入队，保持乐观视图 */ }
+    this.store.deleteMessageCascade(id)
+    this.events.changed(this.account.id)
+  }
+
+  /** 连接恢复后重放断网期间的待同步操作（只做 IMAP 侧，本地视图已乐观更新） */
+  private async replayPendingOps() {
+    const ops = this.store.listPendingOps(this.account.id)
+    if (!ops.length) return
+    const client = this.client
+    if (!client?.usable) return
+    let done = 0
+    for (const op of ops) {
       try {
-        await client.messageDelete(String(uid), { uid: true })
-      } finally {
-        lock.release()
+        const lock = await client.getMailboxLock(op.folderPath)
+        try {
+          if (op.op === 'flags') {
+            const { add = [], remove = [] } = op.args as { add?: string[]; remove?: string[] }
+            if (add.length) await client.messageFlagsAdd(String(op.uid), add, { uid: true })
+            if (remove.length) await client.messageFlagsRemove(String(op.uid), remove, { uid: true })
+          } else if (op.op === 'move') {
+            const { target } = op.args as { target?: string }
+            if (target) await client.messageMove(String(op.uid), target, { uid: true })
+          } else if (op.op === 'delete') {
+            await client.messageDelete(String(op.uid), { uid: true })
+          }
+        } finally {
+          lock.release()
+        }
+        this.store.deletePendingOp(op.id)
+        done++
+      } catch {
+        // 服务器端失败（消息已不存在等）：重试 10 次后放弃
+        this.store.bumpPendingOp(op.id)
+        if (op.attempts >= 10) this.store.deletePendingOp(op.id)
       }
-      this.store.deleteMessageCascade(messageIdOf(this.account.id, folderPath, uid))
+    }
+    if (done) {
+      const remain = this.store.listPendingOps(this.account.id).length
+      this.events.progress(this.account.id, remain ? `离线操作已同步 ${done} 项，剩 ${remain} 项` : `离线操作已全部同步（${done} 项）`)
       this.events.changed(this.account.id)
-    })
+    }
   }
 
   /** 拉取目标文件夹（如废纸篓）的路径 */
@@ -646,11 +721,12 @@ export class AccountWorker {
     const from = Math.max(1, Number(mailbox.uidNext ?? 1) - 500)
     const uids = ((await client.search({ uid: `${from}:*` }, { uid: true })) || []) as number[]
     if (!uids.length) return
+    // 断网期间乐观更新的消息：重放完成前不让服务器旧 flags 覆盖本地
+    const pending = this.store.pendingOpMessageIds(this.account.id)
     for await (const msg of client.fetch(uids.join(','), { uid: true, flags: true }, { uid: true })) {
-      this.store.updateMessageFlags(
-        messageIdOf(this.account.id, folderPath, msg.uid),
-        [...(msg.flags ?? [])].map(String)
-      )
+      const id = messageIdOf(this.account.id, folderPath, msg.uid)
+      if (pending.has(id)) continue
+      this.store.updateMessageFlags(id, [...(msg.flags ?? [])].map(String))
     }
   }
 }

@@ -818,6 +818,46 @@ export class MailStore {
     this.db.prepare('DELETE FROM connectors WHERE id = ?').run(id)
   }
 
+  // ================= 断网操作队列 =================
+
+  addPendingOp(op: { accountId: string; folderPath: string; uid: number; op: string; args?: Record<string, unknown>; messageId?: string }): void {
+    this.db
+      .prepare(
+        `INSERT INTO pending_ops (id, account_id, folder_path, uid, op, args, message_id, created_at, attempts)
+         VALUES (?,?,?,?,?,?,?,?,0)`
+      )
+      .run(randomUUID(), op.accountId, op.folderPath, op.uid, op.op, JSON.stringify(op.args ?? {}), op.messageId ?? null, Date.now())
+  }
+
+  listPendingOps(accountId?: string): { id: string; accountId: string; folderPath: string; uid: number; op: string; args: Record<string, unknown>; messageId: string | null; attempts: number }[] {
+    const rows = accountId
+      ? this.db.prepare('SELECT * FROM pending_ops WHERE account_id = ? ORDER BY created_at ASC').all(accountId)
+      : this.db.prepare('SELECT * FROM pending_ops ORDER BY created_at ASC').all()
+    return (rows as any[]).map(r => ({
+      id: r.id,
+      accountId: r.account_id,
+      folderPath: r.folder_path,
+      uid: r.uid,
+      op: r.op,
+      args: j(r.args, {}),
+      messageId: r.message_id,
+      attempts: r.attempts
+    }))
+  }
+
+  deletePendingOp(id: string): void {
+    this.db.prepare('DELETE FROM pending_ops WHERE id = ?').run(id)
+  }
+
+  bumpPendingOp(id: string): void {
+    this.db.prepare('UPDATE pending_ops SET attempts = attempts + 1 WHERE id = ?').run(id)
+  }
+
+  pendingOpMessageIds(accountId: string): Set<string> {
+    const rows = this.db.prepare('SELECT message_id FROM pending_ops WHERE account_id = ? AND message_id IS NOT NULL').all(accountId) as any[]
+    return new Set(rows.map(r => r.message_id as string))
+  }
+
   // ================= 统计 =================
 
   counts(): { messages: number; accounts: number; kb: number } {
@@ -1043,5 +1083,18 @@ export class MailStore {
   CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, status, updated_at);
   CREATE INDEX IF NOT EXISTS idx_agent_memory_entity ON agent_memory(entity);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memory_dedupe ON agent_memory(scope, entity, title);
+
+  CREATE TABLE IF NOT EXISTS pending_ops (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    folder_path TEXT NOT NULL,
+    uid INTEGER NOT NULL,
+    op TEXT NOT NULL,
+    args TEXT NOT NULL DEFAULT '{}',
+    message_id TEXT,
+    created_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_pending_ops_account ON pending_ops(account_id);
   `
 }
