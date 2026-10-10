@@ -1,7 +1,7 @@
 import { ImapFlow, ListResponse } from 'imapflow'
 import { simpleParser, ParsedMail } from 'mailparser'
 import { createHash, randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import type { AccountConfig, Address, Folder, MessageCategory, SpecialFolder } from '@shared/types'
 import type { MailStore, MessageInsert } from '../db'
 import type { AppStore } from '../store'
@@ -498,6 +498,20 @@ export class AccountWorker {
     })
   }
 
+  /** 离线水化：从本地 eml 镜像解析正文入库（零网络，断网可用）。返回是否命中镜像 */
+  async hydrateFromLocalEml(folderPath: string, uid: number): Promise<boolean> {
+    const path = this.appStore.emlPath(this.account.id, folderPath, uid)
+    if (!existsSync(path)) return false
+    try {
+      const raw = readFileSync(path)
+      if (!raw.length) return false
+      await this.parseAndStore(folderPath, uid, raw)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   private async downloadRaw(client: ImapFlow, folderPath: string, uid: number): Promise<Buffer | null> {
     // 同步循环可能正持有该 mailbox 的锁（首次同步 300 封要数分钟）；排队 30s 拿不到即失败，
     // 由上层报错并可重试，避免 UI 无限等待后静默显示空正文
@@ -517,6 +531,10 @@ export class AccountWorker {
     const id = messageIdOf(this.account.id, folderPath, uid)
     const row = this.store.getMessageRow(id)
     if (!row) return
+    // eml 原文镜像落盘：离线可读、断网可解析、可导入导出（本地优先的数据资产）
+    try {
+      writeFileSync(this.appStore.emlPath(this.account.id, folderPath, uid), raw)
+    } catch { /* 磁盘失败仅影响离线镜像，不阻塞入库 */ }
     let parsed: ParsedMail
     try {
       parsed = await simpleParser(raw)

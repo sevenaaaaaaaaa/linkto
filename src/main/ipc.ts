@@ -31,6 +31,7 @@ import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
 import type { OAuthService } from './oauth'
 import type { Notifier } from './notify'
+import { applyLoginItem } from './native-integration'
 import type { AccountWorker } from './mail/sync-engine'
 
 const SEP = '::'
@@ -363,15 +364,19 @@ export function registerIpc(ctx: AppContext) {
         const row = store.getMessageRow(id)
         const worker = engine.getWorker(row.account_id)
         if (worker) {
-          try {
-            await worker.downloadBody(row.folder_path, row.uid)
-          } catch (err) {
-            // 失败原因广播给 UI（Reader 显示可重试提示），不再静默
-            ctx.event(null as never, {
-              type: 'body-download-error',
-              messageId: id,
-              error: err instanceof Error ? err.message : String(err)
-            })
+          // 快路径：本地 eml 镜像直接解析（离线可用、零网络）
+          const local = await worker.hydrateFromLocalEml(row.folder_path, row.uid).catch(() => false)
+          if (!local) {
+            try {
+              await worker.downloadBody(row.folder_path, row.uid)
+            } catch (err) {
+              // 失败原因广播给 UI（Reader 显示可重试提示），不再静默
+              ctx.event(null as never, {
+                type: 'body-download-error',
+                messageId: id,
+                error: err instanceof Error ? err.message : String(err)
+              })
+            }
           }
           full = store.getMessageFull(id)
         }
@@ -550,7 +555,11 @@ export function registerIpc(ctx: AppContext) {
     // ================= 设置 =================
 
     getGeneralSettings: () => appStore.get('general', DEFAULT_GENERAL),
-    setGeneralSettings: ([s]: [GeneralSettings]) => appStore.set('general', s),
+    setGeneralSettings: ([s]: [GeneralSettings]) => {
+      appStore.set('general', s)
+      // 开机自启跟随设置即时生效
+      applyLoginItem(s.launchAtLogin)
+    },
     getNotificationSettings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     setNotificationSettings: ([s]: [NotificationSettings]) => appStore.set('notifications', s),
     notifyTest: async () => {

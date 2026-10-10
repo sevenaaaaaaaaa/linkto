@@ -12,6 +12,7 @@ import { AgentService } from './ai/agent'
 import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { Notifier, focusMainWindow } from './notify'
+import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
 
@@ -137,12 +138,14 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
 }
 
 function updateDockBadge() {
+  const unread = mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
   if (!appStore.get('general', DEFAULT_GENERAL).dockBadge) {
     app.setBadgeCount(0)
+    setTrayUnread(0)
     return
   }
-  const unread = mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
   app.setBadgeCount(unread)
+  setTrayUnread(unread)
 }
 
 function buildAppMenu() {
@@ -215,8 +218,15 @@ async function bootstrap() {
   appStore.initKv()
   const db = new DatabaseSync(appStore.dbPath)
   db.exec('PRAGMA journal_mode=WAL')
+  db.exec('PRAGMA synchronous=NORMAL')
   db.exec(MailStore.SCHEMA)
   mailStore = new MailStore(db)
+  // FTS 索引完整性自检：external-content 表与原表不一致时（旧数据/崩溃残留）自动重建
+  try {
+    db.prepare("INSERT INTO messages_fts(messages_fts) VALUES('integrity-check')").run()
+  } catch {
+    db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
+  }
   // 旧库迁移：发件队列时间戳（新库建表时已含该列）
   try {
     db.exec('ALTER TABLE drafts ADD COLUMN send_at INTEGER')
@@ -376,6 +386,20 @@ async function bootstrap() {
   registerIpc(ctx)
 
   buildAppMenu()
+  initNativeIntegration({
+    openCompose: prefill => createComposeWindow(prefill as Record<string, unknown> | undefined),
+    showMain: () => {
+      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+      else if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      } else createMainWindow()
+    },
+    unreadTotal: () => mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
+  })
+  // 开机自启（跟随设置；hidden 避免抢占前台）
+  applyLoginItem(appStore.get('general', DEFAULT_GENERAL).launchAtLogin)
 
   // 启动所有启用账户的同步
   for (const account of mailStore.listAccounts()) {

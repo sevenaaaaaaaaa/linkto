@@ -53,6 +53,7 @@ export const DEFAULT_AI: AISettings = {
 export class AppStore {
   readonly dataDir: string
   readonly attachmentDir: string
+  readonly emlDir: string
   readonly dbPath: string
   private kv!: DatabaseSync
 
@@ -60,8 +61,10 @@ export class AppStore {
     // 保持 'mail-studio' 目录名以兼容老版本本地数据（不对外可见）
     this.dataDir = join(app.getPath('userData'), 'mail-studio')
     this.attachmentDir = join(this.dataDir, 'attachments')
+    this.emlDir = join(this.dataDir, 'eml')
     this.dbPath = join(this.dataDir, 'mail.db')
     mkdirSync(this.attachmentDir, { recursive: true })
+    mkdirSync(this.emlDir, { recursive: true })
     const secretDir = join(this.dataDir, 'secrets')
     mkdirSync(secretDir, { recursive: true })
     this.secretDir = secretDir
@@ -149,5 +152,13 @@ export class AppStore {
 
   attachmentPath(attachmentId: string): string {
     return join(this.attachmentDir, attachmentId.replace(/[^a-zA-Z0-9_-]/g, ''))
+  }
+
+  /** eml 原文镜像路径：eml/<accountId>/<safeFolder>/<uid>.eml（离线可读、可重解析） */
+  emlPath(accountId: string, folderPath: string, uid: number): string {
+    const safeFolder = encodeURIComponent(folderPath).replace(/[^a-zA-Z0-9_-]/g, '_')
+    const dir = join(this.emlDir, accountId.replace(/[^a-zA-Z0-9_-]/g, ''), safeFolder)
+    mkdirSync(dir, { recursive: true })
+    return join(dir, `${uid}.eml`)
   }
 }

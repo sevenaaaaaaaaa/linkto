@@ -106,6 +106,9 @@ export function GeneralTab() {
       </SettingRow>
 
       <SectionTitle>应用</SectionTitle>
+      <SettingRow label="开机自启" desc="登录 macOS 时在后台启动 LinkTo（不抢占前台）">
+        <Toggle checked={s.launchAtLogin} onChange={v => update({ launchAtLogin: v })} />
+      </SettingRow>
       <SettingRow label="Dock 未读角标">
         <Toggle checked={s.dockBadge} onChange={v => update({ dockBadge: v })} />
       </SettingRow>
