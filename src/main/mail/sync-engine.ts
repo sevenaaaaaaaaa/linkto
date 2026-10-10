@@ -147,8 +147,9 @@ export class AccountWorker {
         this.events.status(this.account.id, 'connected', '已连接')
         backoff = 3000
         while (this.running && this.client?.usable) {
-          await sleep(this.cycle % 4 === 0 ? 30_000 : 60_000)
+          await this.sleepInterruptible(this.cycle % 4 === 0 ? 30_000 : 60_000)
           if (!this.running || !this.client?.usable) break
+          this.kickRequested = false
           await this.syncAllFolders(true)
           this.events.status(this.account.id, 'connected', '已连接')
         }
@@ -162,7 +163,8 @@ export class AccountWorker {
           this.client?.close()
         } catch { /* ignore */ }
         this.client = null
-        await sleep(backoff)
+        await this.sleepInterruptible(backoff)
+        this.kickRequested = false
         backoff = Math.min(backoff * 2, 60_000)
       }
     }
@@ -201,15 +203,19 @@ export class AccountWorker {
     this.client = client
   }
 
-  private kickSyncing = false
-  private async kickSync() {
-    if (this.kickSyncing || !this.client?.usable) return
-    this.kickSyncing = true
-    try {
-      await this.syncAllFolders(true)
-      this.events.status(this.account.id, 'connected', '已连接')
-    } catch { /* 下一轮循环兜底 */ } finally {
-      this.kickSyncing = false
+  private kickRequested = false
+  /** 新邮件踢同步：只置标志，由主循环可中断 sleep 提前醒来执行（避免与 loop 并发 SELECT 穿插） */
+  private kickSync() {
+    this.kickRequested = true
+  }
+
+  /** 分片 sleep：running=false 或 kick 立即返回 */
+  private async sleepInterruptible(ms: number) {
+    const step = 500
+    let waited = 0
+    while (waited < ms && this.running && !this.kickRequested) {
+      await sleep(Math.min(step, ms - waited))
+      waited += step
     }
   }
 
@@ -301,11 +307,11 @@ export class AccountWorker {
     }
   }
 
+  /** 仅在 syncFolder 已持有 mailbox lock 时调用（imapflow 锁不可重入，嵌套获取会破坏 currentLock） */
   private async fetchEnvelopes(folderPath: string, special: SpecialFolder, uids: number[]) {
     const client = this.client
     if (!client) return
     const fetchRange = uids.join(',')
-    const lock = await client.getMailboxLock(folderPath)
     const batch: EnvelopeData[] = []
     try {
       for await (const msg of client.fetch(
@@ -334,8 +340,8 @@ export class AccountWorker {
           attachmentCount
         })
       }
-    } finally {
-      lock.release()
+    } catch {
+      // 网络中断等：由外层 loop 统一进入重试
     }
 
     for (const env of batch) {
@@ -580,25 +586,21 @@ export class AccountWorker {
     })
   }
 
+  /** 仅在 syncFolder 已持有 mailbox lock 时调用 */
   private async refreshFlags(folderPath: string) {
     const client = this.client
     if (!client) return
     const fid = folderIdOf(this.account.id, folderPath)
-    const lock = await client.getMailboxLock(folderPath)
-    try {
-      const mailbox = client.mailbox
-      if (!mailbox || typeof mailbox === 'boolean') return
-      const from = Math.max(1, Number(mailbox.uidNext ?? 1) - 500)
-      const uids = ((await client.search({ uid: `${from}:*` }, { uid: true })) || []) as number[]
-      if (!uids.length) return
-      for await (const msg of client.fetch(uids.join(','), { uid: true, flags: true }, { uid: true })) {
-        this.store.updateMessageFlags(
-          messageIdOf(this.account.id, folderPath, msg.uid),
-          [...(msg.flags ?? [])].map(String)
-        )
-      }
-    } finally {
-      lock.release()
+    const mailbox = client.mailbox
+    if (!mailbox || typeof mailbox === 'boolean') return
+    const from = Math.max(1, Number(mailbox.uidNext ?? 1) - 500)
+    const uids = ((await client.search({ uid: `${from}:*` }, { uid: true })) || []) as number[]
+    if (!uids.length) return
+    for await (const msg of client.fetch(uids.join(','), { uid: true, flags: true }, { uid: true })) {
+      this.store.updateMessageFlags(
+        messageIdOf(this.account.id, folderPath, msg.uid),
+        [...(msg.flags ?? [])].map(String)
+      )
     }
   }
 }

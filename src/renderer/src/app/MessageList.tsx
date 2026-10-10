@@ -273,7 +273,7 @@ function ThreadRow(props: {
 }
 
 export function MessageList() {
-  const { scope, messages, total, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, setSearch, loading, sort, setSort, groupThreads, setGroupThreads, setPinned } = useMail()
+  const { scope, messages, total, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, setSearch, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
   const { accounts, folders } = useMail()
   const [searchLocal, setSearchLocal] = useState(searchQuery)
   const [classifying, setClassifying] = useState(false)
@@ -281,6 +281,18 @@ export function MessageList() {
   const [moveMenu, setMoveMenu] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+
+  // 当前视图下账户的实时同步进度（来自 sync-progress 事件）
+  const progressText = useMemo(() => {
+    const ids = new Set(messages.map(m => m.accountId))
+    if (scope.folderId) {
+      const f = folders.find(f => f.id === scope.folderId)
+      if (f) return syncProgress[f.accountId] ?? ''
+    }
+    if (scope.accountId) return syncProgress[scope.accountId] ?? ''
+    for (const id of ids) if (syncProgress[id]) return syncProgress[id]
+    return ''
+  }, [syncProgress, messages, scope, folders])
 
   const colorByAccount = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a.color])), [accounts])
   const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
@@ -399,6 +411,12 @@ export function MessageList() {
         </button>
         <h2 className="text-[14.5px] font-semibold truncate" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{scope.title}</h2>
         {total > 0 && <span className="text-[12px]" style={{ color: 'var(--faint)' }}>{total}</span>}
+        {progressText && (
+          <span className="text-[11px] tabular-nums truncate max-w-[110px] inline-flex items-center gap-1" style={{ color: 'var(--accent)' }} title={progressText}>
+            <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
+            {progressText}
+          </span>
+        )}
         <div className="flex-1" />
         {/* 会话聚合 */}
         <button

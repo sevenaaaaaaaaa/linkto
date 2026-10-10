@@ -52,6 +52,8 @@ interface MailState {
   sort: ListSort
   groupThreads: boolean
   lastClickedId: string | null
+  /** 账户实时同步进度（accountId → "INBOX +87"），来自 sync-progress 事件 */
+  syncProgress: Record<string, string>
 
   loadAccounts(): Promise<void>
   loadFolders(): Promise<void>
@@ -65,6 +67,7 @@ interface MailState {
   setSort(s: ListSort): void
   setGroupThreads(v: boolean): void
   setPinned(ids: string[], pinned: boolean): Promise<void>
+  setSyncProgress(accountId: string, text: string): void
 }
 
 export const useMail = create<MailState>((set, get) => ({
@@ -80,6 +83,7 @@ export const useMail = create<MailState>((set, get) => ({
   sort: loadSort(),
   groupThreads: loadThreads(),
   lastClickedId: null,
+  syncProgress: {},
 
   loadAccounts: async () => {
     const accounts = await api.listAccounts()
@@ -160,5 +164,9 @@ export const useMail = create<MailState>((set, get) => ({
   setPinned: async (ids, pinned) => {
     await api.pinMessages(ids, pinned)
     await get().loadMessages()
+  },
+
+  setSyncProgress: (accountId, text) => {
+    set({ syncProgress: { ...get().syncProgress, [accountId]: text } })
   }
 }))

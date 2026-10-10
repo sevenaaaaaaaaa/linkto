@@ -327,9 +327,7 @@ export function registerIpc(ctx: AppContext) {
           password: JSON.stringify(tokens),
           authType: 'oauth'
         }
-        // 用 token 实测 IMAP 再入库
-        const verify = (await handlers.verifyAccountOAuth([draft, tokens.accessToken], null as never)) as { ok: boolean; error?: string }
-        if (!verify.ok) return { ok: false, error: verify.error ?? '验证失败' }
+        // addAccount 内部会用 token 实测 IMAP 并保存 tokens，无需重复验证
         const added = (await handlers.addAccount([draft], null as never)) as { ok: boolean; error?: string; account?: AccountConfig }
         if (!added.ok) return { ok: false, error: added.error ?? '添加账户失败' }
         return { ok: true, email, accountId: added.account?.id }

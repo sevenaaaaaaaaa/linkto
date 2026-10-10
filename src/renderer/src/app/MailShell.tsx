@@ -49,16 +49,34 @@ export function MailShell() {
 
   useEffect(() => {
     loadOutbox()
+    // 账户状态实时刷新（节流 1s，同步引擎状态变化频繁）
+    let statusTimer = 0
+    let progressTimer = 0
     const onEv = (ev: unknown) => {
-      const e = ev as { type: string; subject?: string; to?: string }
+      const e = ev as { type: string; subject?: string; to?: string; accountId?: string; text?: string }
       if (e.type === 'outbox-changed') loadOutbox()
       if (e.type === 'mail-sent') {
         setToast(`已发送：${e.subject ?? ''}`)
         setTimeout(() => setToast(''), 2600)
       }
+      if (e.type === 'account-status') {
+        // 同步完成/出错时清除进度条文本
+        if (e.accountId && (e.text === '已连接' || e.text === '连接失败' || e.text === '已停用')) {
+          useMail.getState().setSyncProgress(e.accountId, '')
+        }
+        if (!statusTimer) statusTimer = window.setTimeout(() => { statusTimer = 0; void useMail.getState().loadAccounts() }, 1000)
+      }
+      if (e.type === 'sync-progress' && e.accountId) {
+        if (!progressTimer) progressTimer = window.setTimeout(() => { progressTimer = 0 }, 300)
+        useMail.getState().setSyncProgress(e.accountId, e.text ?? '')
+      }
     }
     const off = api.onEvent(onEv)
-    return () => void off()
+    return () => {
+      void off()
+      if (statusTimer) clearTimeout(statusTimer)
+      if (progressTimer) clearTimeout(progressTimer)
+    }
   }, [])
 
   // 侧栏 ⌘K 按钮等入口
