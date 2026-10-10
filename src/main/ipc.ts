@@ -196,6 +196,9 @@ export function registerIpc(ctx: AppContext) {
         if (/auth|login|credentials|invalid/i.test(msg)) return { ok: false, error: '登录失败：请检查用户名与授权码/应用专用密码' }
         if (/timeout|ETIMEDOUT/i.test(msg)) return { ok: false, error: '连接超时：请检查网络、服务器地址与端口' }
         if (/ENOTFOUND/i.test(msg)) return { ok: false, error: '无法解析服务器地址' }
+        if (/ECONNREFUSED/i.test(msg)) return { ok: false, error: '连接被拒绝：请检查端口与加密方式' }
+        if (/WRONG_VERSION_NUMBER|WRONG_VERSION|tls|ssl|certificate|handshake/i.test(msg))
+          return { ok: false, error: 'TLS 加密握手失败：该端口可能不是 SSL/TLS——请把「加密方式」改为 STARTTLS 或无加密后重试' }
         return { ok: false, error: msg.slice(0, 160) }
       } finally {
         try {

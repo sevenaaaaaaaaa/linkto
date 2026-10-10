@@ -263,7 +263,11 @@ export function Sidebar() {
               )}
               {!accFolders.length && (
                 <div className="px-3 py-1 text-[12px]" style={{ color: 'var(--faint)' }}>
-                  {acc.status === 'error' ? acc.statusText || '连接失败' : '同步中…'}
+                  {acc.status === 'error'
+                    ? acc.statusText || '连接失败'
+                    : acc.status === 'connected'
+                      ? '暂无文件夹，点上方刷新'
+                      : '同步中…'}
                 </div>
               )}
             </AccountGroup>

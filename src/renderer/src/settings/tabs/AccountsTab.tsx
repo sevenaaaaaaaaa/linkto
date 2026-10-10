@@ -568,6 +568,25 @@ function PasswordForm(props: {
   const [error, setError] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(!preset.imap)
 
+  /** 加密方式：ssl（993/465 隐式 TLS）· starttls（143/587 升级）· none（本地代理等无加密，连接时自动探测） */
+  type Enc = 'ssl' | 'starttls' | 'none'
+  const [imapEnc, setImapEnc] = useState<Enc>(preset.imap ? (preset.imap.secure ? 'ssl' : 'starttls') : 'ssl')
+  const [smtpEnc, setSmtpEnc] = useState<Enc>(preset.smtp ? (preset.smtp.secure ? 'ssl' : 'starttls') : 'ssl')
+  const ENC_LABEL: Record<Enc, string> = { ssl: 'SSL / TLS', starttls: 'STARTTLS', none: '无加密（本地代理）' }
+  const applyEnc = (which: 'imap' | 'smtp', enc: Enc) => {
+    const setEnc = which === 'imap' ? setImapEnc : setSmtpEnc
+    const set = which === 'imap' ? setImap : setSmtp
+    const cur = which === 'imap' ? imap : smtp
+    setEnc(enc)
+    // 切加密方式时联动推荐端口（仅当当前端口是该协议的常用默认值时）
+    const defaults: Record<Enc, number> = which === 'imap'
+      ? { ssl: 993, starttls: 143, none: 143 }
+      : { ssl: 465, starttls: 587, none: 1025 }
+    const common = which === 'imap' ? [143, 993] : [465, 587, 1025]
+    if (common.includes(cur.port)) set({ ...cur, port: defaults[enc], secure: enc === 'ssl' })
+    else set({ ...cur, secure: enc === 'ssl' })
+  }
+
   const detectPreset = (mail: string) => {
     setEmail(mail)
     const p = PROVIDER_PRESETS.find(x => x.key !== 'custom' && x.domains.includes(mail.split('@')[1]?.toLowerCase() ?? ''))
@@ -605,8 +624,8 @@ function PasswordForm(props: {
       name: name || email,
       email,
       color: '#3b82f6',
-      imap,
-      smtp,
+      imap: { ...imap, secure: imapEnc === 'ssl' },
+      smtp: { ...smtp, secure: smtpEnc === 'ssl' },
       user: email,
       password,
       authType: 'password'
@@ -690,8 +709,10 @@ function PasswordForm(props: {
         {showAdvanced && (
           <>
             <Field label="IMAP 服务器" value={imap.host} onChange={v => setImap({ ...imap, host: v })} />
+            <EncRow label="IMAP 加密" value={imapEnc} onChange={v => applyEnc('imap', v)} labels={ENC_LABEL} />
             <Field label="IMAP 端口" value={String(imap.port)} onChange={v => setImap({ ...imap, port: Number(v) || 993 })} />
             <Field label="SMTP 服务器" value={smtp.host} onChange={v => setSmtp({ ...smtp, host: v })} />
+            <EncRow label="SMTP 加密" value={smtpEnc} onChange={v => applyEnc('smtp', v)} labels={ENC_LABEL} />
             <Field label="SMTP 端口" value={String(smtp.port)} onChange={v => setSmtp({ ...smtp, port: Number(v) || 465 })} />
           </>
         )}
@@ -707,6 +728,33 @@ function PasswordForm(props: {
         >
           {busy ? '验证并添加中…' : '验证并添加'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+/** 加密方式分段选择器 */
+function EncRow(props: {
+  label: string
+  value: 'ssl' | 'starttls' | 'none'
+  onChange(v: 'ssl' | 'starttls' | 'none'): void
+  labels: Record<'ssl' | 'starttls' | 'none', string>
+}) {
+  const opts: ('ssl' | 'starttls' | 'none')[] = ['ssl', 'starttls', 'none']
+  return (
+    <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
+      <span className="w-32 text-[13.5px] text-zinc-700 shrink-0">{props.label}</span>
+      <div className="flex gap-1 p-0.5 rounded-lg bg-zinc-100">
+        {opts.map(o => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => props.onChange(o)}
+            className={`text-[12px] px-2.5 py-1 rounded-md transition ${props.value === o ? 'bg-white shadow-sm text-zinc-800 font-medium' : 'text-zinc-500 hover:text-zinc-700'}`}
+          >
+            {props.labels[o]}
+          </button>
+        ))}
       </div>
     </div>
   )

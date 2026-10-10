@@ -659,6 +659,8 @@ export function friendlyError(err: unknown): string {
   if (/timeout|ETIMEDOUT/i.test(msg)) return '连接超时，请检查网络或服务器地址'
   if (/ENOTFOUND|EAI_AGAIN/i.test(msg)) return '无法解析服务器地址'
   if (/ECONNREFUSED/i.test(msg)) return '连接被拒绝，请检查端口与加密方式'
+  if (/WRONG_VERSION_NUMBER|WRONG_VERSION|tls|ssl|certificate|handshake/i.test(msg))
+    return 'TLS 加密握手失败：服务器端口可能不是 SSL/TLS——请在服务器设置里把加密方式改为 STARTTLS 或无加密'
   return msg.slice(0, 120)
 }
 

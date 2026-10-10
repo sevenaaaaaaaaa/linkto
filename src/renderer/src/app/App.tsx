@@ -39,11 +39,23 @@ export default function App() {
     }
     if (ev.type === 'account-status') {
       void reloadAccounts()
+      // 状态流转（如 syncing → connected）常伴随新文件夹出现
+      void useMail.getState().loadFolders()
     }
     if (ev.type === 'new-mail') {
       void useMail.getState().loadFolders()
     }
   })
+
+  // 窗口聚焦时刷新账户与文件夹，避免多窗口 / 长时间闲置后的数据滞后
+  useEffect(() => {
+    const onFocus = () => {
+      void reloadAccounts()
+      void useMail.getState().loadFolders()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [reloadAccounts])
 
   if (r.name === 'compose') {
     return <ComposeWindow prefill={r.prefill} />
