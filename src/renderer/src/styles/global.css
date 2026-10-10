@@ -613,3 +613,83 @@ input:focus-visible {
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* ---------- 交互创新：波纹 / 投放井 / 声呐 / 液态重排 ---------- */
+
+/* 波纹扩散：从操作点（或声呐源）向外扩散的两圈玻璃涟漪 */
+@keyframes ripple-ring {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+.ripple-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--accent);
+  pointer-events: none;
+  animation: ripple-ring 1.4s ease-out infinite;
+}
+
+/* 液态投放井：休眠时轻微呼吸；拖拽靠近时张开 + 泛光 */
+@keyframes well-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+.drop-well {
+  animation: well-breathe 3.2s ease-in-out infinite;
+}
+.drop-well-hot {
+  animation: none;
+  transform: scale(1.22);
+  border-color: var(--accent) !important;
+  box-shadow:
+    inset 0 1px 0 var(--spec-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    inset 0 0 24px var(--inner-glow),
+    0 0 0 6px var(--accent-soft),
+    0 18px 48px -12px var(--accent) !important;
+}
+
+/* 声呐态搜索胶囊入场 */
+@keyframes sonar-rise {
+  from {
+    transform: translate(-50%, 14px) scale(0.94);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+}
+.sonar-rise {
+  animation: sonar-rise 0.28s var(--ease-spring) both;
+}
+
+/* View Transitions：液态重排 / 时光机倒带时的流动位移 */
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 0.26s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-group(*) {
+  animation-duration: 0.26s;
+}
+
+/* 动效降级：用户偏好减少动态效果时关闭液态装饰动画 */
+@media (prefers-reduced-motion: reduce) {
+  .ripple-ring,
+  .drop-well {
+    animation: none;
+  }
+}

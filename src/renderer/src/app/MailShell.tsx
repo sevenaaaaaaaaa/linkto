@@ -7,6 +7,7 @@ import { KbView } from './KbView'
 import { InsightsView } from './InsightsView'
 import { AgentView } from './AgentView'
 import { CommandPalette } from './CommandPalette'
+import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
@@ -156,9 +157,14 @@ export function MailShell() {
           relatedMessageId: state.selectedId
         } as never)
       } else if (e.key === 'a' && state.selectedId) {
-        void api.moveMessages([state.selectedId], 'archive').then(() => state.loadMessages())
+        const id = state.selectedId
+        void api.moveMessages([id], 'archive').then(() => state.loadMessages())
+        // 波纹批量：单发归档触发同类邮件涌现建议
+        window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'archive' } }))
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && state.selectedId) {
-        void api.deleteMessages([state.selectedId]).then(() => state.loadMessages())
+        const id = state.selectedId
+        void api.deleteMessages([id]).then(() => state.loadMessages())
+        window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'trash' } }))
       } else if (e.key === 'f' && meta) {
         e.preventDefault()
         ;(document.querySelector('input[placeholder="搜索邮件"]') as HTMLInputElement | null)?.focus()
@@ -171,10 +177,15 @@ export function MailShell() {
   return (
     <div className="h-full flex">
       <Sidebar />
+      <LensLayer />
+      <RipplePanel />
+      <SonarBar />
       {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : (
         <>
           <MessageList />
           <Reader />
+          {/* 液态投放井：仅邮件视图；发件队列打开时自动上移让位 */}
+          <DropWell bottom={outbox.length ? 296 : 24} />
         </>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

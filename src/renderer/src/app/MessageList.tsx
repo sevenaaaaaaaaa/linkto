@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
@@ -75,6 +76,10 @@ function MessageRow(props: {
     if (action === 'flag') void api.markFlagged([msg.id], !msg.flagged).then(() => useMail.getState().loadMessages())
     if (action === 'trash') void api.deleteMessages([msg.id]).then(() => useMail.getState().loadMessages())
     if (action === 'pin') props.onPin()
+    // 波纹批量：单发操作触发同类邮件涌现建议
+    if (action === 'archive' || action === 'trash') {
+      window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [msg.id], action } }))
+    }
     if (action !== 'flag' && action !== 'pin' && useMail.getState().selectedId === msg.id) useMail.getState().select(null)
   }
 
@@ -84,10 +89,18 @@ function MessageRow(props: {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       data-glow
+      data-lens-id={msg.id}
+      draggable
+      onDragStart={e => {
+        const ids = props.checked ? [...useMail.getState().selectedIds] : [msg.id]
+        e.dataTransfer.setData('text/ms-mail-ids', ids.join(','))
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
       className={`relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200 ${
         msg.unread ? '' : 'opacity-[0.78]'
       } ${props.indent ? 'pl-10' : ''}`}
       style={{
+        viewTransitionName: `mrow-${msg.id}`,
         background: props.selected
           ? 'linear-gradient(90deg, var(--accent-soft), transparent 75%)'
           : hover
@@ -207,8 +220,9 @@ function ThreadRow(props: {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         data-glow
+        data-lens-id={latest.id}
         className="relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200"
-        style={{ background: hover ? 'var(--hover)' : 'transparent' }}
+        style={{ viewTransitionName: `mrow-${latest.id}`, background: hover ? 'var(--hover)' : 'transparent' }}
       >
         <div
           className="pt-1"
@@ -287,6 +301,40 @@ export function MessageList() {
   const listRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
 
+  // —— 交互创新 ——
+  // 重力滑块：t∈[0,100]，0=时间引力（默认），100=重要性引力，中间为连续混合谱
+  const [gravity, setGravity] = useState(() => Number(localStorage.getItem('ms_gravity') ?? 0))
+  // 时光机：timeCut = 倒带截至的时间点（null = 全部）
+  const [timeOpen, setTimeOpen] = useState(false)
+  const [timeCut, setTimeCut] = useState<number | null>(null)
+  const gravTrackRef = useRef<HTMLDivElement>(null)
+  const vtRef = useRef(0)
+
+  useEffect(() => {
+    localStorage.setItem('ms_gravity', String(gravity))
+  }, [gravity])
+
+  /** View Transitions：让重排 / 过滤像液体一样流动到新位置 */
+  const withViewTransition = (fn: () => void) => {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
+    if (doc.startViewTransition) doc.startViewTransition(fn)
+    else fn()
+  }
+  /** 拖动高频更新节流：每 70ms 一次液态过渡 */
+  const vtThrottle = (fn: () => void) => {
+    const now = Date.now()
+    if (now - vtRef.current < 70) return
+    vtRef.current = now
+    withViewTransition(fn)
+  }
+  const gravPick = (clientX: number) => {
+    const el = gravTrackRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const ratio = Math.min(Math.max((clientX - r.left) / r.width, 0), 1)
+    vtThrottle(() => flushSync(() => setGravity(Math.round(ratio * 100))))
+  }
+
   // 工具栏响应式：宽度不足时按钮只留图标（文字收进 title 提示），避免挤压标题
   useEffect(() => {
     const el = toolbarRef.current
@@ -314,6 +362,29 @@ export function MessageList() {
   const colorByAccount = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a.color])), [accounts])
   const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
 
+  // —— 重力混合排序：时间分 × (1-t) + 重要分 × t；t=0 保持原排序，t>0 液态接管 ——
+  const blended = useMemo(() => {
+    if (!gravity) return sorted
+    const list = sorted
+    if (!list.length) return list
+    let dmin = Infinity
+    let dmax = -Infinity
+    for (const m of list) {
+      if (m.date < dmin) dmin = m.date
+      if (m.date > dmax) dmax = m.date
+    }
+    const span = Math.max(dmax - dmin, 1)
+    const t = Math.min(Math.max(gravity / 100, 0), 1)
+    const imp = (m: MessageSummary) =>
+      (m.unread ? 0.5 : 0) +
+      (m.flagged ? 0.2 : 0) +
+      (m.pinned ? 0.25 : 0) +
+      (m.category === 'personal' ? 0.35 : m.category === 'notification' ? 0.15 : 0) +
+      ((m.date - dmin) / span) * 0.15
+    const rank = (m: MessageSummary) => ((m.date - dmin) / span) * (1 - t) + imp(m) * t
+    return [...list].sort((a, b) => rank(b) - rank(a))
+  }, [sorted, gravity])
+
   // ---- 标签过滤（按 AI 分类 / 状态维度快速切片） ----
   const [filter, setFilter] = useState<ListFilter>('all')
   const filterDefs: { key: ListFilter; label: string }[] = useMemo(
@@ -331,8 +402,8 @@ export function MessageList() {
     []
   )
   const filterCounts = useMemo(() => {
-    const c = { all: sorted.length, personal: 0, notification: 0, newsletter: 0, noise: 0, unread: 0, attach: 0, flagged: 0, pinned: 0 } as Record<ListFilter, number>
-    for (const m of sorted) {
+    const c = { all: blended.length, personal: 0, notification: 0, newsletter: 0, noise: 0, unread: 0, attach: 0, flagged: 0, pinned: 0 } as Record<ListFilter, number>
+    for (const m of blended) {
       c[m.category] = (c[m.category] ?? 0) + 1
       if (m.unread) c.unread++
       if (m.hasAttachments) c.attach++
@@ -340,22 +411,35 @@ export function MessageList() {
       if (m.pinned) c.pinned++
     }
     return c
-  }, [sorted])
+  }, [blended])
   const filtered = useMemo(() => {
-    if (filter === 'all') return sorted
-    if (filter === 'unread') return sorted.filter(m => m.unread)
-    if (filter === 'attach') return sorted.filter(m => m.hasAttachments)
-    if (filter === 'flagged') return sorted.filter(m => m.flagged)
-    if (filter === 'pinned') return sorted.filter(m => m.pinned)
-    return sorted.filter(m => m.category === filter)
-  }, [sorted, filter])
+    if (filter === 'all') return blended
+    if (filter === 'unread') return blended.filter(m => m.unread)
+    if (filter === 'attach') return blended.filter(m => m.hasAttachments)
+    if (filter === 'flagged') return blended.filter(m => m.flagged)
+    if (filter === 'pinned') return blended.filter(m => m.pinned)
+    return blended.filter(m => m.category === filter)
+  }, [blended, filter])
+
+  // —— 时光机：倒带过滤到所选时间点（拖到最右恢复全部）——
+  const timeSpan = useMemo(() => {
+    if (!filtered.length) return null
+    let min = Infinity
+    let max = -Infinity
+    for (const m of filtered) {
+      if (m.date < min) min = m.date
+      if (m.date > max) max = m.date
+    }
+    return { min, max }
+  }, [filtered])
+  const timed = useMemo(() => (timeCut == null ? filtered : filtered.filter(m => m.date <= timeCut)), [filtered, timeCut])
 
   // 会话聚合：同线程折叠（按排序后顺序取代表 = 最新一封）
   const view = useMemo(() => {
-    if (!groupThreads) return filtered.map(m => ({ kind: 'msg' as const, msg: m }))
+    if (!groupThreads) return timed.map(m => ({ kind: 'msg' as const, msg: m }))
     const groups: { key: string; msgs: MessageSummary[] }[] = []
     const index = new Map<string, number>()
-    for (const m of filtered) {
+    for (const m of timed) {
       const key = m.threadId || m.id
       const i = index.get(key)
       if (i === undefined) {
@@ -370,7 +454,7 @@ export function MessageList() {
         ? ({ kind: 'thread' as const, msgs: g.msgs, key: g.key })
         : ({ kind: 'msg' as const, msg: g.msgs[0] })
     )
-  }, [filtered, groupThreads])
+  }, [timed, groupThreads])
 
   useEffect(() => setSearchLocal(searchQuery), [searchQuery])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
@@ -528,7 +612,7 @@ export function MessageList() {
         )}
       </div>
 
-      {/* 标签过滤行：AI 分类 + 状态切片（计数实时跟随当前视图） */}
+      {/* 标签过滤行：AI 分类 + 状态切片（计数实时跟随当前视图）+ 时光机入口 */}
       <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-[var(--border-soft)] overflow-x-auto no-scrollbar">
           {filterDefs.map(f => {
             const active = filter === f.key
@@ -552,7 +636,68 @@ export function MessageList() {
               </button>
             )
           })}
+          <button
+            onClick={() => {
+              setTimeOpen(o => !o)
+              if (timeOpen) setTimeCut(null)
+            }}
+            title="邮箱时光机：拖动时间轴，倒带这个视图"
+            className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border transition-colors inline-flex items-center gap-1 ml-auto ${timeOpen ? 'font-medium' : ''}`}
+            style={{
+              borderColor: timeOpen ? 'var(--accent)' : 'transparent',
+              color: timeOpen ? 'var(--accent-strong)' : 'var(--muted)',
+              background: timeOpen ? 'var(--accent-soft)' : 'transparent'
+            }}
+          >
+            <IconClock width={11} height={11} /> 时光机
+          </button>
         </div>
+
+      {/* 重力滑块：向右拖 = 重要性引力增强，邮件像液体一样重新沉降 */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--border-soft)]">
+        <span className="text-[10.5px] shrink-0" style={{ color: gravity ? 'var(--faint)' : 'var(--accent-strong)' }}>时间</span>
+        <div
+          ref={gravTrackRef}
+          title="重力滑块：向右拖，重要的邮件上浮；向左拖，时间引力回归"
+          className="relative flex-1 h-[16px] rounded-full cursor-ew-resize touch-none select-none"
+          style={{ background: 'var(--bg-soft)', boxShadow: 'inset 0 1px 0 var(--spec-lo), inset 0 0 0 1px var(--border-soft)' }}
+          onPointerDown={e => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            gravPick(e.clientX)
+          }}
+          onPointerMove={e => {
+            if (e.buttons & 1) gravPick(e.clientX)
+          }}
+        >
+          <div
+            className="absolute inset-y-[3px] left-[3px] rounded-full pointer-events-none"
+            style={{ width: `calc(${gravity}% - 6px)`, background: 'var(--accent-grad)', opacity: 0.28 }}
+          />
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-[20px] h-[20px] rounded-full liquid-glass pointer-events-none flex items-center justify-center"
+            style={{ left: `calc(${gravity}% - 10px)`, transition: 'left 0.12s linear' }}
+          >
+            <span className="block w-[8px] h-[8px] rounded-full" style={{ background: 'var(--accent-grad)' }} />
+          </div>
+        </div>
+        <span className="text-[10.5px] shrink-0 inline-flex items-center gap-1" style={{ color: gravity ? 'var(--accent-strong)' : 'var(--faint)' }}>
+          <IconSparkles width={11} height={11} /> 重要
+        </span>
+        <span className="text-[10.5px] tabular-nums w-8 text-right shrink-0" style={{ color: 'var(--faint)' }}>
+          {gravity ? `${gravity}%` : '—'}
+        </span>
+      </div>
+
+      {/* 时光机轨道：拖动倒带，直方图显示时间分布 */}
+      {timeOpen && timeSpan && (
+        <TimeScrubber
+          min={timeSpan.min}
+          max={timeSpan.max}
+          value={timeCut ?? timeSpan.max}
+          items={filtered}
+          onChange={v => vtThrottle(() => flushSync(() => setTimeCut(v >= timeSpan.max ? null : v)))}
+        />
+      )}
 
       {checkedAll && (
         <BulkBar
@@ -889,6 +1034,81 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** 邮箱时光机：拖动时间轴倒带视图；直方图展示时间分布密度 */
+function TimeScrubber(props: {
+  min: number
+  max: number
+  value: number
+  items: MessageSummary[]
+  onChange(v: number): void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+
+  const ratio = Math.min(Math.max((props.value - props.min) / Math.max(props.max - props.min, 1), 0), 1)
+  const day = (ts: number) => new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+
+  // 40 桶时间分布直方图
+  const buckets = useMemo(() => {
+    const span = Math.max(props.max - props.min, 1)
+    const b = new Array(40).fill(0)
+    for (const m of props.items) b[Math.min(39, Math.floor(((m.date - props.min) / span) * 40))]++
+    const maxC = Math.max(...b, 1)
+    return b.map(c => c / maxC)
+  }, [props.items, props.min, props.max])
+
+  const pick = (clientX: number) => {
+    const el = trackRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const r2 = Math.min(Math.max((clientX - r.left) / r.width, 0), 1)
+    props.onChange(Math.round(props.min + r2 * (props.max - props.min)))
+  }
+
+  return (
+    <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--border-soft)]">
+      <span className="text-[10.5px] shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.min)}</span>
+      <div
+        ref={trackRef}
+        title="拖动倒带：手柄左侧的邮件会浮现，拖到最右恢复全部"
+        className="relative flex-1 h-[26px] rounded-full cursor-ew-resize touch-none select-none overflow-hidden"
+        style={{ background: 'var(--bg-soft)', boxShadow: 'inset 0 1px 0 var(--spec-lo), inset 0 0 0 1px var(--border-soft)' }}
+        onPointerDown={e => {
+          dragging.current = true
+          e.currentTarget.setPointerCapture(e.pointerId)
+          pick(e.clientX)
+        }}
+        onPointerMove={e => {
+          if (dragging.current) pick(e.clientX)
+        }}
+        onPointerUp={() => (dragging.current = false)}
+        onPointerCancel={() => (dragging.current = false)}
+      >
+        <div className="absolute inset-x-1 top-1.5 bottom-1 flex items-end gap-px pointer-events-none">
+          {buckets.map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 rounded-t-[2px]"
+              style={{ height: `${Math.max(h * 100, 8)}%`, background: 'var(--faint)', opacity: 0.28 }}
+            />
+          ))}
+        </div>
+        <div className="absolute inset-y-0 left-0 pointer-events-none" style={{ width: `${ratio * 100}%`, background: 'var(--accent-soft)' }} />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[18px] h-[18px] rounded-full liquid-glass pointer-events-none"
+          style={{ left: `${ratio * 100}%` }}
+        >
+          <span className="absolute inset-[5px] rounded-full" style={{ background: 'var(--accent-grad)' }} />
+        </div>
+      </div>
+      <span className="text-[10.5px] shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.max)}</span>
+      <span className="text-[11px] shrink-0 font-medium tabular-nums" style={{ color: 'var(--accent-strong)' }}>
+        ≤ {day(props.value)}
+      </span>
     </div>
   )
 }
