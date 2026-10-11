@@ -270,6 +270,32 @@ export class InsightsService {
     return r?.data as unknown as CompanyInsight | undefined
   }
 
+  // ---------- Screener AI 建议（AI 版筛选：代理先替你看一眼） ----------
+
+  async screenSuggest(addr: string): Promise<{ ok: boolean; error?: string; verdict: 'allow' | 'deny'; reason: string }> {
+    const empty = { verdict: 'allow' as const, reason: '' }
+    if (!this.ready()) return { ok: false, error: 'AI 未启用', ...empty }
+    const rows = this.deps.store.db
+      .prepare(
+        `SELECT subject, snippet, date, category, is_newsletter FROM messages
+         WHERE lower(from_addr) = ? ORDER BY date DESC LIMIT 2`
+      )
+      .all(addr.toLowerCase()) as { subject: string; snippet: string; date: number; category: string; is_newsletter: number }[]
+    if (!rows.length) return { ok: false, error: '该发件人暂无邮件', ...empty }
+    try {
+      const local = rows[0].category === 'newsletter' || rows[0].is_newsletter ? 'newsletter' : rows[0].category
+      const result = await this.json<{ verdict: 'allow' | 'deny'; reason: string }>(
+        '你是收件箱门卫。用户收到一位新发件人的邮件，需要你建议放行还是拒绝。只输出 JSON：{"verdict":"allow|deny","reason":"一句话理由（≤24字）"}。判断依据：通知/账单/政务等一次性事务→allow；营销/推广/冷启动销售→deny；新闻简报类→allow 并说明可归入订阅。拿不准时 allow（宁勿滥杀）。全部中文。',
+        `发件人：${addr}\n本地分类：${local}\n` +
+          rows.map(r => `主题：${r.subject}\n摘要：${String(r.snippet).slice(0, 160)}`).join('\n---\n')
+      )
+      const verdict = result.verdict === 'deny' ? 'deny' : 'allow'
+      return { ok: true, verdict, reason: String(result.reason ?? '').slice(0, 60) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), ...empty }
+    }
+  }
+
   // ---------- 魔法排序 / 批量提问 ----------
 
   /** 魔法排序：AI 按重要性/紧急度给选中邮件排序，写入 pin 顺序（同时自动置顶） */

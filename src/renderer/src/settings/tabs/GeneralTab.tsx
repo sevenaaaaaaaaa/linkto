@@ -73,6 +73,11 @@ export function GeneralTab() {
     <div className="max-w-[620px]">
       <SectionTitle>外观</SectionTitle>
       <AppearancePanel />
+      <SectionTitle>收件箱纪律</SectionTitle>
+      <SettingRow label="新发件人审批（Screener）" desc="陌生发件人的邮件先进入待审队列，放行后才进入收件箱；有过往来的发件人自动放行">
+        <Toggle checked={s.screenerEnabled} onChange={v => update({ screenerEnabled: v })} />
+      </SettingRow>
+
       <SectionTitle>阅读</SectionTitle>
       <SettingRow label="远程图片" desc="拦截可隐藏追踪像素的远程图片，阅读时仍可单封放行">
         <Select

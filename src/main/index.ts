@@ -242,6 +242,15 @@ async function bootstrap() {
   try {
     db.exec('ALTER TABLE accounts ADD COLUMN auth_type TEXT')
   } catch { /* 列已存在 */ }
+  // 旧库迁移：Snooze 稍后处理
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN snoozed_until INTEGER')
+  } catch { /* 列已存在 */ }
+  // Screener 首次初始化：存量发件人全部视为已知（只筛从现在起的新面孔）
+  try {
+    const screened = (db.prepare('SELECT COUNT(*) AS c FROM sender_screening').get() as any).c as number
+    if (screened === 0) mailStore.seedExistingSenders()
+  } catch { /* 表刚建好 */ }
 
   oauth = new OAuthService(appStore)
 
@@ -431,6 +440,12 @@ async function bootstrap() {
   // 定期学习：每 30 分钟检查一次是否该生成当日商情
   setInterval(() => void insights.maybeAutoDaily().catch(() => {}), 30 * 60_000)
   void insights.maybeAutoDaily().catch(() => {})
+  // Snooze 到期释放：每 30 秒检查，到点邮件自动回到收件箱
+  setInterval(() => {
+    try {
+      if (mailStore.releaseDueSnoozed(Date.now()).length) broadcast({ type: 'messages-changed' })
+    } catch { /* 下一轮兜底 */ }
+  }, 30_000)
   updateDockBadge()
 }
 

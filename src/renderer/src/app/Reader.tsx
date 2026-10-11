@@ -3,6 +3,7 @@ import { api, useMailEvent, fmtFullDate, displayName, fmtSize } from '../lib/api
 import { useMail } from '../stores/mail'
 import { sanitizeEmailHtml, activateRemoteImages } from '../lib/sanitize'
 import { detectAuth, type AuthExtract } from '../lib/auth-detect'
+import { SnoozeMenu, fmtSnooze } from './SnoozeMenu'
 import {
   READING_STYLES, activeReadingStyleId, setActiveReadingStyleId, findReadingStyle, readingStyleCss
 } from '../lib/reading-styles'
@@ -130,6 +131,17 @@ export function Reader() {
 
   // 「提炼」状态
   const [extracting, setExtracting] = useState(false)
+  const [snoozeOpen, setSnoozeOpen] = useState(false)
+  const snoozeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!snoozeOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (!snoozeRef.current?.contains(e.target as Node)) setSnoozeOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [snoozeOpen])
   // 「Agent 学习」状态
   const [learning, setLearning] = useState(false)
 

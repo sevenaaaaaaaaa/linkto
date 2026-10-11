@@ -28,6 +28,8 @@ const METHOD_NAMES = [
   'insightExtract', 'generateDaily', 'companyInsight', 'listCompanyDomains',
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
+  'snoozeMessages', 'setSenderStatus', 'screenerPendingCount', 'aiScreenSuggest', 'getSplitSignals',
+  'listSmartViews', 'saveSmartView', 'deleteSmartView',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
   'listCloudDrives', 'saveCloudDrive', 'removeCloudDrive', 'testCloudDrive', 'cloudUpload', 'cloudSyncEml',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',

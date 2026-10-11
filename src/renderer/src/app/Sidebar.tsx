@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
 import {
   IconInbox, IconLayers, IconStar, IconUser, IconBell, IconRss, IconTrash,
   IconBook, IconFolder, IconCompose, IconSettings, IconChevronDown,
-  IconChevronRight, IconRefresh, IconPin, IconSparkles, IconRobot
+  IconChevronRight, IconRefresh, IconPin, IconSparkles, IconRobot,
+  IconClock, IconShield, IconReplyAll, IconSave, IconClose
 } from '../components/icons'
 import type { SpecialFolder } from '@shared/types'
 
@@ -132,6 +133,16 @@ const SPECIAL_LABEL: Record<string, string> = {
 
 export function Sidebar() {
   const { accounts, folders, scope, setScope, loadAccounts } = useMail()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    const load = () => void api.screenerPendingCount().then(setPendingCount).catch(() => {})
+    load()
+    const off = api.onEvent(ev => {
+      if ((ev as { type: string }).type === 'messages-changed') load()
+    })
+    return () => void off()
+  }, [])
   const [kbView, setKbView] = useState(false)
 
   const inboxUnread = useMemo(() => {
@@ -198,6 +209,39 @@ export function Sidebar() {
             setScope({ kind: 'pinned', title: '置顶' })
           }}
         />
+        <Row
+          icon={<IconClock width={15} height={15} />}
+          label="稍后处理"
+          active={is({ kind: 'snoozed' })}
+          onClick={() => {
+            setKbView(false)
+            location.hash = '#/mail'
+            setScope({ kind: 'snoozed', title: '稍后处理' })
+          }}
+        />
+        <Row
+          icon={<IconShield width={15} height={15} />}
+          label="待审批"
+          unread={pendingCount}
+          active={is({ kind: 'screener' })}
+          onClick={() => {
+            setKbView(false)
+            location.hash = '#/mail'
+            setScope({ kind: 'screener', title: '待审批发件人' })
+          }}
+        />
+        <Row
+          icon={<IconReplyAll width={15} height={15} />}
+          label="待跟进"
+          active={is({ kind: 'followup' })}
+          onClick={() => {
+            setKbView(false)
+            location.hash = '#/mail'
+            setScope({ kind: 'followup', title: '待跟进（我发未回）' })
+          }}
+        />
+
+        <SmartViewsSection />
         <Row
           icon={<IconSparkles width={15} height={15} />}
           label="智能洞察"
@@ -320,3 +364,66 @@ export function Sidebar() {
 }
 
 export type { SpecialFolder }
+
+/** 我的视图：保存的 Smart Views，点击应用（范围+过滤+排序+聚合一体还原） */
+function SmartViewsSection() {
+  const [views, setViews] = useState<{ id: string; name: string; view: Record<string, unknown> }[]>([])
+
+  useEffect(() => {
+    const load = () => void api.listSmartViews().then(v => setViews(v as never)).catch(() => {})
+    load()
+    window.addEventListener('ms:views-changed', load)
+    return () => window.removeEventListener('ms:views-changed', load)
+  }, [])
+
+  if (!views.length) return null
+
+  const apply = (v: { id: string; name: string; view: Record<string, unknown> }) => {
+    const view = v.view as {
+      scope?: { kind: string; title: string; folderId?: string; accountId?: string; category?: string }
+      filter?: string
+      sort?: string
+      gravity?: number
+      groupThreads?: boolean
+    }
+    if (!view.scope) return
+    location.hash = '#/mail'
+    useMail.getState().setScope(view.scope as never)
+    if (view.sort) useMail.getState().setSort(view.sort as never)
+    if (view.groupThreads !== undefined) useMail.getState().setGroupThreads(view.groupThreads)
+    localStorage.setItem('ms_gravity', String(view.gravity ?? 0))
+    localStorage.setItem('ms_filter', view.filter ?? 'all')
+    // filter / gravity 由 MessageList 挂载时读取（localStorage 已更新）
+    window.dispatchEvent(new CustomEvent('ms:apply-view', { detail: { filter: view.filter, gravity: view.gravity ?? 0 } }))
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已应用视图「${v.name}」` }))
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="px-3 pb-1 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+        我的视图
+      </div>
+      {views.map(v => (
+        <div key={v.id} className="relative group">
+          <Row
+            icon={<IconSave width={13} height={13} />}
+            label={v.name}
+            active={false}
+            onClick={() => apply(v)}
+          />
+          <button
+            onClick={async () => {
+              await api.deleteSmartView(v.id)
+              window.dispatchEvent(new CustomEvent('ms:views-changed'))
+            }}
+            title="删除视图"
+            className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:block p-1 rounded hover:bg-[var(--hover)]"
+            style={{ color: 'var(--faint)' }}
+          >
+            <IconClose width={11} height={11} />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}

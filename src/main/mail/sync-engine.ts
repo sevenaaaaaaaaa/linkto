@@ -4,6 +4,7 @@ import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import type { AccountConfig, Address, Folder, MessageCategory, SpecialFolder } from '@shared/types'
 import type { MailStore, MessageInsert } from '../db'
 import type { AppStore } from '../store'
+import { DEFAULT_GENERAL } from '../store'
 import { heuristicClassify, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
 import { parseEmailRaw } from './parse-pool'
@@ -448,7 +449,13 @@ export class AccountWorker {
     if (inserted && isNewsletter && env.from) {
       this.store.upsertNewsletterSender(this.account.id, env.from.address)
     }
-    if (inserted && special === 'inbox' && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
+    // Screener：新发件人登记（存量往来自动放行，新面孔进待审队列）
+    let held = false
+    if (inserted && special === 'inbox' && env.from?.address) {
+      const screenerEnabled = this.appStore.get('general', DEFAULT_GENERAL).screenerEnabled
+      held = this.store.ensureSenderScreened(env.from.address, screenerEnabled) === 'pending'
+    }
+    if (inserted && special === 'inbox' && !held && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
       this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name ?? env.from.address) : '', category)
     }
     // 性能：近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），

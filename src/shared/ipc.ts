@@ -31,7 +31,8 @@ import type {
   ContactProfile,
   MemoryScope,
   OAuthClientConfig,
-  ProviderKey
+  ProviderKey,
+  SmartView
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -144,6 +145,16 @@ export interface LinkToApi {
   setInsightStatus(id: string, status: 'open' | 'done'): Promise<void>
   deleteInsight(id: string): Promise<void>
   saveMemo(title: string, content: string): Promise<void>
+
+  // ---------- 收件箱纪律 ----------
+  snoozeMessages(ids: string[], until: number | null): Promise<void>
+  setSenderStatus(addr: string, status: 'allow' | 'deny' | 'pending', reason?: string): Promise<void>
+  screenerPendingCount(): Promise<number>
+  aiScreenSuggest(addr: string): Promise<{ ok: boolean; error?: string; verdict: 'allow' | 'deny'; reason: string }>
+  getSplitSignals(): Promise<{ known: string[] }>
+  listSmartViews(): Promise<SmartView[]>
+  saveSmartView(id: string, name: string, view: SmartView['view']): Promise<void>
+  deleteSmartView(id: string): Promise<void>
 
   // ---------- 置顶 / 魔法排序 / 批量提问 ----------
   pinMessages(ids: string[], pinned: boolean): Promise<void>

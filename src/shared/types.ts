@@ -159,6 +159,10 @@ export interface MessageSummary {
   aiSummarized: boolean
   /** 用户置顶（pin），在所有列表中优先显示 */
   pinned: boolean
+  /** 稍后处理：到时自动回到收件箱 */
+  snoozedUntil: number | null
+  /** Screener：发件人待审 / 已拒（仅待审视图内显示） */
+  screening?: 'pending' | 'deny' | null
 }
 
 export interface MessageFull extends MessageSummary {
@@ -179,6 +183,43 @@ export type ScopeKind =
   | 'category'
   | 'search'
   | 'pinned'
+  | 'snoozed'
+  | 'screener'
+  | 'followup'
+
+// ---------- 收件箱纪律 ----------
+
+/** Screener 发件人筛选状态 */
+export interface SenderScreening {
+  addr: string
+  status: 'pending' | 'allow' | 'deny'
+  reason: string
+  decidedAt: number | null
+  createdAt: number
+}
+
+/** 可保存的智能视图：scope + 过滤 + 排序 + 聚合的组合快照 */
+export interface SmartView {
+  id: string
+  name: string
+  view: {
+    scope: Scope
+    filter?: string
+    sort?: ListSort
+    gravity?: number
+    groupThreads?: boolean
+  }
+  createdAt: number
+}
+
+/** 空 Scope 类型引用（SmartView 内使用） */
+export interface Scope {
+  kind: ScopeKind
+  title: string
+  folderId?: string
+  accountId?: string
+  category?: 'personal' | 'notification' | 'newsletter' | 'noise'
+}
 
 export interface MessageQuery {
   scope: ScopeKind
@@ -205,6 +246,8 @@ export interface GeneralSettings {
   density: 'cozy' | 'compact'
   launchAtLogin: boolean
   dockBadge: boolean
+  /** Screener 新发件人审批：新发件人邮件先进入待审队列 */
+  screenerEnabled: boolean
 }
 
 export interface NotificationSettings {

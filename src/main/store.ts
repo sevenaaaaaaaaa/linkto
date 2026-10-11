@@ -12,6 +12,8 @@ export interface GeneralSettings {
   density: 'cozy' | 'compact'
   launchAtLogin: boolean
   dockBadge: boolean
+  /** Screener 新发件人审批 */
+  screenerEnabled: boolean
 }
 
 export interface NotificationSettings {
@@ -27,7 +29,8 @@ export const DEFAULT_GENERAL: GeneralSettings = {
   deleteBehavior: 'trash',
   density: 'cozy',
   launchAtLogin: false,
-  dockBadge: true
+  dockBadge: true,
+  screenerEnabled: true
 }
 
 export const DEFAULT_NOTIFICATIONS: NotificationSettings = {

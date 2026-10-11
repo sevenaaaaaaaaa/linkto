@@ -158,13 +158,22 @@ export function MailShell() {
         } as never)
       } else if (e.key === 'a' && state.selectedId) {
         const id = state.selectedId
+        // Triage：归档后自动跳下一封（单遍清空节奏）
+        const next = state.messages[idx + 1] ?? state.messages[idx - 1]
         void api.moveMessages([id], 'archive').then(() => state.loadMessages())
+        if (next) state.select(next.id)
         // 波纹批量：单发归档触发同类邮件涌现建议
         window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'archive' } }))
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && state.selectedId) {
         const id = state.selectedId
+        const next = state.messages[idx + 1] ?? state.messages[idx - 1]
         void api.deleteMessages([id]).then(() => state.loadMessages())
+        if (next) state.select(next.id)
         window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'trash' } }))
+      } else if ((e.key === 's' || e.key === 'S') && state.selectedId) {
+        // Triage：稍后处理（到点自动回归收件箱）
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('ms:snooze-menu', { detail: [state.selectedId] }))
       } else if (e.key === 'f' && meta) {
         e.preventDefault()
         ;(document.querySelector('input[placeholder="搜索邮件"]') as HTMLInputElement | null)?.focus()

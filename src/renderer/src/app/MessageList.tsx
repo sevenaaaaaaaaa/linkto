@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
-import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock } from '../components/icons'
+import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
+import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
@@ -66,6 +67,8 @@ function MessageRow(props: {
   onSelect(e: React.MouseEvent): void
   onToggle(): void
   onPin(): void
+  onSnooze?(ids: string[]): void
+  onScreen?(addr: string, status: 'allow' | 'deny'): void
 }) {
   const { msg } = props
   const [hover, setHover] = useState(false)
@@ -205,6 +208,8 @@ function ThreadRow(props: {
   onToggleCheck(): void
   onExpand(): void
   onChild(msg: MessageSummary, e: React.MouseEvent): void
+  onSnooze?(ids: string[]): void
+  onScreen?(addr: string, status: 'allow' | 'deny'): void
   sort: ListSort
 }) {
   const { msgs, expanded } = props
@@ -281,6 +286,8 @@ function ThreadRow(props: {
               onSelect={e => props.onChild(m, e)}
               onToggle={() => useMail.getState().toggleSelect(m.id)}
               onPin={() => void useMail.getState().setPinned([m.id], !m.pinned)}
+              onSnooze={props.onSnooze}
+              onScreen={props.onScreen}
             />
           ))}
         </div>
@@ -459,6 +466,27 @@ export function MessageList() {
   useEffect(() => setSearchLocal(searchQuery), [searchQuery])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
 
+  // 我的视图应用（Sidebar 派发）：还原过滤 chip 与重力滑块
+  useEffect(() => {
+    const apply = (e: Event) => {
+      const d = (e as CustomEvent<{ filter?: string; gravity?: number }>).detail
+      if (d?.filter) setFilter(d.filter as never)
+      if (d?.gravity !== undefined) setGravity(d.gravity)
+    }
+    window.addEventListener('ms:apply-view', apply)
+    return () => window.removeEventListener('ms:apply-view', apply)
+  }, [])
+
+  // Triage 快捷键（MailShell 按 S）对选中邮件唤起稍后菜单
+  useEffect(() => {
+    const open = (e: Event) => {
+      const ids = (e as CustomEvent<string[]>).detail
+      if (ids?.length) setSnoozeMenuFor(ids)
+    }
+    window.addEventListener('ms:snooze-menu', open)
+    return () => window.removeEventListener('ms:snooze-menu', open)
+  }, [])
+
   const runSearch = () => {
     if (!searchLocal.trim()) return
     setSearch(searchLocal.trim())
@@ -486,6 +514,69 @@ export function MessageList() {
 
   const checkedAll = selectedIds.size > 1
   const allSelected = messages.length > 0 && messages.every(m => selectedIds.has(m.id))
+
+  // ---- 收件箱纪律：Snooze / Screener / Split Inbox ----
+  const [snoozeMenuFor, setSnoozeMenuFor] = useState<string[] | null>(null)
+  const [splitInbox, setSplitInbox] = useState(() => localStorage.getItem('ms_split') === '1')
+  const [othersOpen, setOthersOpen] = useState(true)
+  const knownSendersRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    void api.getSplitSignals().then(r => {
+      knownSendersRef.current = new Set(r.known)
+      knownSendersRefGlobal = new Set(r.known)
+      setKnownTick(t => t + 1)
+    })
+  }, [messages])
+  const [knownTick, setKnownTick] = useState(0)
+  void knownTick
+
+  // 待审视图：按发件人聚合
+  const screenerSenders = useMemo(() => {
+    if (scope.kind !== 'screener') return []
+    const by = new Map<string, { addr: string; name: string; count: number }>()
+    for (const m of messages) {
+      const addr = (m.from?.address ?? '').toLowerCase()
+      if (!addr) continue
+      const cur = by.get(addr)
+      if (cur) cur.count++
+      else by.set(addr, { addr, name: displayName(m.from), count: 1 })
+    }
+    return [...by.values()].sort((a, b) => b.count - a.count)
+  }, [messages, scope.kind])
+
+  const decideSender = async (addr: string, status: 'allow' | 'deny', reason?: string) => {
+    await api.setSenderStatus(addr, status, reason)
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: status === 'allow' ? `已放行 ${addr}` : `已拒绝 ${addr}，其邮件归入噪声` }))
+    await useMail.getState().loadMessages()
+  }
+
+  const snoozeSelected = async (at: number) => {
+    const ids = snoozeMenuFor ?? []
+    await api.snoozeMessages(ids, at)
+    setSnoozeMenuFor(null)
+    useMail.getState().clearSelection()
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已稍后处理 ${ids.length} 封，${fmtSnooze(at)} 回到收件箱` }))
+    await useMail.getState().loadMessages()
+  }
+
+  // ---- Smart Views：保存当前视图组合 ----
+  const [saveViewOpen, setSaveViewOpen] = useState(false)
+  const [viewName, setViewName] = useState('')
+  const saveCurrentView = async () => {
+    const name = viewName.trim() || `${scope.title} · ${filterDefs.find(f => f.key === filter)?.label ?? ''}`
+    await api.saveSmartView(`view-${Date.now()}`, name, {
+      scope,
+      filter,
+      sort,
+      gravity,
+      groupThreads
+    })
+    setSaveViewOpen(false)
+    setViewName('')
+    window.dispatchEvent(new CustomEvent('ms:views-changed'))
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `视图「${name}」已保存，见侧栏我的视图` }))
+  }
 
   const moveToFolder = async (folder: Folder) => {
     setMoveMenu(false)
@@ -599,6 +690,34 @@ export function MessageList() {
             ))}
           </select>
         )}
+        {scope.kind === 'unified' && (
+          <button
+            onClick={() => {
+              const v = !splitInbox
+              setSplitInbox(v)
+              localStorage.setItem('ms_split', v ? '1' : '0')
+            }}
+            title="重要 / 其他 双轨收件箱（AI 分类 + 往来信号）"
+            className={`text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${narrow ? 'px-1.5' : ''}`}
+            style={{
+              borderColor: splitInbox ? 'var(--accent)' : 'var(--border)',
+              color: splitInbox ? 'var(--accent-strong)' : 'var(--muted)',
+              background: splitInbox ? 'var(--accent-soft)' : 'transparent'
+            }}
+          >
+            <IconInbox width={11} height={11} />
+            {!narrow && '双轨'}
+          </button>
+        )}
+        <button
+          onClick={() => setSaveViewOpen(o => !o)}
+          title="把当前视图组合（范围+过滤+排序+聚合）保存为命名视图"
+          className="text-[11.5px] px-2 py-1 rounded-full border inline-flex items-center gap-1"
+          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+        >
+          <IconSave width={11} height={11} />
+          {!narrow && '存视图'}
+        </button>
         {(scope.kind === 'unified' || scope.kind === 'folder' || scope.kind === 'category') && (
           <button
             onClick={aiOrganize}
@@ -699,6 +818,26 @@ export function MessageList() {
         />
       )}
 
+      {saveViewOpen && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--border-soft)] fade-in" style={{ background: 'var(--accent-soft)' }}>
+          <input
+            autoFocus
+            value={viewName}
+            onChange={e => setViewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && saveCurrentView()}
+            placeholder="视图名称，如「账单速办」"
+            className="flex-1 text-[12.5px] rounded-lg px-2.5 py-1.5 outline-none border border-[var(--border-soft)]"
+            style={{ background: 'var(--surface-strong)', color: 'var(--fg)' }}
+          />
+          <button onClick={saveCurrentView} className="text-[12px] font-medium px-3 py-1.5 rounded-lg" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
+            保存
+          </button>
+          <button onClick={() => setSaveViewOpen(false)} className="text-[12px] px-2 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
+            取消
+          </button>
+        </div>
+      )}
+
       {checkedAll && (
         <BulkBar
           count={selectedIds.size}
@@ -711,6 +850,26 @@ export function MessageList() {
           setMoveMenu={setMoveMenu}
           onAsk={() => setAskOpen(true)}
           onMoveToFolder={moveToFolder}
+          onSnooze={() => setSnoozeMenuFor([...selectedIds])}
+          onUnsnooze={async () => {
+            await api.snoozeMessages([...selectedIds], null)
+            useMail.getState().clearSelection()
+            await useMail.getState().loadMessages()
+          }}
+          onAllow={async () => {
+            const addrs = [...new Set(messages.filter(m => selectedIds.has(m.id)).map(m => (m.from?.address ?? '').toLowerCase()).filter(Boolean))]
+            for (const a of addrs) await api.setSenderStatus(a, 'allow', '人工放行')
+            useMail.getState().clearSelection()
+            window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已放行 ${addrs.length} 位发件人` }))
+            await useMail.getState().loadMessages()
+          }}
+          onDeny={async () => {
+            const addrs = [...new Set(messages.filter(m => selectedIds.has(m.id)).map(m => (m.from?.address ?? '').toLowerCase()).filter(Boolean))]
+            for (const a of addrs) await api.setSenderStatus(a, 'deny', '人工拒绝')
+            useMail.getState().clearSelection()
+            window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已拒绝 ${addrs.length} 位发件人` }))
+            await useMail.getState().loadMessages()
+          }}
           onMagicSort={async () => {
             const ids = [...selectedIds]
             const res = await api.aiRankMessages(ids)
@@ -755,6 +914,43 @@ export function MessageList() {
         {loading && !messages.length && (
           <div className="p-8 text-center text-[13px]" style={{ color: 'var(--faint)' }}>加载中…</div>
         )}
+        {snoozeMenuFor && (
+          <div className="sticky top-2 z-30 flex justify-end px-3">
+            <div className="relative">
+              <SnoozeMenu
+                align="right"
+                onPick={async at => {
+                  await api.snoozeMessages(snoozeMenuFor, at)
+                  setSnoozeMenuFor(null)
+                  window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已稍后处理，${fmtSnooze(at)} 回到收件箱` }))
+                  await useMail.getState().loadMessages()
+                }}
+                onUnsnooze={async () => {
+                  await api.snoozeMessages(snoozeMenuFor, null)
+                  setSnoozeMenuFor(null)
+                  await useMail.getState().loadMessages()
+                }}
+                onClose={() => setSnoozeMenuFor(null)}
+              />
+            </div>
+          </div>
+        )}
+        {scope.kind === 'screener' && screenerSenders.length > 0 && (
+          <div className="px-3 py-2 space-y-1.5 fade-in">
+            <div className="text-[11px] font-semibold uppercase tracking-[.08em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+              {screenerSenders.length} 位新发件人待审 · 放行后邮件才进入收件箱
+            </div>
+            {screenerSenders.map(sc => (
+              <ScreenerCard
+                key={sc.addr}
+                addr={sc.addr}
+                name={sc.name}
+                count={sc.count}
+                onDecide={(status, reason) => void decideSender(sc.addr, status, reason)}
+              />
+            ))}
+          </div>
+        )}
         {!loading && !messages.length && (
           <div className="p-10 text-center">
             <div className="text-[13px]" style={{ color: 'var(--muted)' }}>这里还没有邮件</div>
@@ -766,7 +962,22 @@ export function MessageList() {
             )}
           </div>
         )}
-        {view.map(item =>
+        {(splitInbox && scope.kind === 'unified' ? splitView(view) : [{ key: 'all', items: view, important: false }]).map(section => (
+          <div key={section.key}>
+            {section.items.length > 0 && splitInbox && scope.kind === 'unified' && (
+              <div
+                className="sticky top-0 z-10 flex items-center gap-2 px-4 py-1.5 border-b border-[var(--border-soft)] glass"
+                onClick={() => !section.important && setOthersOpen(o => !o)}
+              >
+                <span className="text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: section.important ? 'var(--accent-strong)' : 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  {section.important ? '⭐ 重要' : '其他'}
+                </span>
+                <span className="text-[10.5px] tabular-nums" style={{ color: 'var(--faint)' }}>{section.items.length}</span>
+                {!section.important && <span className="ml-auto text-[10.5px]" style={{ color: 'var(--faint)' }}>{othersOpen ? '收起' : '展开'}</span>}
+              </div>
+            )}
+            {(!splitInbox || scope.kind !== 'unified' || section.important || othersOpen) &&
+            section.items.map(item =>
           item.kind === 'msg' ? (
             <MessageRow
               key={item.msg.id}
@@ -780,6 +991,8 @@ export function MessageList() {
               }}
               onToggle={() => toggleSelect(item.msg.id)}
               onPin={() => void setPinned([item.msg.id], !item.msg.pinned)}
+              onSnooze={ids => setSnoozeMenuFor(ids)}
+              onScreen={scope.kind === 'screener' ? (addr, status) => void decideSender(addr, status) : undefined}
             />
           ) : (
             <ThreadRow
@@ -813,6 +1026,8 @@ export function MessageList() {
                   return next
                 })
               }
+              onSnooze={props2 => setSnoozeMenuFor(props2)}
+              onScreen={scope.kind === 'screener' ? (addr, status) => void decideSender(addr, status) : undefined}
               onChild={(m, e) => {
                 if (e.shiftKey) toggleSelect(m.id, true)
                 else select(m.id)
@@ -820,6 +1035,8 @@ export function MessageList() {
             />
           )
         )}
+          </div>
+        ))}
       </div>
 
       {askOpen && (
@@ -850,6 +1067,10 @@ function BulkBar(props: {
   onFlag(): void
   onPin(): void
   onClear(): void
+  onSnooze(): void
+  onUnsnooze(): void
+  onAllow(): void
+  onDeny(): void
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -868,6 +1089,10 @@ function BulkBar(props: {
     <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-soft)] text-[12.5px] flex-wrap" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
       <span className="px-0.5">已选 {props.count} 封</span>
       <div className="flex-1" />
+      <BulkBtn onClick={props.onAllow}>放行</BulkBtn>
+      <BulkBtn onClick={props.onDeny} danger>拒绝</BulkBtn>
+      <BulkBtn onClick={props.onSnooze}>⏰ 稍后</BulkBtn>
+      <BulkBtn onClick={props.onUnsnooze}>取回</BulkBtn>
       <BulkBtn onClick={props.onPin}>置顶</BulkBtn>
       <BulkBtn onClick={props.onRead}>已读</BulkBtn>
       <BulkBtn onClick={props.onFlag}>旗标</BulkBtn>
@@ -1109,6 +1334,65 @@ function TimeScrubber(props: {
       <span className="text-[11px] shrink-0 font-medium tabular-nums" style={{ color: 'var(--accent-strong)' }}>
         ≤ {day(props.value)}
       </span>
+    </div>
+  )
+}
+
+/** Split Inbox：按重要性把视图条目分成 重要 / 其他 两段（代表邮件判定） */
+function splitView(items: ({ kind: 'msg'; msg: MessageSummary } | { kind: 'thread'; msgs: MessageSummary[]; key: string })[]): { key: string; important: boolean; items: typeof items }[] {
+  const rep = (it: (typeof items)[number]): MessageSummary => (it.kind === 'msg' ? it.msg : it.msgs[0])
+  const known = knownSendersRefGlobal
+  const important = items.filter(it => {
+    const m = rep(it)
+    return m.pinned || m.flagged || known.has((m.from?.address ?? '').toLowerCase()) || (m.category === 'personal' && m.unread)
+  })
+  const others = items.filter(it => !important.includes(it))
+  return [
+    { key: 'important', important: true, items: important },
+    { key: 'others', important: false, items: others }
+  ]
+}
+let knownSendersRefGlobal: Set<string> = new Set()
+
+function ScreenerCard(props: { addr: string; name: string; count: number; onDecide(status: 'allow' | 'deny', reason?: string): void }) {
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggest, setSuggest] = useState<{ verdict: 'allow' | 'deny'; reason: string } | null>(null)
+
+  const ask = async () => {
+    setSuggesting(true)
+    const res = await api.aiScreenSuggest(props.addr)
+    setSuggesting(false)
+    if (!res.ok) {
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 建议不可用' }))
+      return
+    }
+    setSuggest({ verdict: res.verdict, reason: res.reason })
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border glass" style={{ borderColor: 'var(--border-soft)' }}>
+      <span className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-medium shrink-0" style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}>
+        {[...props.name][0]?.toUpperCase() ?? '?'}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{props.name} <span className="text-[11px]" style={{ color: 'var(--faint)' }}>{props.addr} · {props.count} 封</span></div>
+        {suggest && (
+          <div className="text-[11px] mt-0.5" style={{ color: suggest.verdict === 'allow' ? 'var(--ok)' : 'var(--danger)' }}>
+            ✨ AI 建议{suggest.verdict === 'allow' ? '放行' : '拒绝'}：{suggest.reason}
+          </div>
+        )}
+      </div>
+      {!suggest && (
+        <button onClick={ask} disabled={suggesting} className="text-[11.5px] px-2 py-1 rounded-lg shrink-0 disabled:opacity-50" style={{ background: 'var(--bg-soft)', color: 'var(--accent-strong)' }}>
+          {suggesting ? '判定中…' : '✨ AI 判定'}
+        </button>
+      )}
+      <button onClick={() => props.onDecide('allow')} className="text-[11.5px] px-2.5 py-1 rounded-lg shrink-0 font-medium" style={{ background: suggest?.verdict === 'allow' ? 'var(--accent)' : 'var(--ok-soft)', color: suggest?.verdict === 'allow' ? 'var(--on-accent)' : 'var(--ok)' }}>
+        放行
+      </button>
+      <button onClick={() => props.onDecide('deny')} className="text-[11.5px] px-2.5 py-1 rounded-lg shrink-0" style={{ background: suggest?.verdict === 'deny' ? 'var(--danger)' : 'var(--danger-soft)', color: suggest?.verdict === 'deny' ? 'var(--on-accent)' : 'var(--danger)' }}>
+        拒绝
+      </button>
     </div>
   )
 }

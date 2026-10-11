@@ -884,6 +884,30 @@ export function registerIpc(ctx: AppContext) {
       })
     },
 
+    // ================= 收件箱纪律 =================
+
+    snoozeMessages: ([ids, until]: [string[], number | null]) => {
+      store.setSnoozed(ids, until)
+      ctx.event(null as never, { type: 'messages-changed' })
+    },
+
+    setSenderStatus: ([addr, status, reason]: [string, 'allow' | 'deny' | 'pending', string | undefined]) => {
+      store.setSenderStatus(addr, status, reason ?? '')
+      ctx.event(null as never, { type: 'messages-changed' })
+    },
+
+    screenerPendingCount: () => store.screenerPendingCount(),
+
+    aiScreenSuggest: ([addr]: [string]) => insights.screenSuggest(addr),
+
+    getSplitSignals: () => ({ known: store.getKnownSenders() }),
+
+    listSmartViews: () => store.listSmartViews(),
+
+    saveSmartView: ([id, name, view]: [string, string, Record<string, unknown>]) => store.saveSmartView(id, name, view),
+
+    deleteSmartView: ([id]: [string]) => store.deleteSmartView(id),
+
     // ================= 置顶 / 魔法排序 / 批量提问 =================
 
     pinMessages: ([ids, pinned]: [string[], boolean]) => store.setPinned(ids, pinned),

@@ -252,8 +252,136 @@ export class MailStore {
       listUnsubscribe: r.list_unsubscribe ?? null,
       savedToKb: !!r.saved_kb,
       aiSummarized: !!r.ai_summarized,
-      pinned: !!r.pinned
+      pinned: !!r.pinned,
+      snoozedUntil: r.snoozed_until ?? null
     }
+  }
+
+  // ================= 收件箱纪律：Snooze / Screener / Smart Views =================
+
+  setSnoozed(ids: string[], until: number | null) {
+    const stmt = this.db.prepare('UPDATE messages SET snoozed_until = ? WHERE id = ?')
+    for (const id of ids) stmt.run(until, id)
+  }
+
+  /** 到期的 snooze 释放（返回受影响的 message ids） */
+  releaseDueSnoozed(now: number): string[] {
+    const rows = this.db
+      .prepare('SELECT id FROM messages WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
+      .all(now) as { id: string }[]
+    if (rows.length) this.db.prepare('UPDATE messages SET snoozed_until = NULL WHERE snoozed_until <= ?').run(now)
+    return rows.map(r => r.id)
+  }
+
+  /** Screener：登记新发件人（存在即跳过）。我方地址 / 曾发信对象自动放行 */
+  ensureSenderScreened(addr: string, screenerEnabled: boolean): 'allow' | 'pending' | 'skip' {
+    if (!addr || !screenerEnabled) return 'skip'
+    const norm = addr.toLowerCase()
+    const existing = this.db.prepare('SELECT status FROM sender_screening WHERE addr = ?').get(norm) as any
+    if (existing) return 'skip'
+    // 自动放行：我发过信的地址（sent 文件夹的 to / cc）
+    const mailed = this.db
+      .prepare(
+        `SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+         WHERE f.special = 'sent' AND (lower(m.to_json) LIKE ? OR lower(m.cc_json) LIKE ?) LIMIT 1`
+      )
+      .get(`%"${norm}"%`, `%"${norm}"%`)
+    // 自动放行：本机账户自己的地址
+    const self = this.db.prepare('SELECT 1 FROM accounts WHERE lower(email) = ? OR (user LIKE "%@%" AND lower(user) = ?)').get(norm, norm)
+    const status = mailed || self ? 'allow' : 'pending'
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO sender_screening (addr, status, reason, decided_at, created_at) VALUES (?,?,?,NULL,?)`
+      )
+      .run(norm, status, status === 'allow' ? '已有往来 / 本机账户' : '新发件人', Date.now())
+    return status === 'allow' ? 'allow' : 'pending'
+  }
+
+  listSenderScreening(status: string): any[] {
+    return this.db
+      .prepare(
+        `SELECT ss.*, (SELECT COUNT(*) FROM messages m WHERE lower(m.from_addr) = ss.addr) AS mail_count,
+                (SELECT MAX(m.date) FROM messages m WHERE lower(m.from_addr) = ss.addr) AS latest_at
+         FROM sender_screening ss WHERE ss.status = ? ORDER BY ss.created_at DESC LIMIT 200`
+      )
+      .all(status) as any[]
+  }
+
+  setSenderStatus(addr: string, status: 'allow' | 'deny' | 'pending', reason = '') {
+    this.db
+      .prepare(
+        `INSERT INTO sender_screening (addr, status, reason, decided_at, created_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(addr) DO UPDATE SET status=excluded.status, reason=excluded.reason, decided_at=excluded.decided_at`
+      )
+      .run(addr.toLowerCase(), status, reason, status === 'pending' ? null : Date.now(), Date.now())
+    if (status === 'deny') {
+      // 已拒：现有收件箱邮件归入噪声，退出常规视图
+      this.db
+        .prepare(
+          `UPDATE messages SET category = 'noise' WHERE lower(from_addr) = ? AND folder_path = 'INBOX'`
+        )
+        .run(addr.toLowerCase())
+    }
+  }
+
+  screenerPendingCount(): number {
+    return (
+      this.db
+        .prepare(`SELECT COUNT(DISTINCT ss.addr) AS c FROM sender_screening ss WHERE ss.status = 'pending'`)
+        .get() as any
+    ).c as number
+  }
+
+  /** Split Inbox 行为信号：有过往来的发件人（我回复过 / 我发过信） */
+  getKnownSenders(): string[] {
+    const answered = this.db
+      .prepare(`SELECT DISTINCT lower(from_addr) AS a FROM messages WHERE flags LIKE '%\\Answered%' AND from_addr IS NOT NULL`)
+      .all() as { a: string }[]
+    const sent = this.db
+      .prepare(
+        `SELECT DISTINCT lower(je.value) AS a FROM messages m JOIN folders f ON f.id = m.folder_id,
+         json_each(m.to_json) je WHERE f.special = 'sent'`
+      )
+      .all() as { a: string }[]
+    return [...new Set([...answered.map(r => r.a), ...sent.map(r => r.a)].filter(Boolean))]
+  }
+
+  // ---------- Smart Views ----------
+
+  listSmartViews(): any[] {
+    const rows = this.db.prepare('SELECT * FROM smart_views ORDER BY created_at DESC').all() as any[]
+    return rows.map(r => ({ id: r.id, name: r.name, view: j(r.view_json, {}), createdAt: r.created_at }))
+  }
+
+  saveSmartView(id: string, name: string, view: Record<string, unknown>) {
+    this.db
+      .prepare(
+        `INSERT INTO smart_views (id, name, view_json, created_at) VALUES (?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, view_json=excluded.view_json`
+      )
+      .run(id, name, JSON.stringify(view), Date.now())
+  }
+
+  deleteSmartView(id: string) {
+    this.db.prepare('DELETE FROM smart_views WHERE id = ?').run(id)
+  }
+
+  /** 首次启用 Screener 时：存量发件人全部视为已知，只筛「从现在起的新面孔」 */
+  seedExistingSenders() {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO sender_screening (addr, status, reason, decided_at, created_at)
+         SELECT DISTINCT lower(from_addr), 'allow', '存量发件人', NULL, ? FROM messages WHERE from_addr IS NOT NULL AND from_addr != ''`
+      )
+      .run(Date.now())
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO sender_screening (addr, status, reason, decided_at, created_at)
+         SELECT DISTINCT lower(je.value), 'allow', '我曾发信', NULL, ?
+         FROM messages m JOIN folders f ON f.id = m.folder_id, json_each(m.to_json) je
+         WHERE f.special = 'sent'`
+      )
+      .run(Date.now())
   }
 
   // ================= 置顶（pin） =================
@@ -307,6 +435,19 @@ export class MailStore {
   getMessages(query: MessageQuery): MessagePage {
     const where: string[] = []
     const params: string[] = []
+    // 收件箱纪律全局条件：
+    //  - snooze 中的邮件不出现在常规视图（snoozed 视图除外）
+    //  - Screener 开启时，pending / deny 发件人的邮件只在待审视图（和具体文件夹）出现
+    const now = Date.now()
+    const disciplineScopes = ['unified', 'category', 'flagged', 'unread', 'newsletter', 'pinned', 'account', 'search']
+    if (disciplineScopes.includes(query.scope)) {
+      where.push(`(m.snoozed_until IS NULL OR m.snoozed_until <= ${now})`)
+    }
+    if (disciplineScopes.includes(query.scope) && query.scope !== 'folder') {
+      where.push(
+        `NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`
+      )
+    }
     if (query.scope === 'unified') {
       where.push("m.folder_path = 'INBOX'")
     } else if (query.scope === 'folder' && query.folderId) {
@@ -329,6 +470,20 @@ export class MailStore {
       where.push("m.folder_path = 'INBOX'")
     } else if (query.scope === 'pinned') {
       where.push('m.pinned = 1')
+    } else if (query.scope === 'snoozed') {
+      where.push('m.snoozed_until IS NOT NULL')
+    } else if (query.scope === 'screener') {
+      where.push("EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status = 'pending')")
+      where.push("m.folder_path = 'INBOX'")
+    } else if (query.scope === 'followup') {
+      // 我发出后对方一直没回：sent 邮件，且线程内没有更晚的「非我方」来信
+      where.push(`EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.special = 'sent')`)
+      where.push(`NOT EXISTS (
+        SELECT 1 FROM messages r
+        WHERE r.thread_id = m.thread_id AND r.date > m.date
+          AND lower(COALESCE(r.from_addr,'')) NOT IN (SELECT lower(email) FROM accounts)
+          AND lower(COALESCE(r.from_addr,'')) NOT IN (SELECT lower(user) FROM accounts WHERE user LIKE '%@%')
+      )`)
     }
     let whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const baseParams = [...params]
@@ -336,17 +491,20 @@ export class MailStore {
       if (!query.search?.trim()) return { items: [], total: 0 }
       const results = this.searchIds(query.search, 2000)
       if (results.length === 0) return { items: [], total: 0 }
-      whereSql = `WHERE m.id IN (${results.map(() => '?').join(',')})`
+      where.push(`m.id IN (${results.map(() => '?').join(',')})`)
       baseParams.push(...results)
+      whereSql = `WHERE ${where.join(' AND ')}`
     }
     const total = (
       this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...baseParams) as any
     ).c as number
-    // 置顶视图：按 pin 顺序（魔法排序写入）排列，未排序的按时间
+    // 置顶视图：按 pin 顺序（魔法排序写入）排列；稍后处理：按到期时间
     const orderSql =
       query.scope === 'pinned'
         ? 'ORDER BY (m.pinned_order IS NULL) ASC, m.pinned_order ASC, m.date DESC'
-        : 'ORDER BY m.date DESC'
+        : query.scope === 'snoozed'
+          ? 'ORDER BY m.snoozed_until ASC'
+          : 'ORDER BY m.date DESC'
     const rows = this.db
       .prepare(`SELECT * FROM messages m ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
       .all(...baseParams, query.limit, query.offset) as any[]
@@ -932,6 +1090,7 @@ export class MailStore {
     saved_kb INTEGER DEFAULT 0,
     ai_summarized INTEGER DEFAULT 0,
     body_fetched INTEGER DEFAULT 0,
+    snoozed_until INTEGER,
     created_at INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_messages_folder ON messages(folder_id, date DESC);
@@ -1096,5 +1255,21 @@ export class MailStore {
     attempts INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_pending_ops_account ON pending_ops(account_id);
+
+  CREATE TABLE IF NOT EXISTS sender_screening (
+    addr TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reason TEXT DEFAULT '',
+    decided_at INTEGER,
+    created_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_screening_status ON sender_screening(status);
+
+  CREATE TABLE IF NOT EXISTS smart_views (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    view_json TEXT DEFAULT '{}',
+    created_at INTEGER
+  );
   `
 }
