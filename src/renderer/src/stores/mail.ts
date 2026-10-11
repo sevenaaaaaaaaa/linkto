@@ -54,6 +54,8 @@ interface MailState {
   lastClickedId: string | null
   /** 账户实时同步进度（accountId → "INBOX +87"），来自 sync-progress 事件 */
   syncProgress: Record<string, string>
+  /** AI 自然语言搜索的结果集（非 null 时列表由它驱动） */
+  nlResults: MessageSummary[] | null
 
   loadAccounts(): Promise<void>
   loadFolders(): Promise<void>
@@ -84,6 +86,7 @@ export const useMail = create<MailState>((set, get) => ({
   groupThreads: loadThreads(),
   lastClickedId: null,
   syncProgress: {},
+  nlResults: null,
 
   loadAccounts: async () => {
     const accounts = await api.listAccounts()

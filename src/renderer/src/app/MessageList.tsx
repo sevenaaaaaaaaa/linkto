@@ -304,6 +304,9 @@ export function MessageList() {
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [moveMenu, setMoveMenu] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
+  const [judgeBusy, setJudgeBusy] = useState(false)
+  const [judgeResult, setJudgeResult] = useState<Map<string, { urgency: string; reason: string }> | null>(null)
+  const [nudgeId, setNudgeId] = useState<string | null>(null)
   const [narrow, setNarrow] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
@@ -493,6 +496,38 @@ export function MessageList() {
     useMail.getState().setScope({ kind: 'search', title: `搜索：${searchLocal.trim()}` })
   }
 
+  // ---- AI 自然语言搜索：问句编译成结构化查询，结果直接替换当前列表 ----
+  const [aiSearching, setAiSearching] = useState(false)
+  const [aiQueryDesc, setAiQueryDesc] = useState<string | null>(null)
+  const nlResults = useMail(s => s.nlResults)
+  const runAiSearch = async () => {
+    const q = searchLocal.trim()
+    if (!q || aiSearching) return
+    setAiSearching(true)
+    setAiQueryDesc(null)
+    try {
+      const res = await api.aiComposeQuery(q)
+      if (!res.ok) {
+        window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 搜索失败' }))
+        return
+      }
+      const page = await api.nlSearch(res.query)
+      const parts: string[] = []
+      if (res.query.sender) parts.push(`发件人 ${res.query.sender}`)
+      if (res.query.subject) parts.push(`主题含「${res.query.subject}」`)
+      if (res.query.category) parts.push({ personal: '个人', notification: '通知', newsletter: '订阅', noise: '噪声' }[res.query.category] ?? '')
+      if (res.query.hasAttachment) parts.push('带附件')
+      if (res.query.unreadOnly) parts.push('未读')
+      if (res.query.withinDays) parts.push(`最近 ${res.query.withinDays} 天`)
+      if (res.query.after) parts.push(`${res.query.after} 之后`)
+      if (parts.length === 0 && (res.query.fallbackText || res.query.text)) parts.push(`「${res.query.fallbackText || res.query.text}」`)
+      setAiQueryDesc(parts.filter(Boolean).join(' · ') || '全部收件箱')
+      useMail.setState({ nlResults: page.items, messages: page.items, total: page.total, loading: false, scope: { kind: 'search', title: `✨ ${q}` } })
+    } finally {
+      setAiSearching(false)
+    }
+  }
+
   const aiOrganize = async () => {
     setClassifying(true)
     try {
@@ -530,6 +565,38 @@ export function MessageList() {
   }, [messages])
   const [knownTick, setKnownTick] = useState(0)
   void knownTick
+
+  // Screener 批量 AI 审批
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchVerdicts, setBatchVerdicts] = useState<Map<string, { verdict: 'allow' | 'deny'; reason: string }> | null>(null)
+
+  const runBatchScreen = async () => {
+    if (batchBusy || !screenerSenders.length) return
+    setBatchBusy(true)
+    setBatchVerdicts(null)
+    try {
+      const res = await api.aiScreenBatch(screenerSenders.map(s => s.addr))
+      if (!res.ok) {
+        window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? '批量判定失败' }))
+        return
+      }
+      const map = new Map<string, { verdict: 'allow' | 'deny'; reason: string }>()
+      for (const v of res.verdicts) map.set(v.addr, { verdict: v.verdict, reason: v.reason })
+      setBatchVerdicts(map)
+      const allow = res.verdicts.filter(v => v.verdict === 'allow').length
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 建议放行 ${allow} 位、拒绝 ${res.verdicts.length - allow} 位，可逐个确认或一键采纳` }))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const applyAllVerdicts = async () => {
+    if (!batchVerdicts?.size) return
+    for (const [addr, v] of batchVerdicts) await api.setSenderStatus(addr, v.verdict, `AI：${v.reason}`)
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已按 AI 建议处理 ${batchVerdicts.size} 位发件人` }))
+    setBatchVerdicts(null)
+    await useMail.getState().loadMessages()
+  }
 
   // 待审视图：按发件人聚合
   const screenerSenders = useMemo(() => {
@@ -604,15 +671,33 @@ export function MessageList() {
           <input
             value={searchLocal}
             onChange={e => setSearchLocal(e.target.value)}
-            onKeyDown={onKey}
-            placeholder="搜索邮件"
+            onKeyDown={e => {
+              if (e.key === 'Enter') void runAiSearch()
+              if (e.key === 'Escape') {
+                setSearch('')
+                setSearchLocal('')
+                setAiQueryDesc(null)
+                if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
+              }
+            }}
+            placeholder="搜索邮件，或直接提问：上周账单类邮件"
             className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-[var(--faint)]"
           />
+          <button
+            onClick={() => void runAiSearch()}
+            disabled={aiSearching || !searchLocal.trim()}
+            title="AI 搜索：用自然语言描述，AI 编译成结构化查询"
+            className="shrink-0 inline-flex items-center disabled:opacity-40"
+            style={{ color: 'var(--accent-strong)' }}
+          >
+            <IconSparkles width={13} height={13} className={aiSearching ? 'spinning' : ''} />
+          </button>
           {searchLocal && (
             <button
               onClick={() => {
                 setSearch('')
                 setSearchLocal('')
+                setAiQueryDesc(null)
                 if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
               }}
               style={{ color: 'var(--faint)' }}
@@ -709,6 +794,36 @@ export function MessageList() {
             {!narrow && '双轨'}
           </button>
         )}
+        {scope.kind === 'followup' && messages.length > 0 && (
+          <button
+            onClick={async () => {
+              if (judgeBusy) return
+              setJudgeBusy(true)
+              setJudgeResult(null)
+              try {
+                const res = await api.aiJudgeFollowups(messages.map(m => m.id))
+                if (!res.ok) {
+                  window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 判断失败' }))
+                  return
+                }
+                const map = new Map<string, { urgency: string; reason: string }>()
+                for (const j of res.judgements) map.set(j.messageId, { urgency: j.urgency, reason: j.reason })
+                setJudgeResult(map)
+                const worth = res.judgements.filter(j => j.needsFollowup).length
+                window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 判断：${res.judgements.length} 封中 ${worth} 封值得跟进` }))
+              } finally {
+                setJudgeBusy(false)
+              }
+            }}
+            disabled={judgeBusy}
+            title="AI 判断哪些真的值得催"
+            className="text-[11.5px] px-2 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
+            style={{ borderColor: 'var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}
+          >
+            <IconSparkles width={11} height={11} className={judgeBusy ? 'spinning' : ''} />
+            {!narrow && (judgeBusy ? '判断中…' : 'AI 判断')}
+          </button>
+        )}
         <button
           onClick={() => setSaveViewOpen(o => !o)}
           title="把当前视图组合（范围+过滤+排序+聚合）保存为命名视图"
@@ -730,6 +845,40 @@ export function MessageList() {
           </button>
         )}
       </div>
+
+      {judgeResult && scope.kind === 'followup' && (
+        <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border-soft)] fade-in overflow-x-auto no-scrollbar" style={{ background: 'var(--bg-soft)' }}>
+          <span className="text-[11px] shrink-0" style={{ color: 'var(--faint)' }}>✨ 判定：</span>
+          {[...judgeResult.entries()].slice(0, 8).map(([id, j]) => {
+            const m = messages.find(x => x.id === id)
+            if (!m) return null
+            const color = j.urgency === 'high' ? 'var(--danger)' : j.urgency === 'medium' ? 'var(--warn)' : 'var(--faint)'
+            return (
+              <button
+                key={id}
+                onClick={() => setNudgeId(id)}
+                title={`${m.subject}：${j.reason}（点击生成催促信）`}
+                className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border"
+                style={{ borderColor: color, color }}
+              >
+                {j.urgency === 'high' ? '🔴' : j.urgency === 'medium' ? '🟡' : '⚪'} {(m.subject || '无主题').slice(0, 10)}
+              </button>
+            )
+          })}
+          <button onClick={() => setJudgeResult(null)} className="ml-auto text-[11px] shrink-0" style={{ color: 'var(--faint)' }}>收起</button>
+        </div>
+      )}
+
+      {aiQueryDesc && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border-soft)] fade-in" style={{ background: 'var(--accent-soft)' }}>
+          <IconSparkles width={11} height={11} style={{ color: 'var(--accent-strong)' }} />
+          <span className="text-[11.5px] truncate" style={{ color: 'var(--accent-strong)' }}>AI 理解为：{aiQueryDesc} · {messages.length} 封</span>
+          <div className="flex-1" />
+          <button onClick={() => { setAiQueryDesc(null); useMail.setState({ nlResults: null }); useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' }) }} className="text-[11px]" style={{ color: 'var(--muted)' }}>
+            退出
+          </button>
+        </div>
+      )}
 
       {/* 标签过滤行：AI 分类 + 状态切片（计数实时跟随当前视图）+ 时光机入口 */}
       <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-[var(--border-soft)] overflow-x-auto no-scrollbar">
@@ -919,6 +1068,7 @@ export function MessageList() {
             <div className="relative">
               <SnoozeMenu
                 align="right"
+                messageId={snoozeMenuFor.length === 1 ? snoozeMenuFor[0] : undefined}
                 onPick={async at => {
                   await api.snoozeMessages(snoozeMenuFor, at)
                   setSnoozeMenuFor(null)
@@ -937,8 +1087,29 @@ export function MessageList() {
         )}
         {scope.kind === 'screener' && screenerSenders.length > 0 && (
           <div className="px-3 py-2 space-y-1.5 fade-in">
-            <div className="text-[11px] font-semibold uppercase tracking-[.08em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
-              {screenerSenders.length} 位新发件人待审 · 放行后邮件才进入收件箱
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[.08em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                {screenerSenders.length} 位新发件人待审 · 放行后邮件才进入收件箱
+              </div>
+              <div className="flex-1" />
+              {batchVerdicts && batchVerdicts.size > 0 && (
+                <button
+                  onClick={() => void applyAllVerdicts()}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-full"
+                  style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+                >
+                  一键采纳（{batchVerdicts.size}）
+                </button>
+              )}
+              <button
+                onClick={() => void runBatchScreen()}
+                disabled={batchBusy}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent-strong)' }}
+              >
+                <IconSparkles width={10} height={10} className={batchBusy ? 'spinning' : ''} />
+                {batchBusy ? '判定中…' : '✨ 全部 AI 判定'}
+              </button>
             </div>
             {screenerSenders.map(sc => (
               <ScreenerCard
@@ -946,6 +1117,7 @@ export function MessageList() {
                 addr={sc.addr}
                 name={sc.name}
                 count={sc.count}
+                preset={batchVerdicts?.get(sc.addr)}
                 onDecide={(status, reason) => void decideSender(sc.addr, status, reason)}
               />
             ))}
@@ -1043,6 +1215,13 @@ export function MessageList() {
         <BulkAskPanel
           ids={[...selectedIds]}
           onClose={() => setAskOpen(false)}
+        />
+      )}
+
+      {nudgeId && (
+        <NudgePanel
+          messageId={nudgeId}
+          onClose={() => setNudgeId(null)}
         />
       )}
     </div>
@@ -1354,9 +1533,13 @@ function splitView(items: ({ kind: 'msg'; msg: MessageSummary } | { kind: 'threa
 }
 let knownSendersRefGlobal: Set<string> = new Set()
 
-function ScreenerCard(props: { addr: string; name: string; count: number; onDecide(status: 'allow' | 'deny', reason?: string): void }) {
+function ScreenerCard(props: { addr: string; name: string; count: number; preset?: { verdict: 'allow' | 'deny'; reason: string }; onDecide(status: 'allow' | 'deny', reason?: string): void }) {
   const [suggesting, setSuggesting] = useState(false)
-  const [suggest, setSuggest] = useState<{ verdict: 'allow' | 'deny'; reason: string } | null>(null)
+  const [suggest, setSuggest] = useState<{ verdict: 'allow' | 'deny'; reason: string } | null>(props.preset ?? null)
+
+  useEffect(() => {
+    if (props.preset) setSuggest(props.preset)
+  }, [props.preset])
 
   const ask = async () => {
     setSuggesting(true)
@@ -1393,6 +1576,95 @@ function ScreenerCard(props: { addr: string; name: string; count: number; onDeci
       <button onClick={() => props.onDecide('deny')} className="text-[11.5px] px-2.5 py-1 rounded-lg shrink-0" style={{ background: suggest?.verdict === 'deny' ? 'var(--danger)' : 'var(--danger-soft)', color: suggest?.verdict === 'deny' ? 'var(--on-accent)' : 'var(--danger)' }}>
         拒绝
       </button>
+    </div>
+  )
+}
+
+/** 催促信面板：AI 起草 → 可编辑 → 直接打开撰写窗发送 */
+function NudgePanel(props: { messageId: string; onClose(): void }) {
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void (async () => {
+      const res = await api.aiFollowupDraft(props.messageId)
+      setBusy(false)
+      if (!res.ok) {
+        setError(res.error ?? 'AI 起草失败')
+        return
+      }
+      setSubject(res.subject)
+      setBody(res.body)
+    })()
+  }, [props.messageId])
+
+  const send = () => {
+    const m = useMail.getState().messages.find(x => x.id === props.messageId)
+    const to = m?.replyTo?.address ?? m?.from?.address ?? ''
+    void api.openCompose({
+      accountId: m?.accountId,
+      to: to ? [{ address: to }] : [],
+      subject,
+      html: body,
+      relatedMessageId: props.messageId
+    } as never)
+    props.onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={props.onClose}>
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-[6px]" />
+      <div
+        className="glass-strong relative w-[560px] max-w-[90vw] rounded-[var(--r-md)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-5 pop-in"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[15px]">📣</span>
+          <span className="text-[14px] font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>AI 催促信</span>
+          <div className="flex-1" />
+          <button onClick={props.onClose} className="p-1.5 rounded-lg hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }}>
+            <IconClose width={14} height={14} />
+          </button>
+        </div>
+        {busy && (
+          <div className="py-10 text-center text-[13px]" style={{ color: 'var(--faint)' }}>
+            <IconSparkles width={16} height={16} className="spinning inline-block mr-1.5" />
+            正在基于原邮件起草…
+          </div>
+        )}
+        {error && <div className="py-6 text-center text-[12.5px]" style={{ color: 'var(--danger)' }}>{error}</div>}
+        {!busy && !error && (
+          <>
+            <input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              className="mt-3 w-full text-[13.5px] font-medium rounded-[10px] px-3 py-2 outline-none border border-[var(--border-soft)] selectable"
+              style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
+            />
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              rows={7}
+              className="mt-2 w-full text-[13px] leading-relaxed rounded-[10px] px-3 py-2.5 outline-none border border-[var(--border-soft)] resize-none selectable"
+              style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={props.onClose} className="text-[12.5px] px-3 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
+                取消
+              </button>
+              <button
+                onClick={send}
+                className="text-[12.5px] font-medium px-4 py-1.5 rounded-lg"
+                style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+              >
+                打开撰写窗发送 →
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

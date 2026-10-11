@@ -4,15 +4,12 @@ import { SectionTitle, SettingRow, Toggle } from './GeneralTab'
 import type { AISettings, CustomPrompt } from '@shared/types'
 
 const PRESETS = [
-  { label: '智谱 GLM', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7' },
-  { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { label: '智谱 GLM（推荐）', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7' },
   { label: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { label: 'Ollama 本地', baseURL: 'http://localhost:11434/v1', model: '' },
-  { label: 'LM Studio', baseURL: 'http://localhost:1234/v1', model: '' }
+  { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { label: 'Ollama 本地部署（隐私优先）', baseURL: 'http://localhost:11434/v1', model: '' },
+  { label: 'LM Studio 本地部署', baseURL: 'http://localhost:1234/v1', model: '' }
 ]
-
-/** 端侧推荐模型（4B 级别：邮件分类/摘要/起草足够用） */
-const LOCAL_MODELS = ['gemma3:4b', 'qwen3:4b', 'llama3.2:3b', 'phi4-mini:3.8b']
 
 export function AiTab() {
   const [s, setS] = useState<AISettings | null>(null)
@@ -147,11 +144,15 @@ export function AiTab() {
           </div>
         </div>
 
-        {/* 内置本地引擎：开箱即用（模型按需下载，无需安装 Ollama） */}
+        {/* 内置本地引擎：仅轻量任务（结构化 AI 建议用 API 或本地部署端点） */}
         <div className="py-3 border-b border-black/[0.04]">
           <div className="flex items-center gap-3">
             <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">内置引擎</span>
-            <span className="text-[12px] text-zinc-500 flex-1">应用自带推理（Metal GPU 加速），模型下载到本机，无需安装 Ollama、断网可用、内容不出机</span>
+            <span className="text-[12px] text-zinc-500 flex-1">
+              轻量备用：仅适合摘要 / 翻译等简单任务（Metal GPU 加速 · 断网可用 · 内容不出机）。
+              <b className="text-zinc-700">智能洞察 / 筛选判定 / AI 搜索等结构化功能请用上方 API 预设或本地部署 7B+ 模型</b>
+              ，4B 级端侧模型无法可靠完成。
+            </span>
           </div>
           <div className="mt-2 ml-[112px] space-y-2">
             {localModels.map(m => {
@@ -228,8 +229,8 @@ export function AiTab() {
         {probe === 'none' && (
           <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200/60 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
             推荐安装 <b>Ollama</b> 跑端侧小模型（断网可用、隐私不出机）：
-            <code className="block mt-1 bg-white/70 rounded-md px-2 py-1 font-mono text-[11.5px]">brew install --cask ollama && ollama pull {LOCAL_MODELS[0]}</code>
-            <div className="mt-1 text-amber-700">轻量推荐：{LOCAL_MODELS.join(' · ')} —— 摘要/分类/起草已足够流畅。</div>
+            <code className="block mt-1 bg-white/70 rounded-md px-2 py-1 font-mono text-[11.5px]">brew install --cask ollama && ollama pull qwen3:8b</code>
+            <div className="mt-1 text-amber-700">结构化 AI（洞察/筛选/搜索）建议 7B+：qwen3:8b · llama3.1:8b · gemma3:12b，全部本机运行，内容不出机。</div>
           </div>
         )}
 

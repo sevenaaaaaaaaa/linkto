@@ -908,6 +908,20 @@ export function registerIpc(ctx: AppContext) {
 
     deleteSmartView: ([id]: [string]) => store.deleteSmartView(id),
 
+    // ================= AI 纪律解法 =================
+
+    aiComposeQuery: ([question]: [string]) => insights.composeQuery(question),
+
+    nlSearch: ([q]: [Record<string, unknown>]) => store.runNLQuery(q as never),
+
+    aiSnoozeSuggest: ([messageId]: [string]) => insights.snoozeSuggest(messageId),
+
+    aiJudgeFollowups: ([ids]: [string[]]) => insights.judgeFollowups(ids),
+
+    aiFollowupDraft: ([messageId]: [string]) => insights.followupDraft(messageId),
+
+    aiScreenBatch: ([addrs]: [string[]]) => insights.screenBatch(addrs),
+
     // ================= 置顶 / 魔法排序 / 批量提问 =================
 
     pinMessages: ([ids, pinned]: [string[], boolean]) => store.setPinned(ids, pinned),

@@ -32,7 +32,9 @@ import type {
   MemoryScope,
   OAuthClientConfig,
   ProviderKey,
-  SmartView
+  SmartView,
+  NLQuery,
+  FollowupJudgement
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -155,6 +157,20 @@ export interface LinkToApi {
   listSmartViews(): Promise<SmartView[]>
   saveSmartView(id: string, name: string, view: SmartView['view']): Promise<void>
   deleteSmartView(id: string): Promise<void>
+
+  // ---------- AI 纪律解法 ----------
+  /** 自然语言问句 → 结构化邮件查询 */
+  aiComposeQuery(question: string): Promise<{ ok: boolean; error?: string; query: NLQuery }>
+  /** Snooze AI 建议：读邮件内容推荐合适时刻 */
+  aiSnoozeSuggest(messageId: string): Promise<{ ok: boolean; error?: string; at: number; reason: string }>
+  /** 待跟进批量判断：哪些真的需要催 */
+  aiJudgeFollowups(ids: string[]): Promise<{ ok: boolean; error?: string; judgements: FollowupJudgement[] }>
+  /** 待跟进催促信草稿 */
+  aiFollowupDraft(messageId: string): Promise<{ ok: boolean; error?: string; subject: string; body: string }>
+  /** Screener 批量 AI 审批：逐个给建议并可一键全部采纳 */
+  aiScreenBatch(addrs: string[]): Promise<{ ok: boolean; error?: string; verdicts: { addr: string; verdict: 'allow' | 'deny'; reason: string }[] }>
+  /** 执行 AI 编译出的结构化查询 */
+  nlSearch(q: NLQuery): Promise<MessagePage>
 
   // ---------- 置顶 / 魔法排序 / 批量提问 ----------
   pinMessages(ids: string[], pinned: boolean): Promise<void>

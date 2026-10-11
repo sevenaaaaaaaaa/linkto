@@ -528,6 +528,34 @@ export interface ScheduledSend {
   createdAt: number
 }
 
+// ---------- AI 收件箱纪律解法 ----------
+
+/** 自然语言搜索：AI 把问句编译成结构化查询 */
+export interface NLQuery {
+  text?: string
+  sender?: string
+  subject?: string
+  category?: 'personal' | 'notification' | 'newsletter' | 'noise' | null
+  isNewsletter?: boolean | null
+  hasAttachment?: boolean | null
+  unreadOnly?: boolean | null
+  /** 相对时间：最近 N 天 */
+  withinDays?: number | null
+  /** 时间区间（ISO 日期） */
+  after?: string | null
+  before?: string | null
+  /** 无法结构化的部分退回关键词检索 */
+  fallbackText?: string | null
+}
+
+/** 待跟进邮件的 AI 判断 */
+export interface FollowupJudgement {
+  messageId: string
+  needsFollowup: boolean
+  urgency: 'high' | 'medium' | 'low'
+  reason: string
+}
+
 // ---------- 列表排序 / 魔法排序 / 批量提问 ----------
 
 export type ListSort = 'date' | 'dateAsc' | 'unread' | 'smart'

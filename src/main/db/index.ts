@@ -510,6 +510,67 @@ export class MailStore {
       .all(...baseParams, query.limit, query.offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
+  /** AI 结构化查询 → SQL（自然语言搜索的执行端） */
+  runNLQuery(q: {
+    text?: string; sender?: string; subject?: string
+    category?: string | null; isNewsletter?: boolean | null; hasAttachment?: boolean | null
+    unreadOnly?: boolean | null; withinDays?: number | null; after?: string | null; before?: string | null
+    fallbackText?: string | null
+  }, limit = 60): MessagePage {
+    const where: string[] = ["m.folder_path = 'INBOX'"]
+    const params: (string | number)[] = []
+    const now = Date.now()
+    where.push(`(m.snoozed_until IS NULL OR m.snoozed_until <= ${now})`)
+    where.push(`NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`)
+    if (q.sender) {
+      where.push("(lower(m.from_addr) LIKE ? OR lower(COALESCE(m.from_name,'')) LIKE ?)")
+      const p = `%${q.sender.toLowerCase()}%`
+      params.push(p, p)
+    }
+    if (q.subject) {
+      where.push('m.subject LIKE ?')
+      params.push(`%${q.subject}%`)
+    }
+    if (q.category) {
+      where.push('m.category = ?')
+      params.push(q.category)
+    }
+    if (q.isNewsletter === true) where.push('m.is_newsletter = 1')
+    if (q.isNewsletter === false) where.push('m.is_newsletter = 0')
+    if (q.hasAttachment) where.push('m.has_attachments = 1')
+    if (q.unreadOnly) where.push("m.flags NOT LIKE '%\\Seen%'")
+    if (q.withinDays && q.withinDays > 0) {
+      where.push('m.date >= ?')
+      params.push(now - q.withinDays * 86400_000)
+    }
+    if (q.after) {
+      const t = Date.parse(q.after)
+      if (Number.isFinite(t)) { where.push('m.date >= ?'); params.push(t) }
+    }
+    if (q.before) {
+      const t = Date.parse(q.before + 'T23:59:59')
+      if (Number.isFinite(t)) { where.push('m.date <= ?'); params.push(t) }
+    }
+    const kw = (q.fallbackText || q.text || '').trim()
+    if (kw) {
+      const ids = this.searchIds(kw, 500)
+      if (ids.length) {
+        where.push(`m.id IN (${ids.map(() => '?').join(',')})`)
+        params.push(...ids)
+      } else {
+        where.push('(m.subject LIKE ? OR m.snippet LIKE ? OR m.text LIKE ?)')
+        const p = `%${kw}%`
+        params.push(p, p, p)
+      }
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`
+    const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...params) as any).c as number
+    const rows = this.db
+      .prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ?`)
+      .all(...params, limit) as any[]
+    return { items: rows.map(r => this.rowToSummary(r)), total }
+  }
+
   searchIds(q: string, limit: number): string[] {
     const trimmed = q.trim()
     if (!trimmed) return []

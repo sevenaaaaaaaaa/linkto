@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type { AISettings, CompanyInsight, DailyDigest } from '@shared/types'
+import {
+  EXTRACT_MESSAGE, DAILY_DIGEST, COMPANY_PROFILE, RANK_MESSAGES, ASK_BULK,
+  SCREEN_SUGGEST, SCREEN_BATCH, COMPOSE_QUERY, SNOOZE_SUGGEST,
+  JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE
+} from './prompts'
 import type { MailStore } from '../db'
 import type { AIService } from './service'
 
@@ -49,15 +54,29 @@ export class InsightsService {
 
   private ready(): boolean {
     const s = this.deps.getAISettings()
-    return s.enabled && !!s.apiKey
+    // builtin-local 走内置本地引擎，无需 API Key
+    return s.enabled && (s.baseURL === 'builtin-local' || !!s.apiKey)
   }
 
   private async json<T>(system: string, user: string): Promise<T> {
-    const text = await this.deps.ai.complete([
-      { role: 'system', content: system },
-      { role: 'user', content: user }
-    ])
-    return jsonFromText(text) as T
+    const ask = (extra: string) => {
+      const sys = system + (extra ? `\n\n${extra}` : '')
+      return this.deps.ai.complete(
+        [
+          { role: 'system', content: sys },
+          { role: 'user', content: user }
+        ],
+        3000
+      )
+    }
+    // 端侧小模型首轮可能跑题：首轮失败则带着「只输出JSON」强化重试一次
+    try {
+      const first = await ask('')
+      return jsonFromText(first) as T
+    } catch {
+      const retry = await ask(JSON_RETRY_NUDGE)
+      return jsonFromText(retry) as T
+    }
   }
 
   private emitChanged() {
@@ -85,7 +104,7 @@ export class InsightsService {
         todos?: { title: string; due?: string; amount?: string; link?: string }[]
         reading?: { title: string; url?: string; summary?: string }[]
       }>(
-        '你是邮件智能助手。从邮件中提取结构化信息，只输出 JSON：{"type":"bill|meeting|newsletter|other","todos":[{"title":"待办事项","due":"YYYY-MM-DD HH:mm 或 null","amount":"金额或 null","link":"相关链接或 null"}],"reading":[{"title":"文章标题","url":"链接或 null","summary":"一句话摘要"}]}。规则：账单/缴费/发票类和会议邀请类提取 todos（每封 1-3 条）；Newsletter 提取 reading（列出主要文章，最多 5 条）；无关内容输出空数组。所有文本用中文。',
+        EXTRACT_MESSAGE,
         `发件人：${row.from_name ?? ''} <${row.from_addr ?? ''}>\n主题：${row.subject}\n\n正文：\n${text}`
       )
       for (const t of result.todos ?? []) {
@@ -152,7 +171,7 @@ export class InsightsService {
       const senders = new Set(rows.map(r => r.from_addr)).size
       const memoryBlock = this.deps.getMemoryContext?.(rows.map(r => r.subject).join(' ')) ?? ''
       const digest = await this.json<DailyDigest>(
-        '你是邮件商情助手。分析用户近期邮件，只输出 JSON：{"highlights":["今日重点1","重点2"],"themes":[{"theme":"主题名","summary":"该主题串讲","count":3}],"memo":"给用户的一句话备忘","deleteSuggestions":[{"messageId":"必须来自列表","subject":"","from":"","reason":"为什么可以删"}]}。要求：highlights 3-6 条（按紧急/重要排序，提及截止时间）；themes 2-5 个（跨邮件按主题归纳，这是 digest 核心）；memo ≤50 字；deleteSuggestions 只挑明确无价值且可安全删除的（过期通知、旧验证码、营销噪声），最多 5 条，理由具体。全部中文。' +
+        DAILY_DIGEST +
           (memoryBlock ? `分析时主动利用你对用户的长期记忆（人、事、偏好、承诺），重点照会承诺类记忆。${memoryBlock}` : ''),
         `今天是 ${new Date().toLocaleDateString('zh-CN')}。近 36 小时邮件 ${rows.length} 封、${senders} 个发件人：\n${lines}`
       )
@@ -193,7 +212,9 @@ export class InsightsService {
   /** 定时钩子（主进程每 30 分钟调用）：AI 开启且当日未生成则自动生成 */
   async maybeAutoDaily() {
     const s = this.deps.getAISettings()
-    if (!s.enabled || !s.autoDigest || !s.apiKey) return
+    if (!s.enabled || !s.autoDigest) return
+    const apiKeyOk = s.baseURL === 'builtin-local' || !!s.apiKey
+    if (!apiKeyOk) return
     const hour = new Date().getHours()
     if (hour < 8) return
     if (this.deps.store.latestInsight('daily', todayPeriod())) return
@@ -228,7 +249,7 @@ export class InsightsService {
         credibility: { score: number; reasons: string }
         conversionIndex: { score: number; reasons: string }
       }>(
-        '你是商业情报分析师。根据某公司发给用户的全部邮件（按时间排列），只输出 JSON：{"company":"公司名","summary":"两句话概括双方关系","timeline":[{"period":"2026-01","event":"发生了什么"}],"strategy":"该公司的运营/触达策略剖析：节奏、渠道、转化漏斗设计、生命周期运营等","credibility":{"score":0-100整数,"reasons":"品牌价值可信度评分理由"},"conversionIndex":{"score":0-100整数,"reasons":"用户未来被该品牌转化（购买/付费升级）的概率评分理由"}}。要求：timeline 按月/周聚合 4-8 个节点；两个评分要有说服力且理由引用邮件证据；全部中文。',
+        COMPANY_PROFILE,
         `公司域名：${d}\n共 ${rows.length} 封邮件（时间正序）：\n${lines}`
       )
       const insight: CompanyInsight = {
@@ -285,7 +306,7 @@ export class InsightsService {
     try {
       const local = rows[0].category === 'newsletter' || rows[0].is_newsletter ? 'newsletter' : rows[0].category
       const result = await this.json<{ verdict: 'allow' | 'deny'; reason: string }>(
-        '你是收件箱门卫。用户收到一位新发件人的邮件，需要你建议放行还是拒绝。只输出 JSON：{"verdict":"allow|deny","reason":"一句话理由（≤24字）"}。判断依据：通知/账单/政务等一次性事务→allow；营销/推广/冷启动销售→deny；新闻简报类→allow 并说明可归入订阅。拿不准时 allow（宁勿滥杀）。全部中文。',
+        SCREEN_SUGGEST,
         `发件人：${addr}\n本地分类：${local}\n` +
           rows.map(r => `主题：${r.subject}\n摘要：${String(r.snippet).slice(0, 160)}`).join('\n---\n')
       )
@@ -293,6 +314,137 @@ export class InsightsService {
       return { ok: true, verdict, reason: String(result.reason ?? '').slice(0, 60) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err), ...empty }
+    }
+  }
+
+  // ---------- AI 纪律解法 ----------
+
+  /** 自然语言问句 → 结构化邮件查询（AI 版搜索：问问题而不是猜关键词） */
+  async composeQuery(question: string): Promise<{ ok: boolean; error?: string; query: import('@shared/types').NLQuery }> {
+    const empty = { text: '', sender: '', subject: '', category: null, isNewsletter: null, hasAttachment: null, unreadOnly: null, withinDays: null, after: null, before: null, fallbackText: '' }
+    if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', query: empty }
+    if (!question.trim()) return { ok: false, error: '请输入问题', query: empty }
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const q = await this.json<Record<string, unknown>>(
+        '把用户问题编译成邮件查询 JSON。输出格式：{"text":"","sender":"","subject":"","category":null,"isNewsletter":null,"hasAttachment":null,"unreadOnly":null,"withinDays":null,"after":null,"before":null,"fallbackText":""}。字段含义：sender=发件人关键词，subject=主题关键词，category=personal/notification/newsletter/noise，withinDays=最近N天。只填问题里明确提到的字段，其余保持 null/空串。只输出 JSON。\n\n示例1：问"上周王小明发的邮件"→{"sender":"王小明","withinDays":7}\n示例2：问"最近三天带附件的账单"→{"subject":"账单","hasAttachment":true,"withinDays":3}\n示例3：问"未读的订阅邮件"→{"isNewsletter":true,"unreadOnly":true}\n示例4：问"上个月的会议邀请"→{"subject":"会议","withinDays":30}',
+        `今天 ${today}。用户的问题：${question}`
+      )
+      const query = {
+        text: typeof q.text === 'string' ? q.text : '',
+        sender: typeof q.sender === 'string' ? q.sender : '',
+        subject: typeof q.subject === 'string' ? q.subject : '',
+        category: (typeof q.category === 'string' && ['personal','notification','newsletter','noise'].includes(q.category) ? q.category : null) as import('@shared/types').NLQuery['category'],
+        isNewsletter: typeof q.isNewsletter === 'boolean' ? q.isNewsletter : null,
+        hasAttachment: typeof q.hasAttachment === 'boolean' ? q.hasAttachment : null,
+        unreadOnly: typeof q.unreadOnly === 'boolean' ? q.unreadOnly : null,
+        withinDays: typeof q.withinDays === 'number' ? q.withinDays : null,
+        after: typeof q.after === 'string' ? q.after : null,
+        before: typeof q.before === 'string' ? q.before : null,
+        fallbackText: typeof q.fallbackText === 'string' ? q.fallbackText : ''
+      }
+      return { ok: true, query }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), query: empty }
+    }
+  }
+
+  /** Snooze AI 建议：读内容判断什么时候该回来（账单→还款日前、会议→会前1小时、通知→今晚） */
+  async snoozeSuggest(messageId: string): Promise<{ ok: boolean; error?: string; at: number; reason: string }> {
+    const now = Date.now()
+    if (!this.ready()) return { ok: false, error: 'AI 未启用', at: now + 3600_000, reason: '' }
+    const row = this.deps.store.getMessageRow(messageId)
+    if (!row) return { ok: false, error: '邮件不存在', at: now + 3600_000, reason: '' }
+    try {
+      const r = await this.json<{ hours: number; reason: string }>(
+        SNOOZE_SUGGEST,
+        `现在时间：${new Date().toLocaleString('zh-CN')}\n主题：${row.subject}\n摘要：${String(row.snippet).slice(0, 300)}\n正文：${String(row.text || '').slice(0, 1200)}`
+      )
+      let hours = Math.max(0.5, Math.min(336, Number(r.hours ?? 24)))
+      if (!Number.isFinite(hours)) hours = 24
+      return { ok: true, at: Date.now() + hours * 3600_000, reason: String(r.reason ?? '').slice(0, 40) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), at: now + 3600_000, reason: '' }
+    }
+  }
+
+  /** 待跟进批量判断：结合上下文判断哪些真的需要催（避免催已解决的事） */
+  async judgeFollowups(ids: string[]): Promise<{ ok: boolean; error?: string; judgements: import('@shared/types').FollowupJudgement[] }> {
+    if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', judgements: [] }
+    try {
+      const rows = ids
+        .map(id => this.deps.store.getMessageRow(id))
+        .filter(Boolean)
+        .map(r => ({
+          id: r.id,
+          subject: r.subject,
+          to: r.to_json,
+          date: new Date(r.date).toLocaleDateString('zh-CN'),
+          text: String(r.text || r.snippet || '').slice(0, 300)
+        }))
+      if (!rows.length) return { ok: true, judgements: [] }
+      const memoryBlock = this.deps.getMemoryContext?.(rows.map(r => r.subject).join(' ')) ?? ''
+      const lines = rows.map((r, i) => `${i}. [${r.id}] ${r.subject}（发给 ${r.to}，${r.date}）\n   ${r.text}`).join('\n')
+      const result = await this.json<{ judgements: { index: number; needsFollowup: boolean; urgency: string; reason: string }[] }>(
+        JUDGE_FOLLOWUPS
+          + (memoryBlock ? `\n\n结合用户长期记忆判断（注意承诺类记忆）。${memoryBlock}` : ''),
+        lines
+      )
+      const judgements: import('@shared/types').FollowupJudgement[] = []
+      for (const j of result.judgements ?? []) {
+        const row = rows[j.index]
+        if (!row) continue
+        judgements.push({
+          messageId: row.id,
+          needsFollowup: j.needsFollowup !== false,
+          urgency: j.urgency === 'high' ? 'high' : j.urgency === 'low' ? 'low' : 'medium',
+          reason: String(j.reason ?? '').slice(0, 50)
+        })
+      }
+      return { ok: true, judgements }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), judgements: [] }
+    }
+  }
+
+  /** 催促信草稿：基于原邮件 + 线程上下文写一封得体的 nudge */
+  async followupDraft(messageId: string): Promise<{ ok: boolean; error?: string; subject: string; body: string }> {
+    if (!this.ready()) return { ok: false, error: 'AI 未启用', subject: '', body: '' }
+    const row = this.deps.store.getMessageRow(messageId)
+    if (!row) return { ok: false, error: '邮件不存在', subject: '', body: '' }
+    try {
+      const r = await this.json<{ subject: string; body: string }>(
+        FOLLOWUP_DRAFT,
+        `原邮件：${row.subject}\n时间：${new Date(row.date).toLocaleDateString('zh-CN')}\n收件人：${row.to_json}\n内容：${String(row.text || row.snippet || '').slice(0, 1200)}`
+      )
+      return { ok: true, subject: String(r.subject || `Re: ${row.subject}`), body: String(r.body ?? '') }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), subject: '', body: '' }
+    }
+  }
+
+  /** Screener 批量 AI 审批：一次调用判完整个待审队列 */
+  async screenBatch(addrs: string[]): Promise<{ ok: boolean; error?: string; verdicts: { addr: string; verdict: 'allow' | 'deny'; reason: string }[] }> {
+    if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', verdicts: [] }
+    if (!addrs.length) return { ok: true, verdicts: [] }
+    try {
+      const parts: string[] = []
+      addrs.forEach((addr, i) => {
+        const rows = this.deps.store.db
+          .prepare('SELECT subject, snippet, category, is_newsletter FROM messages WHERE lower(from_addr) = ? ORDER BY date DESC LIMIT 2')
+          .all(addr.toLowerCase()) as { subject: string; snippet: string; category: string; is_newsletter: number }[]
+        const sample = rows.map(r => `  主题：${r.subject}｜${String(r.snippet).slice(0, 80)}`).join('\n') || '  （无样本）'
+        parts.push(`[${i}] ${addr}\n${sample}`)
+      })
+      const result = await this.json<{ verdicts: { index: number; verdict: string; reason: string }[] }>(
+        SCREEN_BATCH,
+        parts.join('\n'))
+      const verdicts = (result.verdicts ?? [])
+        .map(v => ({ addr: addrs[v.index], verdict: (v.verdict === 'deny' ? 'deny' : 'allow') as 'allow' | 'deny', reason: String(v.reason ?? '').slice(0, 40) }))
+        .filter(v => v.addr)
+      return { ok: true, verdicts }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), verdicts: [] }
     }
   }
 
@@ -319,7 +471,7 @@ export class InsightsService {
         .map((r, i) => `${i}. [${r.id}] ${r.subject} · ${r.from} · ${r.date}${r.unread ? ' · 未读' : ''}${r.flagged ? ' · 已旗标' : ''}\n   ${r.snippet}`)
         .join('\n')
       const result = await this.json<{ ranked: { id: string; reason: string }[] }>(
-        '你是邮件优先级助手。用户选中了一批邮件并希望获得「更合理的排序」。只输出 JSON：{"ranked":[{"id":"必须来自列表","reason":"一句话排序理由（≤20字）"}]}。排序依据：截止时间临近 > 需要用户行动/回复 > 未读 > 财务/账单/会议 > 通知类；同类按新鲜度。每封都要出现且只出现一次。',
+        RANK_MESSAGES,
         `共 ${rows.length} 封：\n${lines}`
       )
       const given = new Set(ids)
@@ -357,8 +509,8 @@ export class InsightsService {
         }))
       const lines = rows.map((r, i) => `【邮件${i + 1}】${r.subject}（${r.from}，${r.date}）\n${r.text}`).join('\n\n')
       const result = await this.json<{ answer: string; todos: { title: string; due?: string | null }[] }>(
-        '你是邮件助手。用户选中了多封邮件并提出问题。只输出 JSON：{"answer":"基于这些邮件内容的中文回答（引用具体邮件，条理清晰，可用换行分点）","todos":[{"title":"从这些邮件中提炼的待办事项","due":"YYYY-MM-DD 或 null"}]}。todos 提炼邮件中明确需要用户行动的事项（还款、回复、参会、下单等），没有则为空数组。' +
-          (memoryBlock ? `回答时主动利用你对用户的长期记忆，但不要逐条罗列。${memoryBlock}` : ''),
+        ASK_BULK +
+          (memoryBlock ? `\n\n回答时主动利用你对用户的长期记忆，但不要逐条罗列。${memoryBlock}` : ''),
         `用户的问题：${question}\n\n选中的 ${rows.length} 封邮件：\n${lines}`
       )
       return { ok: true, answer: String(result.answer ?? ''), todos: (result.todos ?? []).slice(0, 12).filter(t => t.title) }

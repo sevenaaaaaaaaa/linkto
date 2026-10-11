@@ -30,6 +30,7 @@ const METHOD_NAMES = [
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
   'snoozeMessages', 'setSenderStatus', 'screenerPendingCount', 'aiScreenSuggest', 'getSplitSignals',
   'listSmartViews', 'saveSmartView', 'deleteSmartView',
+  'aiComposeQuery', 'aiSnoozeSuggest', 'aiJudgeFollowups', 'aiFollowupDraft', 'aiScreenBatch', 'nlSearch',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
   'listCloudDrives', 'saveCloudDrive', 'removeCloudDrive', 'testCloudDrive', 'cloudUpload', 'cloudSyncEml',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',

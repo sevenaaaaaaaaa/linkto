@@ -199,24 +199,34 @@ export class LocalEngine {
     try {
       const { LlamaChatSession } = await import('node-llama-cpp')
       const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
-      const session = new LlamaChatSession({
-        contextSequence: this.context.getSequence(),
-        systemPrompt: system || undefined
-      })
+      // sequence 池有限：本轮用完必须 dispose，否则下一次 getSequence 报 No sequences left
+      let seq: import('node-llama-cpp').LlamaContextSequence | null = null
+      try {
+        seq = this.context.getSequence()
+      } catch {
+        // 兜底：重建上下文（上一轮异常未释放时）
+        await this.loadModel(modelId)
+        seq = this.context.getSequence()
+      }
+      const session = new LlamaChatSession({ contextSequence: seq, systemPrompt: system || undefined })
       // 非系统消息整体拼接为一段 prompt（邮件场景指令自包含，无需回放多轮历史）
       const body = messages
         .filter(m => m.role !== 'system')
         .map(m => (m.role === 'user' ? m.content : `（此前助手回复：${m.content}）`))
         .join('\n\n')
       let full = ''
-      await session.prompt(body, {
-        maxTokens: 2048,
-        temperature: 0.7,
-        onTextChunk: chunk => {
-          full += chunk
-          onDelta(chunk)
-        }
-      })
+      try {
+        await session.prompt(body, {
+          maxTokens: 2048,
+          temperature: 0.7,
+          onTextChunk: chunk => {
+            full += chunk
+            onDelta(chunk)
+          }
+        })
+      } finally {
+        await seq.dispose().catch(() => {})
+      }
       return full
     } finally {
       this.generating = false

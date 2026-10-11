@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { api } from '../lib/api'
 
 /** Snooze 预设时刻计算 */
 export function snoozeTargets(now = new Date()): { key: string; label: string; at: number }[] {
@@ -40,9 +41,25 @@ export function SnoozeMenu(props: {
   onClose(): void
   align?: 'left' | 'right'
   currentlySnoozed?: boolean
+  /** AI 建议目标邮件（传入即显示 ✨ 按钮） */
+  messageId?: string
 }) {
   const [custom, setCustom] = useState('')
+  const [suggesting, setSuggesting] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  const askAi = async () => {
+    if (!props.messageId || suggesting) return
+    setSuggesting(true)
+    const res = await api.aiSnoozeSuggest(props.messageId)
+    setSuggesting(false)
+    if (!res.ok) {
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 建议不可用' }))
+      return
+    }
+    props.onPick(res.at)
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 建议 ${fmtSnooze(res.at)}：${res.reason}` }))
+  }
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -77,6 +94,16 @@ export function SnoozeMenu(props: {
           <span className="text-[10.5px]" style={{ color: 'var(--faint)' }}>{fmtSnooze(t.at)}</span>
         </button>
       ))}
+      {props.messageId && (
+        <button
+          onClick={askAi}
+          disabled={suggesting}
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)] disabled:opacity-50"
+          style={{ color: 'var(--accent-strong)' }}
+        >
+          ✨ {suggesting ? 'AI 判断中…' : 'AI 建议最佳时刻'}
+        </button>
+      )}
       <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-1">
         <input
           type="datetime-local"
