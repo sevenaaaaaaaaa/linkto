@@ -287,7 +287,7 @@ export class MailStore {
       )
       .get(`%"${norm}"%`, `%"${norm}"%`)
     // 自动放行：本机账户自己的地址
-    const self = this.db.prepare('SELECT 1 FROM accounts WHERE lower(email) = ? OR (user LIKE "%@%" AND lower(user) = ?)').get(norm, norm)
+    const self = this.db.prepare("SELECT 1 FROM accounts WHERE lower(email) = ? OR (user LIKE '%@%' AND lower(user) = ?)").get(norm, norm)
     const status = mailed || self ? 'allow' : 'pending'
     this.db
       .prepare(
