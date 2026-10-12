@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<!-- 方向 B v3 「构成主义」：耳外移、月抬高、地平线贯穿 -->
+<circle cx="512" cy="512" r="432" fill="#1F2226"/>
+<circle cx="706" cy="350" r="66" fill="#F8F3E8"/>
+<g transform="rotate(-6 512 620)">
+  <path d="M400 470 L444 214 L490 476 Z" fill="#E2593B"/>
+  <path d="M556 476 L628 224 L672 494 Z" fill="#E2593B"/>
+  <path d="M302 640 A 210 210 0 0 1 722 640 Z" fill="#00817E"/>
+  <circle cx="446" cy="568" r="28" fill="#F8F3E8"/>
+</g>
+<rect x="268" y="666" width="488" height="20" fill="#F8F3E8"/>
+</svg>

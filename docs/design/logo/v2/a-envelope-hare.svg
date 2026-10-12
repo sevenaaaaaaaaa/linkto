@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<!-- 方向 A v3 「信封即兔」：单一连续轮廓——打开的信封翻盖即双耳 -->
+<circle cx="512" cy="512" r="432" fill="#F8F3E8"/>
+<path d="M292 830 L292 560 L408 368 L446 178 L492 352 L512 392 L532 352 L578 178 L616 368 L732 560 L732 830 Z"
+  fill="#1F2226" stroke="#1F2226" stroke-width="26" stroke-linejoin="round"/>
+<!-- 铜绿蜡封 -->
+<circle cx="512" cy="700" r="50" fill="#00817E"/>
+<circle cx="512" cy="700" r="19" fill="#F8F3E8"/>
+</svg>
