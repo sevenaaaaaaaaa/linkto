@@ -619,11 +619,13 @@ export interface GhostItem {
 /** 发送草稿：经指定账户哑管道投递，内容全密文 */
 export interface GhostSendDraft {
   accountId: string
-  /** 收件人真实邮箱（仅投递用，不出现在信封内容中） */
+  /** 收件人真实邮箱（仅投递用，不出现在信封内容中）；via='relay' 时可空 */
   to: string
   /** 收件人幽灵 ID（X25519 公钥 SPKI DER, base64） */
   ghostId: string
   /** 打开口令（双因子之一，与收件人私钥缺一不可） */
   password: string
   text: string
+  /** 投递通道：mail=邮箱哑管道（默认）/ relay=匿名中继（伪装 HTTPS，无需邮箱账户） */
+  via?: 'mail' | 'relay'
 }

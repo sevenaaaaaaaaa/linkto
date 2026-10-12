@@ -109,13 +109,14 @@ export class ImapLite {
   async connect(acc: ImapAccount, timeoutMs = 15000): Promise<void> {
     const sock = await new Promise<TcpSocket.Socket>((resolve, reject) => {
       const s = TcpSocket.createConnection(
-        { host: acc.host, port: acc.port, tls: acc.secure, tlsCheckValidity: false },
+        { host: acc.host, port: acc.port, tls: acc.secure, tlsCheckValidity: true },
         () => resolve(s)
       )
       s.setTimeout(timeoutMs, () => {
         s.destroy()
         reject(new Error('连接超时'))
       })
+      // 证书校验失败 = 中间人信号：错误消息带 cert/ssl 特征供守卫判定（见 security/guard.isMitmError）
       s.on('error', (e: unknown) => reject(new Error(`连接失败：${(e as { message?: string }).message ?? String(e)}`)))
     })
     this.sock = sock

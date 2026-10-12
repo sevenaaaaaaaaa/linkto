@@ -381,6 +381,12 @@ export function registerIpc(ctx: AppContext) {
 
     ghostBurn: ([id]: [string]) => ghost.burn(id),
 
+    ghostRelayUrl: () => ghost.relayUrl(),
+
+    ghostRelaySetUrl: ([url]: [string]) => {
+      ghost.setRelayUrl(url)
+    },
+
     openGhost: () => ctx.openGhost(),
 
     openGhostReader: ([id]: [string]) => ctx.openGhostReader(id),

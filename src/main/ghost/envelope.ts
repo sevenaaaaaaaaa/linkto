@@ -111,15 +111,15 @@ function unwrapKeyWithPassword(envelope: GhostEnvelope, password: string): Buffe
   return unbox(key2, envelope.w2)
 }
 
-/** 封装一封幽灵信：正文 + 口令 → 信封 JSON（投递通道=邮箱哑管道） */
-export function sealEnvelope(text: string, password: string, recipientSpkiB64: string): string {
+/** 封装一封幽灵信：正文 + 口令 → 信封 JSON（ch 指定投递通道：mail=邮箱哑管道 / relay=匿名中继） */
+export function sealEnvelope(text: string, password: string, recipientSpkiB64: string, channel: 'mail' | 'relay' = 'mail'): string {
   if (!password) throw new Error('需要设置打开口令')
   const k = randomBytes(32)
   const payload: GhostPayload = { kind: 'ghost-mail', body: text, createdAt: Date.now() }
   const envelope: GhostEnvelope = {
     app: 'linkto-ghost',
     v: 1,
-    ch: 'mail',
+    ch: channel,
     eph: '',
     salt2: randomBytes(16).toString('base64'),
     w1: { iv: '', ct: '', tag: '' },

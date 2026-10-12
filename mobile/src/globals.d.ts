@@ -5,3 +5,6 @@ declare class TextDecoder {
   constructor(label?: string)
   decode(input: Uint8Array | ArrayBuffer, options?: { stream?: boolean }): string
 }
+declare class TextEncoder {
+  encode(input: string): Uint8Array
+}

@@ -243,6 +243,9 @@ export interface LinkToApi {
   ghostOpen(id: string, password: string): Promise<{ ok: boolean; error?: string; body?: string }>
   /** 拒收（未读焚毁）：直接销毁密文 */
   ghostBurn(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 匿名中继地址（伪装 HTTPS 笔记同步 API；空=未配置） */
+  ghostRelayUrl(): Promise<string>
+  ghostRelaySetUrl(url: string): Promise<void>
   /** 打开幽灵信箱窗口 */
   openGhost(): Promise<void>
   /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */

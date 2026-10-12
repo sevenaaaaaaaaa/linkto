@@ -14,6 +14,7 @@ import {
   sealEnvelope,
   type GhostEnvelope
 } from './envelope'
+import { relayPoll, relaySend } from './relay'
 
 export type { GhostItem } from '@shared/types'
 import type { GhostItem } from '@shared/types'
@@ -141,19 +142,43 @@ export class GhostService {
 
   // ---------- 发送 ----------
 
-  /** 封装并以 .lkghost 附件经指定账户投递；主题/正文全空，不泄露内容 */
+  /** 中继地址配置（settings 表：ghost.relayUrl） */
+  relayUrl(): string {
+    return this.deps.appStore.get<string>('ghost.relayUrl', '')
+  }
+
+  setRelayUrl(url: string): void {
+    this.deps.appStore.set('ghost.relayUrl', url.trim().replace(/\/+$/, ''))
+  }
+
+  /**
+   * 封装并投递。via='mail'：以 .lkghost 附件经指定账户投递（主题/正文全空，不泄露内容）；
+   * via='relay'：密文直投匿名中继（伪装 HTTPS 笔记同步 API），无需任何邮箱账户，无需收件人邮箱。
+   */
   async send(draft: GhostSendDraft): Promise<{ ok: boolean; error?: string }> {
     if (!draft.text.trim()) return { ok: false, error: '正文为空' }
     if (!draft.ghostId.trim()) return { ok: false, error: '缺少收件人幽灵 ID' }
     if (!draft.password) return { ok: false, error: '需要设置打开口令' }
-    const account = this.deps.store.listAccounts().find(a => a.id === draft.accountId)
-    if (!account) return { ok: false, error: '未找到投递账户' }
     let envelopeJson: string
     try {
-      envelopeJson = sealEnvelope(draft.text, draft.password, draft.ghostId.trim())
+      envelopeJson = sealEnvelope(draft.text, draft.password, draft.ghostId.trim(), draft.via === 'relay' ? 'relay' : 'mail')
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
+
+    if (draft.via === 'relay') {
+      const relay = this.relayUrl()
+      if (!relay) return { ok: false, error: '未配置中继地址（幽灵信箱 → 设置）' }
+      try {
+        await relaySend(relay, draft.ghostId.trim(), envelopeJson)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    const account = this.deps.store.listAccounts().find(a => a.id === draft.accountId)
+    if (!account) return { ok: false, error: '未找到投递账户' }
     const tmp = join(this.ghostDir, `outbox-${Date.now()}${EXT}`)
     writeFileSync(tmp, envelopeJson)
     const mailDraft: ComposeDraft = {
@@ -224,6 +249,35 @@ export class GhostService {
       }
     }
     if (imported > 0) this.deps.event({ type: 'ghost-changed' })
-    return { imported, burned, pending }
+
+    // 匿名中继收取：GET 即取走即焚（服务端不留副本，无信道需要销毁）
+    let relayImported = 0
+    const relay = this.relayUrl()
+    if (relay) {
+      try {
+        const envs = await relayPoll(relay, JSON.parse(this.deps.appStore.loadSecret('ghost:identity') || '{}').spki ?? '')
+        for (const json of envs) {
+          let env: GhostEnvelope
+          try {
+            env = parseEnvelope(json)
+          } catch {
+            continue
+          }
+          if (!isAddressedTo(env, this.privKeyB64())) continue
+          const id = randomUUID()
+          const file = `${id}${EXT}`
+          writeFileSync(join(this.ghostDir, file), json)
+          const m = this.readManifest()
+          m.items.push({ id, file, receivedAt: Date.now(), sealedBytes: Buffer.byteLength(json) })
+          this.writeManifest(m)
+          relayImported++
+        }
+        if (relayImported > 0) this.deps.event({ type: 'ghost-changed' })
+      } catch {
+        // 中继不可达不阻塞邮箱通道扫描结果
+      }
+    }
+
+    return { imported: imported + relayImported, burned, pending }
   }
 }

@@ -1,0 +1,7 @@
+name = "linkto-ghost-relay"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+
+[[kv_namespaces]]
+binding = "BOX"
+id = "<wrangler kv namespace create 后填入>"

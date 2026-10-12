@@ -11,16 +11,19 @@ export function GhostWindow() {
   const [fingerprint, setFingerprint] = useState('')
   const [items, setItems] = useState<GhostItem[]>([])
   const [accounts, setAccounts] = useState<{ id: string; email: string }[]>([])
-  const [tab, setTab] = useState<'inbox' | 'compose'>('inbox')
+  const [tab, setTab] = useState<'inbox' | 'compose' | 'relay'>('inbox')
   const [notice, setNotice] = useState('')
 
   // 写信表单
+  const [via, setVia] = useState<'mail' | 'relay'>('mail')
   const [accountId, setAccountId] = useState('')
   const [to, setTo] = useState('')
   const [ghostTo, setGhostTo] = useState('')
   const [password, setPassword] = useState('')
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [relayUrl, setRelayUrl] = useState('')
+  const [relayInput, setRelayInput] = useState('')
 
   const reload = () => {
     void api.ghostIdentity().then(r => {
@@ -28,6 +31,10 @@ export function GhostWindow() {
       setFingerprint(r.fingerprint)
     })
     void api.ghostList().then(setItems)
+    void api.ghostRelayUrl().then(u => {
+      setRelayUrl(u)
+      setRelayInput(u)
+    })
     void api.listAccounts().then(as => {
       const enabled = as.filter(a => a.enabled).map(a => ({ id: a.id, email: a.email }))
       setAccounts(enabled)
@@ -58,21 +65,31 @@ export function GhostWindow() {
   }
 
   const send = async () => {
-    if (!accountId || !to || !ghostTo || !password || !text) {
-      setNotice('请填写完整：投递账户 / 收件地址 / 收件人幽灵 ID / 打开口令 / 正文')
+    if (!ghostTo || !password || !text) {
+      setNotice('请填写完整：收件人幽灵 ID / 打开口令 / 正文')
+      return
+    }
+    if (via === 'mail' && (!accountId || !to)) {
+      setNotice('邮箱通道需要：投递账户 / 收件地址（或改用匿名中继通道）')
       return
     }
     setBusy(true)
-    const r = await api.ghostSend({ accountId, to, ghostId: ghostTo, password, text })
+    const r = await api.ghostSend({ accountId, to, ghostId: ghostTo, password, text, via })
     setBusy(false)
     if (r.ok) {
-      setNotice('已投递。密文信封经 SMTP 发出，本机不留副本。')
+      setNotice(via === 'relay' ? '已投递。密文经匿名中继发出（伪装 HTTPS，中继只见密文），本机不留副本。' : '已投递。密文信封经 SMTP 发出，本机不留副本。')
       setText('')
       setPassword('')
       setTab('inbox')
     } else {
       setNotice(`投递失败：${r.error}`)
     }
+  }
+
+  const saveRelay = async () => {
+    await api.ghostRelaySetUrl(relayInput)
+    setRelayUrl(relayInput.trim().replace(/\/+$/, ''))
+    setNotice('中继地址已保存')
   }
 
   const open = (id: string) => {
@@ -105,6 +122,12 @@ export function GhostWindow() {
             className={`px-3 py-1.5 rounded-lg text-xs ${tab === 'compose' ? 'bg-[oklch(0.45_0.07_180)] text-white' : 'bg-black/5 hover:bg-black/10'}`}
           >
             写幽灵信
+          </button>
+          <button
+            onClick={() => setTab('relay')}
+            className={`px-3 py-1.5 rounded-lg text-xs ${tab === 'relay' ? 'bg-[oklch(0.45_0.07_180)] text-white' : 'bg-black/5 hover:bg-black/10'}`}
+          >
+            匿名中继{relayUrl ? ' ✓' : ''}
           </button>
         </div>
       </div>
@@ -170,14 +193,54 @@ export function GhostWindow() {
               ))
             )}
           </div>
+        ) : tab === 'relay' ? (
+          <div className="max-w-2xl mx-auto space-y-3">
+            <div className="text-xs text-black/50 leading-relaxed rounded-xl bg-[oklch(0.93_0.03_180)] p-3">
+              匿名中继：出站/入站伪装成普通 HTTPS 笔记同步流量，<b>网关看不出这是邮件</b>，也不需要任何邮箱账户。
+              中继只见密文与随机公钥哈希，GET 即取走即焚。可自建：见仓库 relay/README.md。
+              未配置时写幽灵信仍可用「邮箱哑管道」通道。
+            </div>
+            <label className="block">
+              <span className="text-xs text-black/55">中继地址（如 https://linkto-ghost-relay.xxx.workers.dev）</span>
+              <input
+                value={relayInput}
+                onChange={e => setRelayInput(e.target.value)}
+                placeholder="https://…workers.dev"
+                className="mt-1 w-full rounded-lg border border-black/10 bg-white/80 px-2.5 py-2 text-sm font-mono"
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <button onClick={() => void saveRelay()} className="px-4 py-2 rounded-lg text-xs bg-[oklch(0.45_0.07_180)] text-white hover:opacity-90">
+                保存
+              </button>
+              <span className="text-xs text-black/45">{relayUrl ? `当前：${relayUrl}` : '当前：未配置（中继通道不可用）'}</span>
+            </div>
+          </div>
         ) : (
           <div className="max-w-2xl mx-auto space-y-3">
             <div className="text-xs text-black/50 leading-relaxed rounded-xl bg-[oklch(0.93_0.03_180)] p-3">
-              正文将以「收件人幽灵公钥 + 你设置的口令」双重加密，作为密文附件投递。收件人需要
-              <b>本机幽灵私钥 + 口令</b>两者齐备才能阅读，阅后信封即刻焚毁。投递账户与收件邮箱地址仅作传输通道，
-              服务商可看到一次通信发生（内容不可见）——匿名中继通道在后续版本提供。
+              正文以「收件人幽灵公钥 + 你设置的口令」双重加密。收件人需要<b>本机幽灵私钥 + 口令</b>两者齐备才能阅读，阅后信封即刻焚毁。
+              <b>邮箱通道</b>：服务商可看到一次通信发生（内容不可见）；<b>匿名中继通道</b>：伪装 HTTPS 直投，不经任何邮箱（顶栏「匿名中继」里配置地址后可用）。
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setVia('mail')}
+                className={`px-3 py-2 rounded-lg text-xs text-left ${via === 'mail' ? 'bg-[oklch(0.45_0.07_180)] text-white' : 'bg-black/5 hover:bg-black/10'}`}
+              >
+                邮箱哑管道（SMTP 附件）
+                <span className="block opacity-70 mt-0.5">需投递账户与收件邮箱</span>
+              </button>
+              <button
+                onClick={() => setVia('relay')}
+                disabled={!relayUrl}
+                className={`px-3 py-2 rounded-lg text-xs text-left disabled:opacity-40 ${via === 'relay' ? 'bg-[oklch(0.45_0.07_180)] text-white' : 'bg-black/5 hover:bg-black/10'}`}
+              >
+                匿名中继（伪装 HTTPS）
+                <span className="block opacity-70 mt-0.5">{relayUrl ? '无需邮箱 · 抗网关识别' : '未配置中继地址'}</span>
+              </button>
+            </div>
+            {via === 'mail' && (
+              <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-xs text-black/55">投递账户（SMTP 出口）</span>
                 <select
@@ -202,6 +265,7 @@ export function GhostWindow() {
                 />
               </label>
             </div>
+            )}
             <label className="block">
               <span className="text-xs text-black/55">收件人幽灵 ID（对方「复制」给你的那串公钥）</span>
               <textarea
