@@ -30,5 +30,11 @@ target 'LinkToMobile' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # Xcode 27 最低支持 iOS 15.0，统一抬高第三方 Pod 的部署目标
+    installer.pods_project.targets.each do |t|
+      t.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+      end
+    end
   end
 end

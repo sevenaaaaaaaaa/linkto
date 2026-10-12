@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useMail } from './src/store/mail'
 import { AccountsScreen } from './src/screens/AccountsScreen'
 import { InboxScreen } from './src/screens/InboxScreen'
@@ -12,7 +13,15 @@ export default function App() {
     void init()
   }, [init])
 
-  if (screen === 'inbox') return <InboxScreen />
-  if (screen === 'read') return <ReadScreen />
-  return <AccountsScreen />
+  return (
+    <SafeAreaProvider>
+      {screen === 'inbox' ? (
+        <InboxScreen />
+      ) : screen === 'read' ? (
+        <ReadScreen />
+      ) : (
+        <AccountsScreen />
+      )}
+    </SafeAreaProvider>
+  )
 }

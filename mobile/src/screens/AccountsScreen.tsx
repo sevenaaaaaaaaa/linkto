@@ -84,7 +84,7 @@ export function AccountsScreen() {
             <Text style={s.checkText}>SSL/TLS 加密（993 端口）</Text>
           </TouchableOpacity>
           {err !== '' && <Text style={s.err}>{err}</Text>}
-          <TouchableOpacity style={[s.btn, s.btnBig, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => void submit()}>
+          <TouchableOpacity style={[s.btn, s.btnPrimary, s.btnBig, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => void submit()}>
             <Text style={s.btnPrimaryText}>{busy ? '验证连接中…' : '验证并添加'}</Text>
           </TouchableOpacity>
           <Text style={s.note}>凭据存于系统钥匙串（Keychain / Keystore），不上传、不落明文</Text>
