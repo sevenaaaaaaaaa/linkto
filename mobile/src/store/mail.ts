@@ -41,8 +41,9 @@ interface MailState {
   saveAccount(draft: { email: string; pass: string; host: string; port: string; secure: boolean }): Promise<string | null>
   deleteAccount(id: string): Promise<void>
   openInbox(account: MobileAccount): Promise<void>
-  openMessage(m: MailEnvelope): Promise<void>
+  openMessage(m: MailEnvelope, opts?: { stay?: boolean }): Promise<void>
   backToInbox(): void
+  closeReading(): void
 }
 
 const imap: { client: ImapLite | null } = { client: null }
@@ -118,10 +119,11 @@ export const useMail = create<MailState>((set, get) => ({
     }
   },
 
-  openMessage: async m => {
+  openMessage: async (m, opts) => {
     const { active, mailbox } = get()
     if (!active || !imap.client) return
-    set({ screen: 'read', reading: m, body: null })
+    // 平板双栏：stay=true 时保持 inbox screen，仅更新右栏选中邮件
+    set(opts?.stay ? { reading: m, body: null } : { screen: 'read', reading: m, body: null })
     try {
       const body = await imap.client.fetchBody(mailbox, m.uid)
       set({ body: body || '（空正文）' })
@@ -131,5 +133,6 @@ export const useMail = create<MailState>((set, get) => ({
     }
   },
 
-  backToInbox: () => set({ screen: 'inbox' })
+  backToInbox: () => set({ screen: 'inbox' }),
+  closeReading: () => set({ reading: null, body: null })
 }))

@@ -3,8 +3,10 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { T } from '../theme'
 import { useMail } from '../store/mail'
+import { useTablet } from '../hooks/useTablet'
 
 export function AccountsScreen() {
+  const isTablet = useTablet()
   const { accounts, saveAccount, deleteAccount, openInbox } = useMail()
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
@@ -46,10 +48,10 @@ export function AccountsScreen() {
 
   return (
     <SafeAreaView style={s.root}>
-      <Text style={s.title}>林可兔 LinkTo</Text>
-      <Text style={s.subtitle}>AI 原生邮件工作台 · 移动版 v0.1</Text>
+      <Text style={[s.title, isTablet && s.padWide]}>林可兔 LinkTo</Text>
+      <Text style={[s.subtitle, isTablet && s.padWide]}>AI 原生邮件工作台 · 移动版 v0.1</Text>
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollPad}>
+      <ScrollView style={s.scroll} contentContainerStyle={[s.scrollPad, isTablet && s.scrollWide]}>
         {accounts.length > 0 && (
           <View style={s.section}>
             <Text style={s.sectionTitle}>已添加账户</Text>
@@ -100,6 +102,8 @@ const s = StyleSheet.create({
   subtitle: { fontSize: 12, color: T.faint, paddingHorizontal: 20, marginTop: 4 },
   scroll: { flex: 1 },
   scrollPad: { paddingHorizontal: 20, paddingBottom: 40 },
+  scrollWide: { alignSelf: 'center', width: '100%', maxWidth: 640 },
+  padWide: { alignSelf: 'center', width: '100%', maxWidth: 640 },
   section: { marginTop: 24 },
   sectionTitle: { fontSize: 13, fontWeight: '600', color: T.ink, marginBottom: 10 },
   hint: { fontSize: 11, color: T.faint, marginBottom: 10 },

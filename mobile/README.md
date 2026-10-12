@@ -16,9 +16,16 @@ mobile/
 
 ## v0.1 功能
 
-- IMAP 账户添加（凭据入系统钥匙串：iOS Keychain / Android Keystore）
+- IMAP 账户添加（凭据入系统钥匙串：iOS Keychain / Android Keystore / 鸿蒙 Asset 待接）
 - 收件箱列表（最近 50 封 envelope）+ 正文阅读（text/plain）+ 已读回写
 - 常用服务商服务器自动猜测（Gmail/QQ/163/Outlook/iCloud）
+
+## 平板适配（iPad / Android 平板 / 鸿蒙 MatePad）
+
+- 断点：`src/hooks/useTablet.ts`，短边 ≥ 600 判定为平板（手机横屏不误判）
+- 收件箱双栏：左列表（380pt，选中铜绿淡底高亮）+ 右阅读（ReadScreen embedded 嵌入，✕ 关闭）
+- 账户页：内容限宽 640 居中
+- 手机保持单栏压栈导航不变
 
 ## 开发
 

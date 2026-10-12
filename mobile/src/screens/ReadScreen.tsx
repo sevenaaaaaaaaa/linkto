@@ -3,9 +3,26 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { T } from '../theme'
 import { useMail } from '../store/mail'
 
-export function ReadScreen() {
+/** embedded=true：供平板双栏右栏嵌入，无 SafeArea/返回头 */
+export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
   const { reading, body, backToInbox } = useMail()
   if (!reading) return null
+
+  const content = (
+    <ScrollView style={s.body} contentContainerStyle={s.bodyPad}>
+      <Text style={s.subject}>{reading.subject || '（无主题）'}</Text>
+      <View style={s.metaRow}>
+        <Text style={s.meta}>{reading.from}</Text>
+      </View>
+      <View style={s.metaRow}>
+        <Text style={s.metaDim}>{reading.date ? new Date(reading.date).toLocaleString('zh-CN', { hour12: false }) : ''}</Text>
+      </View>
+      <View style={s.divider} />
+      <Text style={s.text}>{body ?? '加载中…'}</Text>
+    </ScrollView>
+  )
+
+  if (embedded) return content
 
   return (
     <SafeAreaView style={s.root}>
@@ -14,17 +31,7 @@ export function ReadScreen() {
         <Text style={s.headerTitle}>邮件</Text>
         <View style={{ width: 44 }} />
       </View>
-      <ScrollView style={s.body} contentContainerStyle={s.bodyPad}>
-        <Text style={s.subject}>{reading.subject || '（无主题）'}</Text>
-        <View style={s.metaRow}>
-          <Text style={s.meta}>{reading.from}</Text>
-        </View>
-        <View style={s.metaRow}>
-          <Text style={s.metaDim}>{reading.date ? new Date(reading.date).toLocaleString('zh-CN', { hour12: false }) : ''}</Text>
-        </View>
-        <View style={s.divider} />
-        <Text style={s.text}>{body ?? '加载中…'}</Text>
-      </ScrollView>
+      {content}
     </SafeAreaView>
   )
 }
