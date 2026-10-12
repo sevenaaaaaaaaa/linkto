@@ -1,6 +1,7 @@
 import * as Keychain from 'react-native-keychain'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { sha256Hex } from './sha256'
+import { linkToCore } from '../native/LinkToCore'
 
 /**
  * 守卫：主密码 + 阶梯焚毁 + 中间人即焚
@@ -30,6 +31,8 @@ const LOCK_EVERY = 5
 const LOCK_BASE_MS = 15 * 60 * 1000
 
 interface Guard {
+  /** 验证器 KDF 版本：1 = 单轮 SHA-256（旧版），2 = PBKDF2-HMAC-SHA256 60k（原生，抗离线暴力） */
+  v?: 1 | 2
   salt: string
   verifier: string
   fails: number
@@ -50,8 +53,30 @@ async function keychainDel(service: string): Promise<void> {
   await Keychain.resetGenericPassword({ service })
 }
 
-function verifierOf(salt: string, password: string): string {
+const PBKDF2_ITERS = 60_000
+
+/** v1 验证器（旧版，JS 兼容迁移用） */
+function verifierV1(salt: string, password: string): string {
   return sha256Hex(`${salt}||linkto-guard-v1||${password}`)
+}
+
+/** 按守卫版本推导验证器；v2 走原生 PBKDF2（无原生能力降级 v1） */
+async function deriveVerifier(salt: string, password: string, version: 1 | 2): Promise<string> {
+  if (version === 2) {
+    const r = await linkToCore.pbkdf2Hex(password, salt, PBKDF2_ITERS)
+    if (r !== null) return r
+  }
+  return verifierV1(salt, password)
+}
+
+/** 创建守卫记录：有原生能力 → v2（PBKDF2），否则 v1 */
+async function makeGuard(password: string): Promise<Guard> {
+  const salt = await linkToCore.randomB64(16)
+  if (linkToCore.hasNative()) {
+    const verifier = await linkToCore.pbkdf2Hex(password, salt, PBKDF2_ITERS)
+    if (verifier !== null) return { v: 2, salt, verifier, fails: 0, lockUntil: 0, lockRound: 0 }
+  }
+  return { v: 1, salt, verifier: verifierV1(salt, password), fails: 0, lockUntil: 0, lockRound: 0 }
 }
 
 export type UnlockResult = 'ok' | 'wrong' | 'locked' | 'burned'
@@ -79,18 +104,10 @@ export async function setupMaster(password: string): Promise<string | null> {
   if (password.length < 4) return '主密码至少 4 位'
   const existing = await keychainGet(GUARD_SERVICE)
   if (existing) return '主密码已设置'
-  const salt = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  const key = randomB64()
+  const key = await linkToCore.randomB64(32)
   await keychainSet(KEY_SERVICE, key)
-  const g: Guard = { salt, verifier: verifierOf(salt, password), fails: 0, lockUntil: 0, lockRound: 0 }
-  await keychainSet(GUARD_SERVICE, JSON.stringify(g))
+  await keychainSet(GUARD_SERVICE, JSON.stringify(await makeGuard(password)))
   return null
-}
-
-function randomB64(): string {
-  const bytes = new Uint8Array(32)
-  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
-  return btoa(String.fromCharCode(...Array.from(bytes)))
 }
 
 /**
@@ -107,7 +124,16 @@ export async function unlock(password: string): Promise<{ result: UnlockResult; 
   const now = Date.now()
   if (g.lockUntil > now) return { result: 'locked', lockUntil: g.lockUntil, remaining: BURN_AT_FAILS - g.fails }
 
-  if (verifierOf(g.salt, password) === g.verifier) {
+  const version: 1 | 2 = g.v ?? 1
+  if ((await deriveVerifier(g.salt, password, version)) === g.verifier) {
+    if (version === 1 && linkToCore.hasNative()) {
+      // v1 → v2 无感升级：解锁成功即重推导 PBKDF2 验证器（盐不变）
+      const verifier = await linkToCore.pbkdf2Hex(password, g.salt, PBKDF2_ITERS)
+      if (verifier !== null) {
+        await keychainSet(GUARD_SERVICE, JSON.stringify({ ...g, v: 2, verifier, fails: 0, lockUntil: 0, lockRound: 0 }))
+        return { result: 'ok' }
+      }
+    }
     await keychainSet(GUARD_SERVICE, JSON.stringify({ ...g, fails: 0, lockUntil: 0, lockRound: 0 }))
     return { result: 'ok' }
   }

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { Animated, PanResponder, Pressable, StyleSheet, Text, Vibration, View } from 'react-native'
+import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { T } from '../theme'
+import { linkToCore } from '../native/LinkToCore'
 
 const ACTIONS_W = 84
 
@@ -49,7 +50,7 @@ export function SwipeRow({
       onPanResponderRelease: (_, g) => {
         const x = base.current + g.dx
         if (x < -ACTIONS_W / 2 || g.vx < -0.4) {
-          if (!open) Vibration.vibrate(8)
+          if (!open) void linkToCore.haptic('light')
           snapTo(-ACTIONS_W, true)
         } else {
           snapTo(0, false)
@@ -66,7 +67,7 @@ export function SwipeRow({
         <Pressable
           style={s.actionBtn}
           onPress={() => {
-            Vibration.vibrate(8)
+            void linkToCore.haptic('light')
             onToggle()
             snapTo(0, false)
           }}

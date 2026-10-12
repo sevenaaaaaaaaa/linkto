@@ -1,7 +1,8 @@
 import { useRef } from 'react'
-import { Animated, Easing, PanResponder, Vibration, View } from 'react-native'
+import { Animated, Easing, PanResponder, View } from 'react-native'
 import { T } from '../theme'
 import { useMail } from '../store/mail'
+import { linkToCore } from '../native/LinkToCore'
 
 /**
  * 阅读页横滑 · 左右手势切换上一封/下一封（手机与平板右栏同一交互）
@@ -15,10 +16,10 @@ export function SwipeReader({ children }: { children: React.ReactNode }) {
     if (!reading || !messages.length) return
     const i = messages.findIndex(m => m.uid === reading.uid)
     if (!messages[i + dir]) {
-      Vibration.vibrate(15)
+      void linkToCore.haptic('warn')
       return
     }
-    Vibration.vibrate(8)
+    void linkToCore.haptic('light')
     // 先淡出切换，再淡入
     Animated.timing(opacity, {
       toValue: 0,

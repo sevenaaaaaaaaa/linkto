@@ -49,7 +49,7 @@ export function AccountsScreen() {
   return (
     <SafeAreaView style={s.root}>
       <Text style={[s.title, isTablet && s.padWide]}>林可兔 LinkTo</Text>
-      <Text style={[s.subtitle, isTablet && s.padWide]}>AI 原生邮件工作台 · 移动版 v0.1</Text>
+      <Text style={[s.subtitle, isTablet && s.padWide]}>AI 原生邮件工作台 · 移动版 v0.3（原生安全内核）</Text>
 
       <ScrollView style={s.scroll} contentContainerStyle={[s.scrollPad, isTablet && s.scrollWide]}>
         {accounts.length > 0 && (

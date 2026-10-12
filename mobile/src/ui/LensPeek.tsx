@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { Animated, Easing, Modal, StyleSheet, Text, Vibration, View } from 'react-native'
+import { Animated, Easing, Modal, StyleSheet, Text, View } from 'react-native'
 import { T } from '../theme'
 import type { MailEnvelope } from '../imap/ImapLite'
+import { linkToCore } from '../native/LinkToCore'
 
 /**
  * 玻璃速览 · 长按列表行弹出（对应桌面端按住 ⌥ 的玻璃透镜）
@@ -14,7 +15,7 @@ export function LensPeek({ msg, onClose }: { msg: MailEnvelope | null; onClose()
   useEffect(() => {
     if (msg) {
       openedAt.current = Date.now()
-      Vibration.vibrate(10)
+      void linkToCore.haptic('medium')
       Animated.timing(anim, {
         toValue: 1,
         duration: 200,

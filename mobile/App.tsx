@@ -6,7 +6,7 @@ import { InboxScreen } from './src/screens/InboxScreen'
 import { ReadScreen } from './src/screens/ReadScreen'
 import { GuardScreen } from './src/screens/GuardScreen'
 
-/** 林可兔移动版 v0.1：守卫（主密码/焚毁）→ 账户 / 收件箱 / 阅读（手写路由，零额外依赖） */
+/** 林可兔移动版 v0.3：原生安全内核（LinkToCore）→ 守卫 → 账户 / 收件箱 / 阅读 */
 export default function App() {
   const { screen, guard, init } = useMail()
 
