@@ -35,6 +35,7 @@ const METHOD_NAMES = [
   'listCloudDrives', 'saveCloudDrive', 'removeCloudDrive', 'testCloudDrive', 'cloudUpload', 'cloudSyncEml',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
+  'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
   'openSettings', 'openCompose', 'getVersions', 'quit'
 ] as const
 

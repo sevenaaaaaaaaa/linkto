@@ -12,6 +12,8 @@ import type {
   DailyDigest,
   Folder,
   GeneralSettings,
+  GhostItem,
+  GhostSendDraft,
   InsightKind,
   InsightRecord,
   KbItem,
@@ -228,4 +230,21 @@ export interface LinkToApi {
   agentProfile(addr: string): Promise<{ ok: boolean; error?: string; profile?: ContactProfile }>
   /** Agent 对话：基于长期记忆 + 知识库 + 近期邮件检索回答 */
   agentChat(question: string, requestId: string): Promise<void>
+
+  // ---------- 幽灵信（端到端加密 · 阅后即焚） ----------
+  /** 本机幽灵身份（公钥即幽灵 ID + 短指纹），首次调用自动生成并入钥匙串 */
+  ghostIdentity(): Promise<{ ghostId: string; fingerprint: string }>
+  ghostList(): Promise<GhostItem[]>
+  /** 扫描全部账户的 .lkghost 附件：落信箱 + 永久焚毁信道（服务器与本地原始邮件） */
+  ghostReceiveScan(): Promise<{ imported: number; burned: number; pending: number; error?: string }>
+  /** 封装并以 .lkghost 附件投递（主题/正文全空，传输层不含内容） */
+  ghostSend(draft: GhostSendDraft): Promise<{ ok: boolean; error?: string }>
+  /** 双因子开信（本机私钥 + 口令）：成功即焚毁信封，明文仅驻内存 → 二次打开永久失败 */
+  ghostOpen(id: string, password: string): Promise<{ ok: boolean; error?: string; body?: string }>
+  /** 拒收（未读焚毁）：直接销毁密文 */
+  ghostBurn(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 打开幽灵信箱窗口 */
+  openGhost(): Promise<void>
+  /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */
+  openGhostReader(id: string): Promise<void>
 }

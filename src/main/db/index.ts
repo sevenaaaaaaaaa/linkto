@@ -662,6 +662,14 @@ export class MailStore {
     }
   }
 
+  /** 幽灵信信封附件（.lkghost），跨全部账户扫描 */
+  listGhostAttachments(): { messageId: string; filename: string; size: number; path: string }[] {
+    const rows = this.db
+      .prepare(`SELECT message_id, filename, size, path FROM attachments WHERE filename LIKE '%.lkghost' ORDER BY rowid`)
+      .all() as any[]
+    return rows.map(r => ({ messageId: r.message_id, filename: r.filename ?? '', size: r.size ?? 0, path: r.path ?? '' }))
+  }
+
   // ================= 签名 / 模板 / 规则 =================
 
   listSignatures(): Signature[] {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
+import type { GhostService } from './ghost/service'
 import type {
   AccountConfig,
   AccountDraft,
@@ -10,6 +11,7 @@ import type {
   Attachment,
   CloudDriveConfig,
   ComposeDraft,
+  GhostSendDraft,
   KbItem,
   MessageQuery,
   Rule,
@@ -54,8 +56,11 @@ export interface AppContext {
   agent: AgentService
   oauth: OAuthService
   backup: BackupService
+  ghost: GhostService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
+  openGhost(): void
+  openGhostReader(id: string): void
   openSettings(tab?: string): void
   statuses: Map<string, { status: 'connected' | 'syncing' | 'error' | 'disabled'; text: string }>
   getPassword(accountId: string): string
@@ -65,7 +70,13 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost } = ctx
+
+  // 幽灵信信道焚毁：复用永久删除（服务器 + 本地级联）
+  ghost.deleteMails = async (ids: string[]) => {
+    for (const id of ids) await moveOrDelete(id, 'perm')
+    ctx.event(null as never, { type: 'messages-changed' })
+  }
 
   /** 账户发送凭据：OAuth 账户取 access token，密码账户读密钥 */
   async function credsFor(account: AccountConfig): Promise<{ pass?: string; accessToken?: string }> {
@@ -355,6 +366,24 @@ export function registerIpc(ctx: AppContext) {
     restoreBackupPick: () => backup.pickForRestore(),
 
     restoreBackupApply: ([path, passphrase]: [string, string]) => backup.restoreApply(path, passphrase),
+
+    // ================= 幽灵信（端到端加密 · 阅后即焚） =================
+
+    ghostIdentity: () => ghost.identity(),
+
+    ghostList: () => ghost.list(),
+
+    ghostReceiveScan: async () => ghost.receiveScan(),
+
+    ghostSend: async ([draft]: [GhostSendDraft]) => ghost.send(draft),
+
+    ghostOpen: ([id, password]: [string, string]) => ghost.openItem(id, password),
+
+    ghostBurn: ([id]: [string]) => ghost.burn(id),
+
+    openGhost: () => ctx.openGhost(),
+
+    openGhostReader: ([id]: [string]) => ctx.openGhostReader(id),
 
     // ================= 文件夹 / 邮件 =================
 

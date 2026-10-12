@@ -3,13 +3,22 @@ import { useMail } from '../stores/mail'
 import { useMailEvent } from '../lib/api'
 import { MailShell } from './MailShell'
 import { ComposeWindow } from './Compose'
+import { GhostWindow } from './Ghost'
+import { GhostRead } from './GhostRead'
 import { parseComposePrefill } from '../preload/parse'
 import type { ComposeDraft } from '@shared/types'
 
-function route(): { name: 'mail' | 'compose'; prefill?: Partial<ComposeDraft> } {
+function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread'; prefill?: Partial<ComposeDraft>; ghostId?: string } {
   const hash = location.hash
   if (hash.startsWith('#/compose')) {
     return { name: 'compose', prefill: parseComposePrefill() }
+  }
+  if (hash.startsWith('#/ghostread')) {
+    const m = hash.match(/[?&]id=([^&]+)/)
+    return { name: 'ghostread', ghostId: m ? decodeURIComponent(m[1]) : undefined }
+  }
+  if (hash.startsWith('#/ghost')) {
+    return { name: 'ghost' }
   }
   return { name: 'mail' }
 }
@@ -59,6 +68,12 @@ export default function App() {
 
   if (r.name === 'compose') {
     return <ComposeWindow prefill={r.prefill} />
+  }
+  if (r.name === 'ghost') {
+    return <GhostWindow />
+  }
+  if (r.name === 'ghostread') {
+    return r.ghostId ? <GhostRead id={r.ghostId} /> : null
   }
   return <MailShell />
 }

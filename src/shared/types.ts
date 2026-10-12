@@ -454,6 +454,7 @@ export type MailEvent =
   | { type: 'mail-sent'; subject: string; to: string }
   | { type: 'insights-changed' }
   | { type: 'connectors-changed' }
+  | { type: 'ghost-changed' }
   | { type: 'ai-local-download'; modelId: string; received: number; total: number; percent: number; done?: boolean; error?: string }
 
 // ---------- 智能洞察 ----------
@@ -604,4 +605,25 @@ export interface ContactProfile {
   summary: string
   keyFacts: string[]
   generatedAt: number
+}
+
+// ---------- 幽灵信（端到端加密 · 阅后即焚） ----------
+
+/** 信箱中的一封加密信（密文落盘，未开信前无任何可读元数据） */
+export interface GhostItem {
+  id: string
+  receivedAt: number
+  sealedBytes: number
+}
+
+/** 发送草稿：经指定账户哑管道投递，内容全密文 */
+export interface GhostSendDraft {
+  accountId: string
+  /** 收件人真实邮箱（仅投递用，不出现在信封内容中） */
+  to: string
+  /** 收件人幽灵 ID（X25519 公钥 SPKI DER, base64） */
+  ghostId: string
+  /** 打开口令（双因子之一，与收件人私钥缺一不可） */
+  password: string
+  text: string
 }

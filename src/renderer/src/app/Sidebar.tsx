@@ -299,6 +299,18 @@ export function Sidebar() {
           ⌘K
         </button>
         <div className="flex-1" />
+        <button
+          onClick={() => api.openGhost()}
+          title="幽灵信 · 端到端加密阅后即焚"
+          className="icon-btn w-7 h-7 inline-flex items-center justify-center"
+          style={{ color: 'var(--faint)' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="7" width="18" height="13" rx="3" />
+            <path d="M3 10l9 5 9-5" />
+            <path d="M8 7V5a4 4 0 0 1 8 0v2" opacity="0.55" />
+          </svg>
+        </button>
         <button onClick={() => api.openSettings()} title="设置（⌘,）" className="icon-btn w-7 h-7 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
           <IconSettings width={15} height={15} />
         </button>

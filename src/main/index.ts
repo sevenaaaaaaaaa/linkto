@@ -12,6 +12,7 @@ import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
 import { OAuthService } from './oauth'
 import { BackupService } from './backup'
+import { GhostService } from './ghost/service'
 import { Notifier, focusMainWindow } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
@@ -29,6 +30,7 @@ let insights: InsightsService
 let agent: AgentService
 let oauth: OAuthService
 let backupService: BackupService
+let ghost: GhostService
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -137,6 +139,72 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
   win.once('ready-to-show', () => win.show())
   composeWindows.add(win)
   win.on('closed', () => composeWindows.delete(win))
+}
+
+let ghostWindow: BrowserWindow | null = null
+
+/** 幽灵信箱窗口（写信/收信管理；此窗可复制自己的幽灵 ID，不做防截屏） */
+function createGhostWindow() {
+  if (ghostWindow && !ghostWindow.isDestroyed()) {
+    ghostWindow.show()
+    ghostWindow.focus()
+    return
+  }
+  ghostWindow = new BrowserWindow({
+    width: 880,
+    height: 660,
+    minWidth: 640,
+    minHeight: 520,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#f8f3e8',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  ghostWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ghost' })
+  ghostWindow.once('ready-to-show', () => ghostWindow?.show())
+  ghostWindow.on('closed', () => {
+    ghostWindow = null
+  })
+}
+
+let ghostReaderWindow: BrowserWindow | null = null
+
+/** 焚毁阅读窗：防截屏/录屏（系统级捕获窗口内容为黑），复制/选中在页面层禁用 */
+function createGhostReaderWindow(id: string) {
+  if (ghostReaderWindow && !ghostReaderWindow.isDestroyed()) ghostReaderWindow.close()
+  ghostReaderWindow = new BrowserWindow({
+    width: 640,
+    height: 600,
+    minWidth: 480,
+    minHeight: 420,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#0d1f1e',
+    show: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  ghostReaderWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+    hash: `/ghostread?id=${encodeURIComponent(id)}`
+  })
+  // 兜底：任何情况下确保阅读窗可见（阅后即焚窗必须所见即所得）
+  ghostReaderWindow.once('ready-to-show', () => ghostReaderWindow?.show())
+  ghostReaderWindow.webContents.once('did-finish-load', () => ghostReaderWindow?.showInactive())
+  // 系统级防截屏/录屏：任何屏幕捕获中本窗口均为黑块
+  ghostReaderWindow.setContentProtection(true)
+  ghostReaderWindow.on('closed', () => {
+    ghostReaderWindow = null
+  })
 }
 
 function updateDockBadge() {
@@ -272,6 +340,17 @@ async function bootstrap() {
     event: payload => broadcast(payload)
   })
 
+  ghost = new GhostService({
+    appStore,
+    store: mailStore,
+    sender,
+    getCreds: async account =>
+      account.authType === 'oauth'
+        ? { accessToken: await oauth.validToken(account.id, account.provider) }
+        : { pass: appStore.loadSecret(`acct:${account.id}`) },
+    event: payload => broadcast(payload)
+  })
+
   insights = new InsightsService({
     ai: aiService,
     store: mailStore,
@@ -391,9 +470,12 @@ async function bootstrap() {
     agent,
     oauth,
     backup: backupService,
+    ghost,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
+    openGhost: () => createGhostWindow(),
+    openGhostReader: id => createGhostReaderWindow(id),
     openSettings: tab => createSettingsWindow(tab),
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }
