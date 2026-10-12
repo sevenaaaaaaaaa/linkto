@@ -13,11 +13,29 @@ mac:
   category: public.app-category.productivity
   icon: build/icon.icns
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
   darkModeSupport: true
   hardenedRuntime: false
   # 本地构建：跳过代码签名（Apple 时间戳服务不可达会导致打包失败；自用 dmg 无需签名）
   identity: null
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  icon: build/icon.png
+  category: Network;Email;
+  target:
+    - target: AppImage
+      arch:
+        - x64
 npmRebuild: false
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
