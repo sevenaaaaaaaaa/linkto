@@ -19,7 +19,7 @@ export function BackupTab() {
   // 恢复侧
   const [picked, setPicked] = useState<{ path: string; meta: BackupMeta } | null>(null)
   const [restorePass, setRestorePass] = useState('')
-  const [restoreResult, setRestoreResult] = useState<{ added: string[]; skipped: string[]; failed: string[] } | null>(null)
+  const [restoreResult, setRestoreResult] = useState<{ added: string[]; skipped: string[]; failed: string[]; pending?: string[] } | null>(null)
 
   useEffect(() => {
     void api.listBackupTargets().then(ts => {
@@ -64,7 +64,7 @@ export function BackupTab() {
     const res = await api.restoreBackupApply(picked.path, restorePass)
     setBusy(false)
     if (!res.ok) return notify(res.error ?? '恢复失败', false)
-    setRestoreResult({ added: res.added ?? [], skipped: res.skipped ?? [], failed: res.failed ?? [] })
+    setRestoreResult({ added: res.added ?? [], skipped: res.skipped ?? [], failed: res.failed ?? [], pending: res.pending ?? [] })
   }
 
   const fmt = (ts: number) => new Date(ts).toLocaleString('zh-CN')
@@ -196,6 +196,11 @@ export function BackupTab() {
           )}
           {restoreResult.skipped.length > 0 && (
             <div className="text-zinc-500 mb-1">跳过 {restoreResult.skipped.length} 个（已存在）：{restoreResult.skipped.join('、')}</div>
+          )}
+          {(restoreResult.pending ?? []).length > 0 && (
+            <div className="text-amber-600 mb-1">
+              ⚠ 待补凭据 {restoreResult.pending!.length} 个（已导入，补齐前不会同步）：{restoreResult.pending!.join('、')}
+            </div>
           )}
           {restoreResult.failed.length > 0 && <div className="text-red-500">失败：{restoreResult.failed.join('、')}</div>}
           {restoreResult.added.length > 0 && (

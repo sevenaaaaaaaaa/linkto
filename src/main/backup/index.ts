@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
 import { existsSync, readdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { dialog, BrowserWindow } from 'electron'
-import type { AccountConfig, OAuthTokens } from '@shared/types'
+import type { AccountConfig, OAuthClientConfig, OAuthTokens } from '@shared/types'
 import type { MailStore } from '../db'
 import type { AppStore } from '../store'
 import type { SyncEngine } from '../mail/sync-engine'
@@ -157,8 +157,14 @@ export class BackupService {
       accountCount: payload.accounts.length,
       hasSecrets: includeSecrets
     }
-    const ts = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
-    const path = join(dir, `LinkTo-Backup-${ts}${EXT}`)
+    // 秒级时间戳 + 已存在则追加序号：杜绝同一分钟两次导出相互覆盖（曾导致含凭据备份被静默替换）
+    const ts = new Date().toISOString().slice(0, 19).replace(/[-T:]/g, '')
+    let path = join(dir, `LinkTo-Backup-${ts}${EXT}`)
+    let seq = 2
+    while (existsSync(path)) {
+      path = join(dir, `LinkTo-Backup-${ts}-${seq}${EXT}`)
+      seq++
+    }
     try {
       writeFileSync(path, JSON.stringify(env, null, 2))
       return { ok: true, path, accountCount: payload.accounts.length }
@@ -185,14 +191,17 @@ export class BackupService {
     }
   }
 
-  /** 用口令解密并恢复账户（同 provider+email 已存在则跳过），返回恢复摘要 */
+  /** 用口令解密并恢复账户（同 provider+email 已存在则跳过），返回恢复摘要。
+   *  pending：已导入但缺少可用凭据的账户（需补密码 / 重新授权），不自动启动同步，
+   *  避免还原后立刻陷入"同步错误：未找到登录凭证"的无限重试。 */
   async restoreApply(
     path: string,
     passphrase: string
-  ): Promise<{ ok: boolean; error?: string; added: string[]; skipped: string[]; failed: string[] }> {
+  ): Promise<{ ok: boolean; error?: string; added: string[]; skipped: string[]; failed: string[]; pending: string[] }> {
     const added: string[] = []
     const skipped: string[] = []
     const failed: string[] = []
+    const pending: string[] = []
     try {
       const env = JSON.parse(readFileSync(path, 'utf8')) as BackupEnvelope
       const payload = decryptJson<BackupPayload>(env, passphrase)
@@ -209,22 +218,38 @@ export class BackupService {
           const id = `${c.id}` || `restored-${Date.now()}-${Math.random().toString(36).slice(2)}`
           const account: AccountConfig = { ...c, id, createdAt: c.createdAt || Date.now(), authType: c.authType ?? 'password' }
           this.deps.store.upsertAccount(account)
-          if (account.authType === 'oauth' && item.oauth) {
-            this.deps.oauth.saveTokens(id, item.oauth)
+          let hasCred = false
+          if (account.authType === 'oauth') {
+            if (item.oauth) {
+              this.deps.oauth.saveTokens(id, item.oauth)
+              hasCred = true
+              // 该设备未配置对应 OAuth 应用 → 令牌过期后无法静默刷新，提前告知而非等报错
+              const clients = (this.deps.oauth as { clients?: () => OAuthClientConfig }).clients?.()
+              const needsMs = ['outlook', 'hotmail', 'office365'].includes(account.provider)
+              const missingClient = needsMs ? !clients?.ms?.clientId : !(clients?.google?.clientId && clients?.google?.clientSecret)
+              if (missingClient)
+                pending.push(`${account.email}（该设备未配置 OAuth 应用：请在 设置→账户→OAuth 应用 中配置，或过期后在账户页重新授权）`)
+            }
           } else if (item.secret) {
             this.deps.appStore.saveSecret(`acct:${id}`, item.secret)
+            hasCred = true
           }
-          if (account.enabled) this.deps.engine.startAccount(account)
+          if (!hasCred) {
+            pending.push(`${account.email}（请在账户页${account.authType === 'oauth' ? '重新授权' : '输入密码'}完成恢复）`)
+            this.deps.event({ type: 'account-status', accountId: id, status: 'error', text: account.authType === 'oauth' ? '待重新授权' : '待补密码' })
+          } else if (account.enabled) {
+            this.deps.engine.startAccount(account)
+          }
           this.deps.sender.drop(id)
-          added.push(`${account.email}${item.secret || item.oauth ? '（含凭据）' : '（需重新输入密码/重新授权）'}`)
+          added.push(`${account.email}${hasCred ? '（凭据已恢复）' : ''}`)
         } catch (err) {
           failed.push(`${c.email}：${err instanceof Error ? err.message : String(err)}`)
         }
       }
       this.deps.event({ type: 'accounts-changed' })
-      return { ok: true, added, skipped, failed }
+      return { ok: true, added, skipped, failed, pending }
     } catch {
-      return { ok: false, error: '口令错误或备份文件已损坏', added, skipped, failed }
+      return { ok: false, error: '口令错误或备份文件已损坏', added, skipped, failed, pending }
     }
   }
 }

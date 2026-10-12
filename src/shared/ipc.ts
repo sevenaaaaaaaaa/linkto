@@ -63,7 +63,7 @@ export interface LinkToApi {
   /** 打开文件选择器并返回备份文件头部信息（无需口令） */
   restoreBackupPick(): Promise<{ ok: boolean; error?: string; path?: string; meta?: { createdAt: number; accountCount: number; hasSecrets: boolean } }>
   /** 用口令解密并恢复账户 */
-  restoreBackupApply(path: string, passphrase: string): Promise<{ ok: boolean; error?: string; added: string[]; skipped: string[]; failed: string[] }>
+  restoreBackupApply(path: string, passphrase: string): Promise<{ ok: boolean; error?: string; added: string[]; skipped: string[]; failed: string[]; pending?: string[] }>
 
   // ---------- 文件夹与邮件 ----------
   listFolders(): Promise<Folder[]>

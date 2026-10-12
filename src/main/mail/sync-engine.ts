@@ -762,6 +762,9 @@ function stripHtml(html: string): string {
 
 export function friendlyError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
+  // OAuth 类错误优先归因：token 过期/刷新失败/客户端未配置 ≠ 账号密码错误
+  if (/oauth|refresh token|grant|授权|重新授权/i.test(msg))
+    return '授权不可用：请在账户页重新授权（跨设备恢复后需在 设置→OAuth 应用 配置客户端）'
   if (/auth|login|credentials|invalid/i.test(msg)) return '登录失败：请检查用户名与授权码/应用专用密码'
   if (/timeout|ETIMEDOUT/i.test(msg)) return '连接超时，请检查网络或服务器地址'
   if (/ENOTFOUND|EAI_AGAIN/i.test(msg)) return '无法解析服务器地址'
