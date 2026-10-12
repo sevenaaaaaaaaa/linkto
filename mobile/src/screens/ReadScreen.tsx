@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { T } from '../theme'
 import { useMail } from '../store/mail'
+import { SwipeReader, SwipeHint } from '../ui/SwipeReader'
 
 /** embedded=true：供平板双栏右栏嵌入，无 SafeArea/返回头 */
 export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
@@ -22,7 +23,15 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
     </ScrollView>
   )
 
-  if (embedded) return content
+  // 横滑切换：手机与平板右栏同一手势（左右滑 = 上一封/下一封）
+  const swiped = (
+    <View style={{ flex: 1 }}>
+      <SwipeReader>{content}</SwipeReader>
+      <SwipeHint />
+    </View>
+  )
+
+  if (embedded) return swiped
 
   return (
     <SafeAreaView style={s.root}>
@@ -31,7 +40,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
         <Text style={s.headerTitle}>邮件</Text>
         <View style={{ width: 44 }} />
       </View>
-      {content}
+      {swiped}
     </SafeAreaView>
   )
 }
@@ -42,7 +51,7 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: T.accent, fontWeight: '600', width: 44 },
   headerTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: T.ink, textAlign: 'center' },
   body: { flex: 1 },
-  bodyPad: { paddingHorizontal: 20, paddingVertical: 20, paddingBottom: 60 },
+  bodyPad: { paddingHorizontal: 20, paddingVertical: 20, paddingBottom: 20 },
   subject: { fontSize: 20, fontWeight: '700', color: T.ink, lineHeight: 28 },
   metaRow: { marginTop: 6 },
   meta: { fontSize: 12, color: T.accent, fontWeight: '500' },

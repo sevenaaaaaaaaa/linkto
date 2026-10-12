@@ -2,8 +2,12 @@ import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } fr
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { T } from '../theme'
 import { useMail } from '../store/mail'
+import type { MailEnvelope } from '../imap/ImapLite'
+import { SwipeRow } from '../ui/SwipeRow'
+import { LensPeek } from '../ui/LensPeek'
 import { LIST_PANE_WIDTH, useTablet } from '../hooks/useTablet'
 import { ReadScreen } from './ReadScreen'
+import { useState } from 'react'
 
 const fmtDate = (t: number) => {
   if (!t) return ''
@@ -17,7 +21,8 @@ const fmtDate = (t: number) => {
 
 export function InboxScreen() {
   const isTablet = useTablet()
-  const { active, messages, status, statusText, reading, openMessage, openInbox, go, backToInbox, closeReading } = useMail()
+  const [peek, setPeek] = useState<MailEnvelope | null>(null)
+  const { active, messages, status, statusText, reading, openMessage, openInbox, go, backToInbox, closeReading, toggleSeen } = useMail()
 
   if (!active) {
     return (
@@ -43,20 +48,23 @@ export function InboxScreen() {
       renderItem={({ item }) => {
         const selected = isTablet && reading?.uid === item.uid
         return (
-          <TouchableOpacity
-            style={[s.row, selected && s.rowSelected]}
+          <SwipeRow
+            seen={item.flags.includes('\\Seen')}
             onPress={() => void openMessage(item, isTablet ? { stay: true } : undefined)}
-            activeOpacity={0.7}
+            onLongPress={() => setPeek(item)}
+            onToggle={() => void toggleSeen(item)}
           >
-            <View style={s.dotCol}>
-              {!item.flags.includes('\\Seen') && <View style={s.unreadDot} />}
+            <View style={[s.row, selected && s.rowSelected]}>
+              <View style={s.dotCol}>
+                {!item.flags.includes('\\Seen') && <View style={s.unreadDot} />}
+              </View>
+              <View style={s.mid}>
+                <Text style={[s.from, !item.flags.includes('\\Seen') && s.fromUnread]} numberOfLines={1}>{item.from || '(未知发件人)'}</Text>
+                <Text style={[s.subject, !item.flags.includes('\\Seen') && s.subjectUnread]} numberOfLines={2}>{item.subject || '（无主题）'}</Text>
+              </View>
+              <Text style={s.date}>{fmtDate(item.date)}</Text>
             </View>
-            <View style={s.mid}>
-              <Text style={[s.from, !item.flags.includes('\\Seen') && s.fromUnread]} numberOfLines={1}>{item.from || '(未知发件人)'}</Text>
-              <Text style={[s.subject, !item.flags.includes('\\Seen') && s.subjectUnread]} numberOfLines={2}>{item.subject || '（无主题）'}</Text>
-            </View>
-            <Text style={s.date}>{fmtDate(item.date)}</Text>
-          </TouchableOpacity>
+          </SwipeRow>
         )
       }}
     />
@@ -102,6 +110,7 @@ export function InboxScreen() {
             )}
           </View>
         </View>
+        <LensPeek msg={peek} onClose={() => setPeek(null)} />
       </SafeAreaView>
     )
   }
@@ -126,6 +135,7 @@ export function InboxScreen() {
         </View>
       )}
       {list}
+      <LensPeek msg={peek} onClose={() => setPeek(null)} />
     </SafeAreaView>
   )
 }

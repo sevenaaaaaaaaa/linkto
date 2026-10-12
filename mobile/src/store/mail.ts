@@ -57,6 +57,10 @@ interface MailState {
   deleteAccount(id: string): Promise<void>
   openInbox(account: MobileAccount): Promise<void>
   openMessage(m: MailEnvelope, opts?: { stay?: boolean }): Promise<void>
+  /** 切换已读/未读：乐观更新，服务端失败回滚 */
+  toggleSeen(m: MailEnvelope): Promise<void>
+  /** 阅读页横滑切换上一封(-1)/下一封(+1) */
+  stepReading(dir: 1 | -1): Promise<void>
   backToInbox(): void
   closeReading(): void
 }
@@ -186,18 +190,49 @@ export const useMail = create<MailState>((set, get) => ({
 
   openMessage: async (m, opts) => {
     const { active, mailbox } = get()
-    if (!active || !imap.client) return
+    if (!active) return
     // 平板双栏：stay=true 时保持 inbox screen，仅更新右栏选中邮件
     set(opts?.stay ? { reading: m, body: null } : { screen: 'read', reading: m, body: null })
     try {
-      const body = await imap.client.fetchBody(mailbox, m.uid)
+      // 无连接（断线/未连接账户）时给出占位正文而不是静默失败
+      const body = imap.client ? await imap.client.fetchBody(mailbox, m.uid) : '（当前离线，正文暂不可用）'
       set({ body: body || '（空正文）' })
-      await imap.client.markSeen(mailbox, m.uid).catch(() => {})
+      if (imap.client) await imap.client.markSeen(mailbox, m.uid).catch(() => {})
     } catch (e) {
       set({ body: `正文加载失败：${e instanceof Error ? e.message : String(e)}` })
     }
   },
 
   backToInbox: () => set({ screen: 'inbox' }),
-  closeReading: () => set({ reading: null, body: null })
+  closeReading: () => set({ reading: null, body: null }),
+
+  toggleSeen: async m => {
+    const wasSeen = m.flags.includes('\\Seen')
+    const patch = (list: MailEnvelope[]) =>
+      list.map(x => {
+        const base = { ...x, flags: x.flags.filter(f => f !== '\\Seen') }
+        return !wasSeen ? { ...base, flags: [...base.flags, '\\Seen'] } : base
+      })
+    // 乐观更新列表与当前阅读中的对象
+    set(s => ({ messages: patch(s.messages), reading: s.reading?.uid === m.uid ? patch([s.reading])[0] : s.reading }))
+    const active = get().active
+    if (!active || !imap.client) return
+    try {
+      if (wasSeen) await imap.client.markUnseen(get().mailbox, m.uid)
+      else await imap.client.markSeen(get().mailbox, m.uid)
+    } catch {
+      // 回滚
+      set(s => ({ messages: s.messages.map(x => (x.uid === m.uid ? { ...x, flags: m.flags } : x)) }))
+      set({ statusText: '标记失败，请稍后重试' })
+    }
+  },
+
+  stepReading: async dir => {
+    const { messages, reading } = get()
+    if (!reading || !messages.length) return
+    const i = messages.findIndex(m => m.uid === reading.uid)
+    const next = messages[i + dir]
+    if (!next) return
+    await get().openMessage(next, { stay: true })
+  }
 }))

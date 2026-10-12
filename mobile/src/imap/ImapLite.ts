@@ -334,6 +334,10 @@ export class ImapLite {
     await this.cmd(`STORE ${uid} +FLAGS (\\Seen)`)
   }
 
+  async markUnseen(mailbox: string, uid: number): Promise<void> {
+    await this.cmd(`STORE ${uid} -FLAGS (\\Seen)`)
+  }
+
   logout(): Promise<void> {
     return this.cmd('LOGOUT').then(() => {
       this.sock?.end()
