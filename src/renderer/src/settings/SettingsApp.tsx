@@ -49,7 +49,7 @@ export default function SettingsApp() {
   return (
     <div className="h-full flex flex-col">
       <div className="drag-region h-[48px] shrink-0 flex items-center justify-center">
-        <span className="text-[13.5px] font-semibold text-zinc-600">设置</span>
+        <span className="text-sm font-semibold text-zinc-600">设置</span>
       </div>
       <div className="shrink-0 px-8 pb-3 flex items-start justify-center gap-1">
         {TABS.map(t => {
@@ -60,11 +60,11 @@ export default function SettingsApp() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={`no-drag flex flex-col items-center gap-1 w-[74px] py-2.5 rounded-xl transition ${
-                active ? 'bg-white shadow-sm border border-black/[0.06] text-blue-600' : 'text-zinc-500 hover:bg-black/[0.04]'
+                active ? 'bg-white shadow-[var(--shadow-sm)] border border-ink/[0.06] text-blue-600' : 'text-zinc-500 hover:bg-ink/[0.04]'
               }`}
             >
               <Icon width={19} height={19} />
-              <span className="text-[11.5px]">{t.label}</span>
+              <span className="text-xs">{t.label}</span>
             </button>
           )
         })}

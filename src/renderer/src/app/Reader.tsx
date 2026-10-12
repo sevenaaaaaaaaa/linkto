@@ -1,3 +1,4 @@
+import { avatarStyle } from '../lib/avatar'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, useMailEvent, fmtFullDate, displayName, fmtSize } from '../lib/api'
 import { useMail } from '../stores/mail'
@@ -10,8 +11,9 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock, IconCloud
+  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot
 } from '../components/icons'
+import { MenuButton, type MenuItem } from '../components/Menu'
 import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
 
 interface AIState {
@@ -41,6 +43,18 @@ export function Reader() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef('')
   const styleRootRef = useRef<HTMLDivElement>(null)
+  // 工具栏宽度自适应：不足 600px 时次要按钮只留图标（审计 IA-6 窄屏溢出）
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    const el = toolbarRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => setCompact((entries[0]?.contentRect.width ?? 999) < 600))
+    ro.observe(el)
+    return () => ro.disconnect()
+  })
+  // 多选模式（勾选 ≥2 封或勾选非当前打开邮件）：阅读区显示汇总而非上一封邮件（审计 IA-7）
+  const multiIds = useMail(st => (st.selectedIds.size > 1 || (st.selectedIds.size === 1 && !st.selectedIds.has(st.selectedId ?? '')) ? st.selectedIds : null))
 
   // 正文按需下载失败时主进程会广播错误，匹配当前邮件则显示重试提示
   useEffect(() => {
@@ -183,7 +197,7 @@ export function Reader() {
     host.innerHTML = ''
     if (!msg) return
     const allowRemote = (settings?.remoteImages ?? 'block') === 'allow' || showRemote
-    const source = msg.html ?? (msg.text ? `<p style="white-space:pre-wrap">${escapeHtmlMinor(msg.text)}</p>` : '<p style="color:#999">（此邮件没有正文内容）</p>')
+    const source = msg.html ?? (msg.text ? `<p style="white-space:pre-wrap">${escapeHtmlMinor(msg.text)}</p>` : '<p style="color:var(--faint)">（此邮件没有正文内容）</p>')
     const { html, remoteImages } = sanitizeEmailHtml(source, {
       allowRemote,
       resolveCid: cid => cidMap[cid.toLowerCase()] ?? cidMap[`<${cid.toLowerCase()}>`] ?? null
@@ -193,10 +207,10 @@ export function Reader() {
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
     // 默认样式跟随应用主题（CSS 变量穿透 shadow 边界），阅读皮肤激活时由皮肤样式覆盖
     shadow.innerHTML = `<style>
-      :host { all: initial; display:block; font-size:14px; line-height:1.75; color: var(--fg, #27272a); word-break: break-word; }
+      :host { all: initial; display:block; font-family: var(--font-body); font-size:14px; line-height:22px; color: var(--fg); word-break: break-word; -webkit-font-smoothing: antialiased; }
       * { max-width: 100% !important; }
       img { height:auto; }
-      a { color: var(--accent, #2563eb); }
+      a { color: var(--accent-ink); }
       table { border-collapse: collapse; }
       p { margin: 0.5em 0; }
     </style><div id="ms-body">${html}</div>`
@@ -268,7 +282,7 @@ export function Reader() {
     if (action === 'trash') await api.deleteMessages([msg.id])
     if (action === 'flag') await api.markFlagged([msg.id], !msg.flagged)
     if (action === 'unread') await api.markRead([msg.id], false)
-    useMail.getState().select(null)
+    if (action !== 'flag') useMail.getState().select(null)
     await loadMessages()
   }
 
@@ -358,12 +372,52 @@ export function Reader() {
     setTimeout(() => setToast(''), 2500)
   }
 
+  if (multiIds) {
+    const picked = useMail.getState().messages.filter(m => multiIds.has(m.id))
+    const senders = [...new Set(picked.map(m => displayName(m.from)))]
+    return (
+      <div className="flex-1 min-w-0 h-full flex flex-col">
+        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="w-full max-w-[420px] fade-in">
+            <div className="text-xl font-semibold tight tnum" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>
+              已选 {multiIds.size} 封
+            </div>
+            <div className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
+              来自 {senders.slice(0, 3).join('、')}{senders.length > 3 ? ` 等 ${senders.length} 位发件人` : ''}
+            </div>
+            <div className="mt-5 rounded-[var(--r-md)] border border-[var(--border-soft)] surface divide-y divide-[var(--border-soft)]">
+              {picked.slice(0, 6).map(m => (
+                <div key={m.id} className="h-9 px-3 flex items-center gap-2 text-sm">
+                  <span className="truncate flex-1" style={{ color: 'var(--fg)' }}>{m.subject || '（无主题）'}</span>
+                  <span className="text-xs shrink-0 truncate max-w-[40%]" style={{ color: 'var(--faint)' }}>{displayName(m.from)}</span>
+                </div>
+              ))}
+              {picked.length > 6 && (
+                <div className="h-8 px-3 flex items-center text-xs" style={{ color: 'var(--faint)' }}>还有 {picked.length - 6} 封…</div>
+              )}
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('ms:list-action', { detail: 'bulk-ask' }))}
+                className="btn-liquid h-8 px-3 rounded-[var(--r-sm)] inline-flex items-center gap-1.5 text-sm font-medium"
+              >
+                <IconSparkles width={14} height={14} /> 基于这些邮件提问
+              </button>
+              <span className="text-xs" style={{ color: 'var(--faint)' }}>批量操作在列表底部 · Esc 取消选择</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!selectedId) {
     return (
-      <div className="flex-1 h-full flex items-center justify-center">
+      <div className="flex-1 min-w-0 h-full flex items-center justify-center">
         <div className="text-center">
-          <div className="text-[15px] font-medium" style={{ color: 'var(--faint)' }}>选择一封邮件开始阅读</div>
-          <div className="mt-1.5 text-[12.5px]" style={{ color: 'var(--faint)', opacity: 0.75 }}>
+          <div className="text-md font-medium" style={{ color: 'var(--faint)' }}>选择一封邮件开始阅读</div>
+          <div className="mt-1.5 text-xs" style={{ color: 'var(--faint)', opacity: 0.75 }}>
             ⌘K 命令面板 · J/K 切换 · R 回复 · ⌘T 明暗
           </div>
         </div>
@@ -374,15 +428,15 @@ export function Reader() {
   // 点击后预览骨架屏：正文按需拉取时的加载反馈
   if (!msg) {
     return (
-      <div className="flex-1 h-full flex flex-col relative overflow-hidden">
-        <div className="drag-region h-[52px] shrink-0" />
+      <div className="flex-1 min-w-0 h-full flex flex-col relative overflow-hidden">
+        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
         <div className="shrink-0 px-6 pb-4 space-y-3">
           <div className="h-[24px] w-[60%] rounded-lg shimmer" />
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full shimmer" />
             <div className="space-y-1.5 flex-1">
-              <div className="h-[12px] w-[30%] rounded shimmer" />
-              <div className="h-[10px] w-[45%] rounded shimmer" />
+              <div className="h-[12px] w-[30%] rounded-sm shimmer" />
+              <div className="h-[10px] w-[45%] rounded-sm shimmer" />
             </div>
           </div>
         </div>
@@ -392,7 +446,7 @@ export function Reader() {
         <div className="flex-1 px-6 pt-4">
           <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] px-6 py-5 space-y-2.5" style={{ background: 'var(--surface-strong)' }}>
             {[92, 100, 78, 96, 64, 88, 40].map((w, i) => (
-              <div key={i} className="h-[11px] rounded shimmer" style={{ width: `${w}%` }} />
+              <div key={i} className="h-[11px] rounded-sm shimmer" style={{ width: `${w}%` }} />
             ))}
           </div>
         </div>
@@ -402,91 +456,66 @@ export function Reader() {
 
   const atts = msg.attachments.filter(a => !a.inline)
   const canUnsub = !!msg.listUnsubscribe
+  const moreItems: MenuItem[] = [
+    { kind: 'action', label: msg.pinned ? '取消置顶' : '置顶', icon: <IconPin width={13} height={13} />, onSelect: () => void useMail.getState().setPinned([msg.id], !msg.pinned) },
+    { kind: 'action', label: msg.flagged ? '取消旗标' : '加旗标', icon: <IconFlag width={13} height={13} />, onSelect: () => void act('flag') },
+    { kind: 'action', label: msg.unread ? '标为已读' : '标为未读', icon: <IconMailDot width={13} height={13} />, onSelect: () => void (msg.unread ? api.markRead([msg.id], true).then(() => loadMessages()) : act('unread')) },
+    { kind: 'sep' },
+    { kind: 'action', label: '存入知识库', icon: <IconSave width={13} height={13} />, onSelect: () => void saveToKb() },
+    ...connectors.map(c => ({ kind: 'action' as const, label: `分享到 ${manifests.find(m => m.id === c.manifestId)?.name ?? c.manifestId}`, icon: <IconPlug width={13} height={13} />, onSelect: () => void shareConnector(c.id, 'forward') })),
+    ...drives.map(d => ({ kind: 'action' as const, label: `eml 原文 → ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'eml') })),
+    ...(atts.length ? drives.map(d => ({ kind: 'action' as const, label: `全部附件（${atts.length}）→ ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'attachments') })) : []),
+    ...(canUnsub ? [{ kind: 'sep' as const }, { kind: 'action' as const, label: '退订此发件人', icon: <IconUnsub width={13} height={13} />, onSelect: () => void unsubscribe() }] : []),
+    { kind: 'sep' },
+    { kind: 'action', label: '删除', icon: <IconTrash width={13} height={13} />, hint: '⌫', danger: true, onSelect: () => void act('trash') }
+  ]
 
   return (
-    <div className="flex-1 h-full flex flex-col relative">
-      {/* 顶部工具栏 */}
-      <div className="drag-region h-[52px] shrink-0" />
-      <div className="shrink-0 px-6 pb-3 flex items-center gap-1.5">
-        <ToolButton onClick={() => reply(false)} icon={<IconReply width={14} height={14} />} label="回复" />
-        <ToolButton onClick={() => reply(true)} icon={<IconReplyAll width={14} height={14} />} label="全部回复" />
-        <ToolButton onClick={forward} icon={<IconForward width={14} height={14} />} label="转发" />
-        <div className="w-px h-4" style={{ background: 'var(--border)' }} />
-        <ToolButton
-          onClick={() => void useMail.getState().setPinned([msg.id], !msg.pinned)}
-          icon={<IconPin width={13} height={13} />}
-          label={msg.pinned ? '取消置顶' : '置顶'}
-          active={msg.pinned}
-        />
-        <ToolButton onClick={() => act('flag')} icon={<IconFlag width={14} height={14} />} label={msg.flagged ? '取消旗标' : '旗标'} active={msg.flagged} />
-        <ToolButton onClick={() => act('archive')} icon={<IconArchive width={14} height={14} />} label="归档" />
-        <ToolButton onClick={() => act('trash')} icon={<IconTrash width={14} height={14} />} label="删除" danger />
-        <div className="w-px h-4" style={{ background: 'var(--border)' }} />
-        <ToolButton onClick={saveToKb} icon={<IconSave width={14} height={14} />} label="存知识库" />
-        {connectors.length > 0 && (
-          <div className="relative">
-            <ToolButton onClick={() => setConnectorMenu(m => !m)} icon={<IconPlug width={14} height={14} />} label="分享" />
-            {connectorMenu && (
-              <div className="absolute top-8 left-0 z-20 w-52 liquid-glass rounded-[var(--r-sm)] py-1 fade-in">
-                {connectors.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => shareConnector(c.id, 'forward')}
-                    className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--hover)]"
-                    style={{ color: 'var(--fg)' }}
-                  >
-                    分享到 {manifests.find(m => m.id === c.manifestId)?.name ?? c.manifestId}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {drives.length > 0 && (
-          <div className="relative">
-            <ToolButton onClick={() => setDriveMenu(m => !m)} icon={<IconCloud width={14} height={14} />} label="存网盘" />
-            {driveMenu && (
-              <div className="absolute top-8 left-0 z-20 w-56 liquid-glass rounded-[var(--r-sm)] py-1 fade-in">
-                <div className="px-3 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
-                  保存到网盘
-                </div>
-                {drives.map(d => (
-                  <button
-                    key={d.id}
-                    onClick={() => void uploadToDrive(d.id, d.name, 'eml')}
-                    className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--hover)]"
-                    style={{ color: 'var(--fg)' }}
-                  >
-                    eml 原文 → {d.name}
-                  </button>
-                ))}
-                {atts.length > 0 &&
-                  drives.map(d => (
-                    <button
-                      key={`${d.id}-atts`}
-                      onClick={() => void uploadToDrive(d.id, d.name, 'attachments')}
-                      className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--hover)]"
-                      style={{ color: 'var(--fg)' }}
-                    >
-                      全部附件（{atts.length}）→ {d.name}
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
+    <div className="flex-1 min-w-0 h-full flex flex-col relative">
+      {/* 顶部工具栏：并入 52px 标题栏，与侧栏「写邮件」、列表搜索同一基线（审计 T-4 / IA-6）
+          主动作：回复 · 全部回复 · 转发 | 归档 · 稍后 · 删除；其余进「⋯」；窄宽度自动只留图标 */}
+      <div ref={toolbarRef} className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-0.5 px-4 border-b border-[var(--border-soft)]">
+        <button onClick={() => reply(false)} title="回复（R）" className="no-drag btn-liquid h-7 px-2.5 rounded-[var(--r-sm)] inline-flex items-center gap-1.5 text-xs font-semibold mr-1">
+          <IconReply width={13} height={13} />
+          {!compact && '回复'}
+        </button>
+        <ToolButton onClick={() => reply(true)} icon={<IconReplyAll width={14} height={14} />} label="全部回复" compact={compact} />
+        <ToolButton onClick={forward} icon={<IconForward width={14} height={14} />} label="转发" compact={compact} />
+        <span className="w-px h-4 mx-1.5 shrink-0" style={{ background: 'var(--border)' }} />
+        <ToolButton onClick={() => act('archive')} icon={<IconArchive width={14} height={14} />} label="归档" hint="A" compact={compact} />
+        <div ref={snoozeRef} className="relative no-drag">
+          <ToolButton onClick={() => setSnoozeOpen(o => !o)} icon={<IconClock width={14} height={14} />} label="稍后" hint="S" compact={compact} active={snoozeOpen || !!msg.snoozedUntil} />
+          {snoozeOpen && (
+            <div className="absolute top-full mt-1.5 left-0 z-30">
+              <SnoozeMenu
+                align="left"
+                messageId={msg.id}
+                currentlySnoozed={!!msg.snoozedUntil}
+                onPick={async at => {
+                  await api.snoozeMessages([msg.id], at)
+                  setSnoozeOpen(false)
+                  showToast(`已稍后处理，${fmtSnooze(at)} 回到收件箱`)
+                  useMail.getState().select(null)
+                  await loadMessages()
+                }}
+                onUnsnooze={async () => {
+                  await api.snoozeMessages([msg.id], null)
+                  setSnoozeOpen(false)
+                  await loadMessages()
+                }}
+                onClose={() => setSnoozeOpen(false)}
+              />
+            </div>
+          )}
+        </div>
+        <ToolButton onClick={() => act('trash')} icon={<IconTrash width={14} height={14} />} label="删除" hint="⌫" compact danger />
         <div className="flex-1" />
-        {/* 阅读风格快速切换（ThirdC 交互：上下文锚定的风格选择器） */}
-        <div ref={styleRootRef} className="relative">
-          <ToolButton
-            onClick={() => setStyleMenu(m => !m)}
-            icon={<IconPalette width={13} height={13} />}
-            label={skin ? skin[1] : '风格'}
-            active={!!skin}
-          />
+        {/* 阅读风格（上下文锚定的风格选择器） */}
+        <div ref={styleRootRef} className="relative no-drag">
+          <ToolButton onClick={() => setStyleMenu(m => !m)} icon={<IconPalette width={14} height={14} />} label={skin ? skin[1] : '阅读风格'} compact active={!!skin} />
           {styleMenu && (
-            <div className="absolute top-8 right-0 z-20 w-[248px] max-h-[420px] overflow-y-auto liquid-glass rounded-[var(--r-md)] p-1.5 pop-in">
-              <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+            <div className="absolute top-full mt-1.5 right-0 z-30 w-[248px] max-h-[420px] overflow-y-auto liquid-glass rounded-[var(--r-md)] p-1 pop-in">
+              <div className="caps px-2 pt-1.5 pb-1" style={{ color: 'var(--faint)' }}>
                 阅读风格 · {READING_STYLES.length} 款
               </div>
               <StyleOption label="默认（跟随应用主题）" active={!styleId} onClick={() => applyStyle('')} />
@@ -496,28 +525,28 @@ export function Reader() {
             </div>
           )}
         </div>
-        {msg.unread && (
-          <ToolButton onClick={() => act('unread')} icon={<IconRefresh width={14} height={14} />} label="标为未读" />
-        )}
+        <MenuButton title="更多操作" items={moreItems} width={232}>
+          <IconMore width={15} height={15} />
+        </MenuButton>
       </div>
 
       {/* 头部信息 */}
-      <div className="shrink-0 px-6 pb-4 border-b border-[var(--border-soft)]">
-        <h1 className="selectable text-[19px] font-semibold leading-snug" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{msg.subject || '（无主题）'}</h1>
+      <div className="shrink-0 px-6 pt-5 pb-4 border-b border-[var(--border-soft)]">
+        <h1 className="selectable text-lg font-semibold leading-snug" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{msg.subject || '（无主题）'}</h1>
         <div className="mt-2.5 flex items-center gap-3">
           <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-medium shrink-0"
-            style={{ background: `hsl(${(displayName(msg.from).charCodeAt(0) * 7) % 360} 55% 55%)` }}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-base font-medium shrink-0"
+            style={avatarStyle(displayName(msg.from))}
           >
             {[...displayName(msg.from)][0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-[13.5px] font-medium selectable truncate" style={{ color: 'var(--fg)' }}>{displayName(msg.from)}</span>
-              <span className="text-[12px] truncate" style={{ color: 'var(--faint)' }}>{msg.from?.address}</span>
-              <span className="ml-auto text-[12px] shrink-0" style={{ color: 'var(--faint)' }}>{fmtFullDate(msg.date)}</span>
+              <span className="text-sm font-medium selectable truncate" style={{ color: 'var(--fg)' }}>{displayName(msg.from)}</span>
+              <span className="text-xs truncate" style={{ color: 'var(--faint)' }}>{msg.from?.address}</span>
+              <span className="ml-auto text-xs shrink-0" style={{ color: 'var(--faint)' }}>{fmtFullDate(msg.date)}</span>
             </div>
-            <div className="text-[12px] selectable truncate" style={{ color: 'var(--faint)' }}>
+            <div className="text-xs selectable truncate" style={{ color: 'var(--faint)' }}>
               收件人：{msg.to.map(displayName).join('，') || '—'}
               {msg.cc.length > 0 && `；抄送：${msg.cc.map(displayName).join('，')}`}
             </div>
@@ -526,7 +555,7 @@ export function Reader() {
         {canUnsub && (
           <button
             onClick={unsubscribe}
-            className="mt-2.5 inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-full"
+            className="mt-2.5 inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full"
             style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}
           >
             <IconUnsub width={12} height={12} /> 这是订阅邮件 · 一键退订
@@ -547,10 +576,10 @@ export function Reader() {
             {auth.kind === 'code' ? (
               <>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px]" style={{ color: 'var(--muted)' }}>检测到验证码，点击即复制</div>
+                  <div className="text-xs" style={{ color: 'var(--muted)' }}>检测到验证码，点击即复制</div>
                   <button
                     onClick={copyCode}
-                    className="text-[22px] font-bold tracking-[.18em] font-[var(--font-mono)] hover:opacity-80"
+                    className="text-lg font-semibold tracking-[.18em] font-[var(--font-mono)] hover:opacity-80"
                     style={{ color: 'var(--accent-strong)' }}
                   >
                     {auth.code}
@@ -558,7 +587,7 @@ export function Reader() {
                 </div>
                 <button
                   onClick={copyCode}
-                  className="no-drag text-[12.5px] font-medium px-3.5 py-1.5 rounded-lg shrink-0"
+                  className="no-drag text-xs font-medium px-3.5 py-1.5 rounded-lg shrink-0"
                   style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                 >
                   复制验证码
@@ -567,12 +596,12 @@ export function Reader() {
             ) : (
               <>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px]" style={{ color: 'var(--muted)' }}>检测到登录 / 验证链接{auth.provider ? ` · ${auth.provider}` : ''}</div>
-                  <div className="text-[13px] font-medium truncate" style={{ color: 'var(--accent-strong)' }}>一键直达，无需翻找正文</div>
+                  <div className="text-xs" style={{ color: 'var(--muted)' }}>检测到登录 / 验证链接{auth.provider ? ` · ${auth.provider}` : ''}</div>
+                  <div className="text-sm font-medium truncate" style={{ color: 'var(--accent-strong)' }}>一键直达，无需翻找正文</div>
                 </div>
                 <button
                   onClick={() => auth.url && void api.openExternal(auth.url)}
-                  className="no-drag text-[12.5px] font-medium px-3.5 py-1.5 rounded-lg shrink-0"
+                  className="no-drag text-xs font-medium px-3.5 py-1.5 rounded-lg shrink-0"
                   style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                 >
                   一键登录 →
@@ -588,13 +617,13 @@ export function Reader() {
 
       {/* AI 面板 */}
       <div className="shrink-0 px-6 pt-3">
-        <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] overflow-hidden glass shadow-[var(--shadow-sm)]">
-          <div className="flex items-center gap-2 px-4 py-2.5">
-            <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--accent), oklch(58% .16 285))', color: 'var(--on-accent)' }}>
+        <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] overflow-hidden surface">
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-3 py-2">
+            <span className="w-5 h-5 mr-1 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
               <IconSparkles width={11} height={11} />
             </span>
-            <span className="text-[13px] font-medium" style={{ color: 'var(--fg)' }}>AI 助手</span>
-            <div className="flex-1" />
+            <span className="text-sm font-medium whitespace-nowrap" style={{ color: 'var(--fg)' }}>AI 助手</span>
+            <div className="flex-1 min-w-2" />
             <AIChip label="摘要" onClick={() => runAI('summary')} active={aiMode === 'summary'} />
             <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
             <AIChip label="提取待办" onClick={() => runAI('tasks')} active={aiMode === 'tasks'} />
@@ -604,7 +633,7 @@ export function Reader() {
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">
               <div className="pt-2 border-t border-[var(--border-soft)]">
-                <div className="selectable mt-2 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
+                <div className="selectable mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
                   {ai.error ? <span style={{ color: 'var(--danger)' }}>{ai.error}</span> : ai.text}
                   {ai.streaming && <span className="inline-block w-1.5 h-4 ml-0.5 animate-pulse align-middle" style={{ background: 'var(--accent)' }} />}
                 </div>
@@ -612,14 +641,14 @@ export function Reader() {
                   <div className="mt-2.5 flex gap-2">
                     <button
                       onClick={useAiDraft}
-                      className="text-[12.5px] px-3 py-1.5 rounded-lg font-medium"
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
                       style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                     >
                       用这封回复
                     </button>
                     <button
                       onClick={() => navigator.clipboard.writeText(ai.text)}
-                      className="text-[12.5px] px-3 py-1.5 rounded-lg"
+                      className="text-xs px-3 py-1.5 rounded-lg"
                       style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}
                     >
                       复制
@@ -644,7 +673,7 @@ export function Reader() {
       {/* 正文 */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {remoteCount > 0 && (
-          <div className="mb-3 flex items-center gap-2 text-[12.5px] rounded-[var(--r-sm)] px-3.5 py-2.5" style={{ background: 'var(--warn-soft)', color: 'var(--muted)' }}>
+          <div className="mb-3 flex items-center gap-2 text-xs rounded-[var(--r-sm)] px-3.5 py-2.5" style={{ background: 'var(--warn-soft)', color: 'var(--muted)' }}>
             <span>为保护隐私，已拦截 {remoteCount} 张远程图片（可能包含追踪像素）</span>
             <button onClick={showBlocked} className="ml-auto hover:underline shrink-0" style={{ color: 'var(--accent)' }}>
               本次显示
@@ -660,14 +689,12 @@ export function Reader() {
                   borderRadius: 'var(--r-md)',
                   background: 'var(--surface-strong)',
                   border: '1px solid var(--border-soft)',
-                  boxShadow: 'var(--shadow-sm)',
-                  backdropFilter: 'blur(10px)',
                   padding: '20px 24px'
                 }
           }
         >
           {!msg.text && !msg.html && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 14px', borderRadius: 'var(--r-md)', background: bodyError ? 'color-mix(in srgb, #ef4444 10%, transparent)' : 'color-mix(in srgb, #71717a 8%, transparent)', fontSize: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 14px', borderRadius: 'var(--r-md)', background: bodyError ? 'var(--danger-soft)' : 'var(--hover)', fontSize: 13 }}>
               <span style={{ flex: 1, color: 'var(--fg)' }}>
                 {bodyError ? `正文加载失败：${bodyError}` : '正文尚未下载（可能仍在同步中）'}
               </span>
@@ -690,7 +717,7 @@ export function Reader() {
       </div>
 
       {toast && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full liquid-glass text-[13px] fade-in" style={{ color: 'var(--fg)' }}>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full liquid-glass text-sm fade-in" style={{ color: 'var(--fg)' }}>
           {toast}
         </div>
       )}
@@ -702,7 +729,7 @@ function StyleOption(props: { label: string; active: boolean; onClick(): void; c
   return (
     <button
       onClick={props.onClick}
-      className="w-full flex items-center gap-2 px-2.5 py-[7px] rounded-[10px] text-[12.5px] text-left border"
+      className="w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-xs text-left border"
       style={{
         borderColor: props.active ? 'var(--accent)' : 'transparent',
         background: props.active ? 'var(--accent-soft)' : 'transparent',
@@ -717,12 +744,12 @@ function StyleOption(props: { label: string; active: boolean; onClick(): void; c
     >
       {props.color && (
         <span className="flex gap-1 shrink-0">
-          <i className="w-3 h-3 rounded-[4px] border border-black/10" style={{ background: props.bg }} />
-          <i className="w-3 h-3 rounded-[4px] border border-black/10" style={{ background: props.color }} />
+          <i className="w-3 h-3 rounded-xs border border-ink/10" style={{ background: props.bg }} />
+          <i className="w-3 h-3 rounded-xs border border-ink/10" style={{ background: props.color }} />
         </span>
       )}
       <span className="flex-1 truncate">{props.label}</span>
-      {props.active && <span className="text-[10px]" style={{ color: 'var(--accent)' }}>✓</span>}
+      {props.active && <span className="text-2xs" style={{ color: 'var(--accent)' }}>✓</span>}
     </button>
   )
 }
@@ -731,35 +758,30 @@ function AIChip(props: { label: string; onClick(): void; active?: boolean }) {
   return (
     <button
       onClick={props.onClick}
-      className="text-[12px] px-2.5 py-1 rounded-full transition"
+      className="h-6 px-2 rounded-[var(--r-sm)] text-xs whitespace-nowrap shrink-0 transition-colors hover:bg-[var(--hover-strong)]"
       style={props.active
-        ? { background: 'var(--accent)', color: 'var(--on-accent)' }
-        : { background: 'var(--bg-soft)', color: 'var(--muted)' }}
+        ? { background: 'var(--selected)', color: 'var(--accent-ink)', fontWeight: 500 }
+        : { color: 'var(--muted)' }}
     >
       {props.label}
     </button>
   )
 }
 
-function ToolButton(props: { icon: React.ReactNode; label: string; onClick(): void; active?: boolean; danger?: boolean }) {
+function ToolButton(props: { icon: React.ReactNode; label: string; onClick(): void; active?: boolean; danger?: boolean; compact?: boolean; hint?: string }) {
   return (
     <button
       onClick={props.onClick}
-      className="icon-btn flex items-center gap-1.5 text-[12.5px] px-2 py-1.5 whitespace-nowrap shrink-0"
+      title={props.hint ? `${props.label}（${props.hint}）` : props.label}
+      aria-label={props.label}
+      className={`no-drag icon-btn h-7 inline-flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0 ${props.compact ? 'w-7 justify-center' : 'px-2'} ${props.danger ? 'hover:!text-[var(--danger)]' : ''}`}
       style={{
-        color: props.active ? 'var(--warn)' : props.danger ? 'var(--muted)' : 'var(--muted)',
-        background: props.active ? 'var(--warn-soft)' : undefined,
-        boxShadow: props.active ? 'inset 0 1px 0 var(--spec-lo)' : undefined
-      }}
-      onMouseEnter={e => {
-        if (props.danger) e.currentTarget.style.color = 'var(--danger)'
-      }}
-      onMouseLeave={e => {
-        if (props.danger) e.currentTarget.style.color = 'var(--muted)'
+        color: props.active ? 'var(--accent-ink)' : 'var(--muted)',
+        background: props.active ? 'var(--selected)' : undefined
       }}
     >
       {props.icon}
-      {props.label}
+      {!props.compact && props.label}
     </button>
   )
 }
@@ -786,8 +808,8 @@ function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; on
           <IconAttach width={14} height={14} />
         </span>
         <span className="text-left">
-          <span className="block max-w-[180px] truncate text-[12.5px]" style={{ color: 'var(--fg)' }}>{a.filename}</span>
-          <span className="block text-[11px]" style={{ color: 'var(--faint)' }}>{fmtSize(a.size)}</span>
+          <span className="block max-w-[180px] truncate text-xs" style={{ color: 'var(--fg)' }}>{a.filename}</span>
+          <span className="block text-2xs" style={{ color: 'var(--faint)' }}>{fmtSize(a.size)}</span>
         </span>
       </button>
       {hasDrive && (
@@ -814,7 +836,7 @@ function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; on
                   setDriveMenu(false)
                   props.onUpload(a, d)
                 }}
-                className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-[var(--hover)] truncate"
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--hover)] truncate"
                 style={{ color: 'var(--fg)' }}
               >
                 上传到 {d.name}

@@ -28,6 +28,8 @@ export function systemPrefersDark(): boolean {
 }
 
 export function resolvedTheme(): 'light' | 'dark' {
+  const forced = findPreset(activePresetId())?.scheme
+  if (forced) return forced
   const pref = getThemePref()
   return pref === 'auto' ? (systemPrefersDark() ? 'dark' : 'light') : pref
 }
@@ -99,6 +101,8 @@ export function applyThemePreset(): void {
 
 export function setPreset(id: string | null): void {
   localStorage.setItem(PRESET_KEY, id ?? '')
+  // 预设可能强制明暗（scheme），切换预设时重算 data-theme
+  document.documentElement.dataset.theme = resolvedTheme()
   applyThemePreset()
   listeners.forEach(fn => fn())
 }

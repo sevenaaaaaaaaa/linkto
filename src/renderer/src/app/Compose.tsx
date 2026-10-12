@@ -156,11 +156,11 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
   const MenuRow = (props: { label: string; hint?: string; onClick(): void }) => (
     <button
       onClick={props.onClick}
-      className="w-full flex items-center gap-2 px-3 py-2 text-[12.5px] text-left hover:bg-[var(--hover)]"
+      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[var(--hover)]"
       style={{ color: 'var(--fg)' }}
     >
       <span className="flex-1">{props.label}</span>
-      {props.hint && <span className="text-[11px]" style={{ color: 'var(--faint)' }}>{props.hint}</span>}
+      {props.hint && <span className="text-2xs" style={{ color: 'var(--faint)' }}>{props.hint}</span>}
     </button>
   )
 
@@ -187,18 +187,18 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="drag-region h-[44px] shrink-0 flex items-center pl-5">
-        <span className="text-[13px] font-medium text-zinc-400">
+        <span className="text-sm font-medium text-zinc-400">
           {prefill?.relatedMessageId ? '回复' : '新邮件'}
         </span>
       </div>
 
       {/* 账户选择 */}
-      <div className="shrink-0 px-5 py-2 border-b border-black/[0.05] flex items-center gap-2">
-        <span className="text-[12px] text-zinc-400 shrink-0">发件账户</span>
+      <div className="shrink-0 px-5 py-2 border-b border-ink/[0.05] flex items-center gap-2">
+        <span className="text-xs text-zinc-400 shrink-0">发件账户</span>
         <select
           value={accountId}
           onChange={e => setAccountId(e.target.value)}
-          className="no-drag text-[13px] bg-zinc-50 rounded-lg px-2 py-1.5 outline-none border border-black/[0.05]"
+          className="no-drag text-sm bg-zinc-50 rounded-lg px-2 py-1.5 outline-none border border-ink/[0.05]"
         >
           {(accounts ?? []).map(a => (
             <option key={a.id} value={a.id}>
@@ -207,23 +207,23 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
           ))}
         </select>
         <div className="flex-1" />
-        <button onClick={insertSignature} className="text-[12px] px-2 py-1 rounded-lg text-zinc-500 hover:bg-black/5">
+        <button onClick={insertSignature} className="text-xs px-2 py-1 rounded-lg text-zinc-500 hover:bg-ink/5">
           插入签名
         </button>
       </div>
 
       {/* 收件人 */}
-      <div className="shrink-0 px-5 py-2 border-b border-black/[0.05] space-y-1.5">
+      <div className="shrink-0 px-5 py-2 border-b border-ink/[0.05] space-y-1.5">
         <AddrRow label="收件人" value={to} onChange={setTo} onMore={() => setShowCc(true)} required />
         {showCc && <AddrRow label="抄送" value={cc} onChange={setCc} />}
         {showCc && <AddrRow label="密送" value={bcc} onChange={setBcc} />}
         <div className="flex items-center gap-2">
-          <span className="text-[12px] text-zinc-400 w-14 shrink-0">主题</span>
+          <span className="text-xs text-zinc-400 w-14 shrink-0">主题</span>
           <input
             value={subject}
             onChange={e => setSubject(e.target.value)}
             placeholder="主题"
-            className="flex-1 text-[14px] font-medium outline-none"
+            className="flex-1 text-base font-medium outline-none"
           />
           {(templates?.length ?? 0) > 0 && (
             <select
@@ -233,7 +233,7 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
                 e.target.value = ''
               }}
               defaultValue=""
-              className="text-[12px] text-zinc-500 bg-zinc-50 rounded-lg px-2 py-1 outline-none border border-black/[0.05]"
+              className="text-xs text-zinc-500 bg-zinc-50 rounded-lg px-2 py-1 outline-none border border-ink/[0.05]"
             >
               <option value="">插入模板…</option>
               {templates!.map(t => (
@@ -251,8 +251,8 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
         <EditorToolbar editor={editor} />
         <EditorContent editor={editor} className="mt-2" />
         {quote && (
-          <div className="mt-6 border-t border-black/[0.06] pt-3">
-            <div className="text-[12px] text-zinc-400 mb-2">
+          <div className="mt-6 border-t border-ink/[0.06] pt-3">
+            <div className="text-xs text-zinc-400 mb-2">
               {prefill?.subject?.startsWith('转发') ? '转发' : '引用'}：{displayName(quote.from)} · {fmtSimple(quote.date)}
             </div>
             <QuoteBlock quote={quote} />
@@ -262,9 +262,9 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
 
       {/* 附件 / 错误 / 发送 */}
       {attachments.length > 0 && (
-        <div className="shrink-0 px-5 py-2 flex flex-wrap gap-2 border-t border-black/[0.05]">
+        <div className="shrink-0 px-5 py-2 flex flex-wrap gap-2 border-t border-ink/[0.05]">
           {attachments.map((a, i) => (
-            <span key={i} className="flex items-center gap-1.5 text-[12px] bg-zinc-100 rounded-lg px-2.5 py-1">
+            <span key={i} className="flex items-center gap-1.5 text-xs bg-zinc-100 rounded-lg px-2.5 py-1">
               <IconAttach width={12} height={12} className="text-zinc-400" />
               {a.name}
               <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-zinc-400 hover:text-zinc-600">
@@ -274,20 +274,20 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
           ))}
         </div>
       )}
-      {error && <div className="shrink-0 px-5 py-1.5 text-[12.5px] text-red-500">{error}</div>}
-      <div className="shrink-0 px-5 py-3 border-t border-black/[0.05] flex items-center gap-2 relative">
-        <button onClick={pick} className="p-2 rounded-lg text-zinc-500 hover:bg-black/5" title="添加附件">
+      {error && <div className="shrink-0 px-5 py-1.5 text-xs text-red-500">{error}</div>}
+      <div className="shrink-0 px-5 py-3 border-t border-ink/[0.05] flex items-center gap-2 relative">
+        <button onClick={pick} className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5" title="添加附件">
           <IconAttach width={15} height={15} />
         </button>
         <div className="flex-1" />
-        <button onClick={saveDraft} className="text-[13px] px-3 py-2 rounded-xl text-zinc-500 hover:bg-black/5 flex items-center gap-1.5">
+        <button onClick={saveDraft} className="text-sm px-3 py-2 rounded-xl text-zinc-500 hover:bg-ink/5 flex items-center gap-1.5">
           <IconSave width={14} height={14} /> 存草稿
         </button>
         <div className="flex items-stretch" ref={menuRef}>
           <button
             onClick={send}
             disabled={sending || !accountId}
-            className="btn-liquid flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-l-xl disabled:opacity-40"
+            className="btn-liquid flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-l-xl disabled:opacity-40"
           >
             <IconSend width={14} height={14} />
             {sending ? '发送中…' : '发送'}
@@ -296,33 +296,33 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
             onClick={() => setSendMenu(m => !m)}
             disabled={!accountId}
             title="延迟 / 定时发送"
-            className="btn-liquid px-2 rounded-r-xl border-l border-white/25 disabled:opacity-40 text-[10px]"
+            className="btn-liquid px-2 rounded-r-xl border-l border-white/25 disabled:opacity-40 text-2xs"
             style={{ borderRadius: '0 12px 12px 0' }}
           >
             ▾
           </button>
           {sendMenu && (
             <div className="absolute bottom-14 right-5 z-30 w-[290px] liquid-glass rounded-[var(--r-md)] p-1.5 pop-in">
-              <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+              <div className="px-2 pt-1 pb-1.5 text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                 延迟 / 定时发送
               </div>
               <MenuRow label="30 秒后发送" hint="可撤销" onClick={() => void schedule(30_000)} />
               <MenuRow label="1 分钟后发送" hint="可撤销" onClick={() => void schedule(60_000)} />
               <MenuRow label="10 分钟后发送" onClick={() => void schedule(600_000)} />
               <MenuRow label="1 小时后发送" onClick={() => void schedule(3_600_000)} />
-              <div className="px-3 pt-2 pb-1 text-[11.5px]" style={{ color: 'var(--muted)' }}>定时发送（到点自动发出）</div>
+              <div className="px-3 pt-2 pb-1 text-xs" style={{ color: 'var(--muted)' }}>定时发送（到点自动发出）</div>
               <div className="px-2 pb-1 flex gap-1.5">
                 <input
                   type="datetime-local"
                   value={schedTime}
                   onChange={e => setSchedTime(e.target.value)}
-                  className="flex-1 text-[12px] rounded-lg px-2 py-1.5 outline-none border border-[var(--border-soft)]"
+                  className="flex-1 text-xs rounded-lg px-2 py-1.5 outline-none border border-[var(--border-soft)]"
                   style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
                 />
                 <button
                   onClick={() => void schedule()}
                   disabled={!schedTime}
-                  className="text-[12px] px-2.5 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                  className="text-xs px-2.5 py-1.5 rounded-lg font-medium disabled:opacity-40"
                   style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                 >
                   确定
@@ -339,16 +339,16 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
 function AddrRow(props: { label: string; value: string; onChange(v: string): void; onMore?(): void; required?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[12px] text-zinc-400 w-14 shrink-0">{props.label}</span>
+      <span className="text-xs text-zinc-400 w-14 shrink-0">{props.label}</span>
       <input
         value={props.value}
         onChange={e => props.onChange(e.target.value)}
-        className="flex-1 text-[13.5px] outline-none selectable"
+        className="flex-1 text-sm outline-none selectable"
         placeholder="多个地址用逗号分隔"
       />
       {props.onMore && !props.value.includes('@') === false && null}
       {props.onMore && (
-        <button onClick={props.onMore} className="text-[12px] text-zinc-400 hover:text-zinc-600 shrink-0">
+        <button onClick={props.onMore} className="text-xs text-zinc-400 hover:text-zinc-600 shrink-0">
           抄送/密送
         </button>
       )}
@@ -358,21 +358,21 @@ function AddrRow(props: { label: string; value: string; onChange(v: string): voi
 
 function EditorToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null
-  const btn = (label: React.ReactNode, active: boolean, onClick: () => void, textCls = 'text-[13px]') => (
+  const btn = (label: React.ReactNode, active: boolean, onClick: () => void, textCls = 'text-sm') => (
     <button
       type="button"
       onMouseDown={e => e.preventDefault()}
       onClick={onClick}
-      className={`w-7 h-7 rounded-md inline-flex items-center justify-center ${textCls} ${active ? 'bg-blue-600/10 text-blue-600' : 'text-zinc-500 hover:bg-black/5'}`}
+      className={`w-7 h-7 rounded-md inline-flex items-center justify-center ${textCls} ${active ? 'bg-blue-600/10 text-blue-600' : 'text-zinc-500 hover:bg-ink/5'}`}
     >
       {label}
     </button>
   )
   return (
-    <div className="flex items-center gap-0.5 pb-1.5 border-b border-black/[0.05]">
-      {btn('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'text-[13px] font-semibold')}
-      {btn('I', editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'text-[13px] italic')}
-      {btn('S', editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'text-[13px] line-through')}
+    <div className="flex items-center gap-0.5 pb-1.5 border-b border-ink/[0.05]">
+      {btn('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'text-sm font-semibold')}
+      {btn('I', editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'text-sm italic')}
+      {btn('S', editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'text-sm line-through')}
       {btn(<IconList width={14} height={14} />, editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), '')}
       {btn(<IconListOrdered width={14} height={14} />, editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), '')}
       {btn(<IconQuote width={13} height={13} />, editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '')}
@@ -394,7 +394,7 @@ function QuoteBlock({ quote }: { quote: MessageFull }) {
     const source = quote.html ?? `<p style="white-space:pre-wrap">${quote.text}</p>`
     const { html } = sanitizeEmailHtml(source, { allowRemote: false, resolveCid: () => null })
     const shadow = host.attachShadow({ mode: 'open' })
-    shadow.innerHTML = `<style>:host{all:initial;display:block;font-size:13px;line-height:1.6;color:#52525b}</style><div style="border-left:3px solid #e4e4e7;padding-left:12px">${html}</div>`
+    shadow.innerHTML = `<style>:host{all:initial;display:block;font-family:var(--font-body);font-size:13px;line-height:20px;color:var(--muted)}</style><div style="border-left:2px solid var(--border);padding-left:12px">${html}</div>`
   }, [quote])
   return <div ref={hostRef} className="selectable max-h-56 overflow-y-auto" />
 }
@@ -402,6 +402,7 @@ function QuoteBlock({ quote }: { quote: MessageFull }) {
 function buildFullHtml(body: string, quote: MessageFull | null, signature: string): string {
   const sig = signature ? `<div style="margin-top:16px">${signature}</div>` : ''
   const quoteHtml = quote
+    // 外发邮件正文：收件方客户端不识别 CSS 变量，此处必须使用字面色（token 规则豁免）
     ? `<div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;color:#555;font-size:13px">
         <p>在 ${new Date(quote.date).toLocaleString('zh-CN')}，${escapeAttr(displayName(quote.from))} 写道：</p>
         <blockquote style="border-left:3px solid #ddd;padding-left:12px;margin-left:0">${

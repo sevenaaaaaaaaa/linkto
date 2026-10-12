@@ -1,12 +1,12 @@
 /*
- * Mail Studio 设计系统 —— 移植自 OpenFlow assets/tokens.css（DESIGN-SYSTEM.md）
- * 全 oklch 调色板 · 玻璃拟态 · 环境光斑 · 26/18/12 圆角 · 弹簧缓动
+ * Mail Studio 设计系统 v2 —— 石墨纸 + 铜绿（Phase C）
+ * 全 oklch · 三层材质 · 7 级字号 · 4px 节拍 · 14/10/6/4 圆角 · 弹簧缓动
  * 运行时三层换肤（ThirdC 模式）：data-theme 明暗 / theme-override 预设 / 阅读皮肤
  */
 
 @import 'tailwindcss';
 
-/* ---------- OpenFlow 字体（自托管 woff2） ---------- */
+/* ---------- 字体（自托管 woff2） ---------- */
 @font-face {
   font-family: 'Space Grotesk';
   font-style: normal;
@@ -57,181 +57,310 @@
   src: url('/fonts/jetbrains-mono-600.woff2') format('woff2');
 }
 
-/* ---------- OpenFlow 语义 token（浅色 = 奶油纸底） ---------- */
+/* ================================================================
+ * Design Tokens v2 · 「石墨纸 + 铜绿」（Phase C，2026-10）
+ * 规范来源：docs/DESIGN-AUDIT.md §3 · docs/design/tokens-v2.css
+ * 组件层只引用 token / @theme 映射类，禁止散写颜色、字号、圆角、阴影。
+ * 派生色（*-ink / *-soft / --selected / blue-*）全部由 relative color 从
+ * 基色计算 —— 主题预设只需覆盖 --accent 等基色，派生色自动跟随。
+ * ================================================================ */
+
+/* ---------- 1 · 色板（浅色 = 石墨纸） ---------- */
 :root {
-  --bg: oklch(96.5% 0.016 85);
-  --bg-soft: oklch(94% 0.02 85);
-  --surface: oklch(100% 0 0 / 0.62);
-  --surface-strong: oklch(100% 0 0 / 0.88);
-  --fg: oklch(22% 0.02 70);
-  --muted: oklch(46% 0.016 70);
-  --faint: oklch(51% 0.014 75);
-  --border: oklch(86% 0.014 80);
-  --border-strong: oklch(76% 0.02 80);
-  --border-soft: oklch(86% 0.014 80 / 0.55);
-  --hover: oklch(22% 0.02 70 / 0.055);
-  --hover-strong: oklch(22% 0.02 70 / 0.11);
-  --accent: oklch(54% 0.17 256);
-  --accent-strong: oklch(47% 0.17 256);
-  --accent-soft: oklch(54% 0.17 256 / 0.12);
-  --accent-2: oklch(56% 0.18 300);
-  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --bg: oklch(97.6% 0.004 95);
+  --bg-soft: oklch(95.2% 0.005 95);
+  --surface: oklch(99.4% 0.002 95 / 0.72);
+  --surface-strong: oklch(99.4% 0.002 95);
+  --fg: oklch(21% 0.008 260);
+  --muted: oklch(43% 0.008 260);
+  --faint: oklch(53.5% 0.008 260);
+  --border: oklch(89% 0.004 260);
+  --border-strong: oklch(80% 0.006 260);
+  --border-soft: oklch(from var(--fg) l c h / 0.07);
+  --hover: oklch(from var(--fg) l c h / 0.045);
+  --hover-strong: oklch(from var(--fg) l c h / 0.085);
+  --scrim: oklch(15% 0.01 260 / 0.32);
+
+  /* Accent · 铜绿 Verdigris —— 全应用唯一品牌色 */
+  --accent: oklch(52% 0.105 192);
+  --accent-strong: oklch(from var(--accent) calc(l - 0.06) c h);
+  --accent-ink: oklch(from var(--accent) calc(l - 0.07) calc(c * 0.95) h);
+  --accent-soft: oklch(from var(--accent) l c h / 0.12);
+  --selected: oklch(from var(--accent) l c h / 0.1);
+  --accent-2: var(--accent);
+  --accent-grad: linear-gradient(180deg, oklch(from var(--accent) calc(l + 0.035) c h), oklch(from var(--accent) calc(l - 0.02) c h));
   --on-accent: oklch(100% 0 0);
-  --ok: oklch(58% 0.17 152);
-  --ok-soft: oklch(58% 0.17 152 / 0.12);
-  --warn: oklch(66% 0.15 75);
-  --warn-soft: oklch(66% 0.15 75 / 0.14);
-  --danger: oklch(55% 0.2 25);
-  --danger-soft: oklch(55% 0.2 25 / 0.12);
-  --glass: oklch(100% 0 0 / 0.5);
-  --glass-bright: oklch(100% 0 0 / 0.66);
-  --glass-border: oklch(100% 0 0 / 0.68);
-  /* Liquid Glass：镜面高光 / 边缘折射 / 内发光 */
-  --spec-hi: oklch(100% 0 0 / 0.75);
-  --spec-lo: oklch(100% 0 0 / 0.28);
-  --edge-hi: oklch(100% 0 0 / 0.55);
-  --edge-lo: oklch(30% 0.04 80 / 0.06);
-  --inner-glow: oklch(100% 0 0 / 0.22);
-  --glow-dot: oklch(100% 0 0 / 0.16);
-  --blob-a: oklch(72% 0.12 262 / 0.3);
-  --blob-b: oklch(70% 0.13 305 / 0.24);
-  --blob-c: oklch(74% 0.11 200 / 0.22);
-  --shadow: 0 24px 60px -24px oklch(30% 0.04 80 / 0.28);
-  --shadow-sm: 0 10px 28px -14px oklch(30% 0.04 80 / 0.22);
-  --r-lg: 26px;
-  --r-md: 18px;
-  --r-sm: 12px;
-  --font-display: 'Space Grotesk', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  /* 语义色：fill · ink（文字）· soft（底） */
+  --ok: oklch(52% 0.13 148);
+  --warn: oklch(55% 0.12 65);
+  --danger: oklch(53% 0.19 22);
+  --info: oklch(52% 0.12 255);
+  --ok-ink: oklch(from var(--ok) calc(l - 0.07) c h);
+  --warn-ink: oklch(from var(--warn) calc(l - 0.08) c h);
+  --danger-ink: oklch(from var(--danger) calc(l - 0.05) c h);
+  --info-ink: oklch(from var(--info) calc(l - 0.06) c h);
+  --ok-soft: oklch(from var(--ok) l c h / 0.12);
+  --warn-soft: oklch(70% 0.13 75 / 0.16);
+  --danger-soft: oklch(from var(--danger) l c h / 0.1);
+  --info-soft: oklch(from var(--info) l c h / 0.1);
+  --cat-newsletter: oklch(47% 0.11 300);
+  --cat-newsletter-soft: oklch(from var(--cat-newsletter) l c h / 0.12);
+  /* 头像：低彩度色相环（色相由名字哈希，见 lib/avatar.ts） */
+  --avatar-bg-l: 90%;
+  --avatar-bg-c: 0.045;
+  --avatar-fg-l: 38%;
+  --avatar-fg-c: 0.09;
+
+  /* 材质 */
+  --glass: oklch(99.4% 0.002 95 / 0.55);
+  --glass-bright: oklch(99.4% 0.002 95 / 0.92);
+  --glass-border: oklch(100% 0 0 / 0.7);
+  --spec-hi: oklch(100% 0 0 / 0.7);
+  --spec-lo: oklch(100% 0 0 / 0.22);
+  --edge-hi: oklch(100% 0 0 / 0.5);
+  --edge-lo: oklch(21% 0.008 260 / 0.06);
+  --inner-glow: oklch(100% 0 0 / 0.18);
+  --glow-dot: oklch(100% 0 0 / 0.14);
+  --blob-a: oklch(80% 0.06 192 / 0.2);
+  --blob-b: transparent;
+  --blob-c: oklch(88% 0.02 95 / 0.3);
+  --shadow-sm: 0 1px 2px oklch(21% 0.008 260 / 0.06), 0 4px 12px -6px oklch(21% 0.008 260 / 0.12);
+  --shadow: 0 2px 6px oklch(21% 0.008 260 / 0.06), 0 20px 48px -20px oklch(21% 0.008 260 / 0.28);
+  --shadow-float: 0 1px 0 oklch(100% 0 0 / 0.5) inset, 0 2px 8px oklch(21% 0.008 260 / 0.08), 0 24px 56px -20px oklch(21% 0.008 260 / 0.32);
+
+  /* ---------- 2 · 字号 ---------- */
+  --font-display: 'Space Grotesk', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --tracking-caps: 0.06em;
+  --tracking-tight: -0.01em;
+
+  /* ---------- 3 · 间距 / 组件节拍 ---------- */
+  --titlebar-h: 52px;
+  --toolbar-h: 44px;
+  --row-side-h: 28px;
+  --control-h-sm: 24px;
+  --control-h: 28px;
+  --control-h-lg: 32px;
+  --sidebar-w: 232px;
+  --list-w: 360px;
+  --pad-pane: 16px;
+
+  /* ---------- 4 · 圆角与描边 ---------- */
+  --r-lg: 14px;
+  --r-md: 10px;
+  --r-sm: 6px;
+  --r-xs: min(4px, var(--r-sm));
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* ---------- 6 · 动效 ---------- */
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dur-1: 90ms;
+  --dur-2: 160ms;
+  --dur-3: 240ms;
+  --dur-4: 360ms;
+
   color-scheme: light;
 }
 
-/* ---------- OpenFlow 深色（暖近黑 + 亮蓝 accent） ---------- */
+/* ---------- 1 · 色板（深色 = 石墨夜） ---------- */
 [data-theme='dark'] {
-  --bg: oklch(19% 0.014 70);
-  --bg-soft: oklch(22.5% 0.014 72);
-  --surface: oklch(27% 0.016 75 / 0.55);
-  --surface-strong: oklch(30% 0.016 75 / 0.82);
-  --fg: oklch(93% 0.008 85);
-  --muted: oklch(70% 0.014 80);
-  --faint: oklch(64% 0.014 80);
-  --border: oklch(100% 0 0 / 0.1);
-  --border-strong: oklch(100% 0 0 / 0.2);
-  --border-soft: oklch(100% 0 0 / 0.06);
-  --hover: oklch(93% 0.008 85 / 0.07);
-  --hover-strong: oklch(93% 0.008 85 / 0.13);
-  --accent: oklch(74% 0.13 256);
-  --accent-strong: oklch(80% 0.12 256);
-  --accent-soft: oklch(74% 0.13 256 / 0.15);
-  --accent-2: oklch(72% 0.15 300);
-  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --on-accent: oklch(16% 0.03 260);
-  --ok: oklch(74% 0.15 152);
-  --ok-soft: oklch(74% 0.15 152 / 0.14);
-  --warn: oklch(76% 0.13 75);
-  --warn-soft: oklch(76% 0.13 75 / 0.16);
-  --danger: oklch(72% 0.16 25);
-  --danger-soft: oklch(72% 0.16 25 / 0.14);
-  --glass: oklch(30% 0.014 75 / 0.5);
-  --glass-bright: oklch(34% 0.014 75 / 0.62);
-  --glass-border: oklch(100% 0 0 / 0.15);
-  /* Liquid Glass（深色）：高光更收敛，边缘更亮以勾勒轮廓 */
-  --spec-hi: oklch(100% 0 0 / 0.22);
-  --spec-lo: oklch(100% 0 0 / 0.07);
-  --edge-hi: oklch(100% 0 0 / 0.18);
-  --edge-lo: oklch(0% 0 0 / 0.25);
-  --inner-glow: oklch(100% 0 0 / 0.06);
-  --glow-dot: oklch(100% 0 0 / 0.1);
-  --blob-a: oklch(62% 0.13 262 / 0.18);
-  --blob-b: oklch(58% 0.14 305 / 0.15);
-  --blob-c: oklch(60% 0.12 200 / 0.13);
-  --shadow: 0 24px 60px -24px oklch(0% 0 0 / 0.55);
-  --shadow-sm: 0 10px 28px -14px oklch(0% 0 0 / 0.5);
+  --bg: oklch(17.5% 0.006 260);
+  --bg-soft: oklch(20% 0.006 260);
+  --surface: oklch(21.5% 0.007 260 / 0.72);
+  --surface-strong: oklch(21.5% 0.007 260);
+  --fg: oklch(94% 0.004 95);
+  --muted: oklch(73% 0.006 260);
+  --faint: oklch(62% 0.007 260);
+  --border: oklch(100% 0 0 / 0.09);
+  --border-strong: oklch(100% 0 0 / 0.16);
+  --border-soft: oklch(100% 0 0 / 0.055);
+  --hover: oklch(100% 0 0 / 0.05);
+  --hover-strong: oklch(100% 0 0 / 0.09);
+  --scrim: oklch(0% 0 0 / 0.5);
+
+  --accent: oklch(78% 0.11 188);
+  --accent-strong: oklch(from var(--accent) calc(l + 0.06) c h);
+  --accent-ink: oklch(from var(--accent) calc(l + 0.07) calc(c * 0.9) h);
+  --accent-soft: oklch(from var(--accent) l c h / 0.14);
+  --selected: oklch(from var(--accent) l c h / 0.13);
+  --on-accent: oklch(18% 0.03 190);
+
+  --ok: oklch(76% 0.13 148);
+  --warn: oklch(80% 0.12 75);
+  --danger: oklch(70% 0.16 22);
+  --info: oklch(74% 0.11 255);
+  --ok-ink: oklch(from var(--ok) calc(l + 0.08) c h);
+  --warn-ink: oklch(from var(--warn) calc(l + 0.06) c h);
+  --danger-ink: oklch(from var(--danger) calc(l + 0.1) calc(c * 0.8) h);
+  --info-ink: oklch(from var(--info) calc(l + 0.09) c h);
+  --ok-soft: oklch(from var(--ok) l c h / 0.14);
+  --warn-soft: oklch(from var(--warn) l c h / 0.14);
+  --danger-soft: oklch(from var(--danger) l c h / 0.14);
+  --info-soft: oklch(from var(--info) l c h / 0.14);
+  --cat-newsletter: oklch(82% 0.09 300);
+  --avatar-bg-l: 32%;
+  --avatar-bg-c: 0.045;
+  --avatar-fg-l: 86%;
+  --avatar-fg-c: 0.07;
+
+  --glass: oklch(24% 0.007 260 / 0.55);
+  --glass-bright: oklch(25% 0.007 260 / 0.92);
+  --glass-border: oklch(100% 0 0 / 0.12);
+  --spec-hi: oklch(100% 0 0 / 0.16);
+  --spec-lo: oklch(100% 0 0 / 0.05);
+  --edge-hi: oklch(100% 0 0 / 0.14);
+  --edge-lo: oklch(0% 0 0 / 0.3);
+  --inner-glow: oklch(100% 0 0 / 0.04);
+  --glow-dot: oklch(100% 0 0 / 0.08);
+  --blob-a: oklch(55% 0.08 192 / 0.14);
+  --blob-b: transparent;
+  --blob-c: oklch(40% 0.02 260 / 0.22);
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.3), 0 4px 12px -6px oklch(0% 0 0 / 0.4);
+  --shadow: 0 2px 6px oklch(0% 0 0 / 0.3), 0 20px 48px -20px oklch(0% 0 0 / 0.65);
+  --shadow-float: 0 1px 0 oklch(100% 0 0 / 0.06) inset, 0 2px 8px oklch(0% 0 0 / 0.3), 0 24px 56px -20px oklch(0% 0 0 / 0.7);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   color-scheme: dark;
 }
 
-/* ---------- Tailwind 4 主题映射 ----------
- * 把既有组件里的 zinc / blue / orange 工具类整体重定向到 OpenFlow 调色板：
- * zinc → 暖灰（hue 80）、blue → accent、orange → warn；
- * 深色模式下在 [data-theme] 内反转，无需逐个组件改造。 */
-@theme {
-  --color-zinc-50: oklch(97.5% 0.008 85);
-  --color-zinc-100: oklch(95% 0.01 85);
-  --color-zinc-200: oklch(91% 0.012 82);
-  --color-zinc-300: oklch(84% 0.012 80);
-  --color-zinc-400: oklch(66% 0.014 78);
-  --color-zinc-500: oklch(55% 0.014 75);
-  --color-zinc-600: oklch(46% 0.016 72);
-  --color-zinc-700: oklch(38% 0.016 70);
-  --color-zinc-800: oklch(30% 0.018 70);
-  --color-zinc-900: oklch(24% 0.02 70);
-  --color-zinc-950: oklch(20% 0.02 70);
+/* 明暗由 [data-theme] 驱动，dark: 变体必须跟随它而非系统（审计 C-6） */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
-  --color-blue-50: oklch(52% 0.17 258 / 0.07);
-  --color-blue-100: oklch(52% 0.17 258 / 0.13);
-  --color-blue-200: oklch(52% 0.17 258 / 0.24);
-  --color-blue-300: oklch(70% 0.14 258);
-  --color-blue-400: oklch(62% 0.15 258);
-  --color-blue-500: oklch(56% 0.16 258);
+/* ---------- Tailwind 4 主题映射 ----------
+ * 既有组件的 zinc / blue / amber / violet … 工具类整体重定向到 token；
+ * 明暗与预设通过 token 自动生效，组件层无需感知。 */
+@theme {
+  /* 中性：hue 260 石墨灰阶（深色在下方反转） */
+  --color-zinc-50: oklch(97.2% 0.003 260);
+  --color-zinc-100: oklch(95% 0.004 260);
+  --color-zinc-200: oklch(91% 0.005 260);
+  --color-zinc-300: oklch(84% 0.006 260);
+  --color-zinc-400: oklch(60% 0.008 260);
+  --color-zinc-500: oklch(53.5% 0.008 260);
+  --color-zinc-600: oklch(43% 0.008 260);
+  --color-zinc-700: oklch(36% 0.008 260);
+  --color-zinc-800: oklch(28% 0.008 260);
+  --color-zinc-900: oklch(23% 0.008 260);
+  --color-zinc-950: oklch(19% 0.008 260);
+
+  /* blue → accent（派生，预设换 accent 时整族跟随） */
+  --color-blue-50: oklch(from var(--accent) l c h / 0.07);
+  --color-blue-100: oklch(from var(--accent) l c h / 0.13);
+  --color-blue-200: oklch(from var(--accent) l c h / 0.24);
+  --color-blue-300: oklch(from var(--accent) calc(l + 0.16) c h);
+  --color-blue-400: oklch(from var(--accent) calc(l + 0.08) c h);
+  --color-blue-500: oklch(from var(--accent) calc(l + 0.03) c h);
   --color-blue-600: var(--accent);
   --color-blue-700: var(--accent-strong);
-  --color-blue-900: var(--accent-strong);
+  --color-blue-800: var(--accent-ink);
+  --color-blue-900: var(--accent-ink);
 
+  --color-sky-100: var(--info-soft);
+
+  /* amber / orange → warn */
+  --color-amber-50: oklch(from var(--warn) l c h / 0.08);
+  --color-amber-100: var(--warn-soft);
+  --color-amber-200: oklch(from var(--warn) l c h / 0.28);
+  --color-amber-300: oklch(from var(--warn) l c h / 0.5);
+  --color-amber-600: var(--warn);
+  --color-amber-700: var(--warn-ink);
+  --color-amber-800: var(--warn-ink);
+  --color-amber-900: var(--warn-ink);
   --color-orange-100: var(--warn-soft);
   --color-orange-500: var(--warn);
-  --color-orange-600: var(--warn);
+  --color-orange-600: var(--warn-ink);
 
   --color-red-50: var(--danger-soft);
+  --color-red-300: oklch(from var(--danger) l c h / 0.55);
+  --color-red-400: var(--danger);
   --color-red-500: var(--danger);
-  --color-red-600: var(--danger);
+  --color-red-600: var(--danger-ink);
 
   --color-green-100: var(--ok-soft);
   --color-green-600: var(--ok);
+  --color-green-700: var(--ok-ink);
 
-  --color-violet-500: oklch(58% 0.16 285);
-  --color-violet-600: oklch(52% 0.17 285);
+  /* violet → 订阅分类色 */
+  --color-violet-50: var(--cat-newsletter-soft);
+  --color-violet-400: var(--cat-newsletter);
+  --color-violet-500: var(--cat-newsletter);
+  --color-violet-600: var(--cat-newsletter);
+  --color-violet-700: var(--cat-newsletter);
 
+  /* 语义色名（新代码优先用这些） */
   --color-app: var(--bg);
   --color-panel: var(--surface-strong);
   --color-line: var(--border);
   --color-ink: var(--fg);
   --color-ink-2: var(--muted);
   --color-ink-3: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-selected: var(--selected);
+  --color-hover: var(--hover);
 
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
 
+  /* 2 · 字号表（7 级） */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-md: 16px;
+  --text-md--line-height: 22px;
+  --text-lg: 20px;
+  --text-lg--line-height: 26px;
+  --text-xl: 26px;
+  --text-xl--line-height: 32px;
+
+  /* 4 · 圆角：Tailwind 字面圆角全部重定向到 token（预设的「形」对全站生效） */
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-xs);
+  --radius-md: var(--r-sm);
+  --radius-lg: var(--r-sm);
+  --radius-xl: var(--r-md);
+  --radius-2xl: var(--r-lg);
+  --radius-3xl: var(--r-lg);
   --radius-ms-lg: var(--r-lg);
   --radius-ms-md: var(--r-md);
   --radius-ms-sm: var(--r-sm);
 
+  /* 6 · 动效 */
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --default-transition-duration: 160ms;
+  --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 深色模式下的中性色反转（暖灰 → 亮暖灰） */
+/* 深色：中性灰阶反转 + accent 族在亮 accent 上的派生方向反转 */
 [data-theme='dark'] {
-  --color-zinc-50: oklch(27% 0.016 75);
-  --color-zinc-100: oklch(24% 0.014 75);
-  --color-zinc-200: oklch(32% 0.014 75);
-  --color-zinc-300: oklch(45% 0.012 78);
-  --color-zinc-400: oklch(60% 0.012 80);
-  --color-zinc-500: oklch(68% 0.012 80);
-  --color-zinc-600: oklch(76% 0.01 82);
-  --color-zinc-700: oklch(82% 0.01 83);
-  --color-zinc-800: oklch(88% 0.008 84);
-  --color-zinc-900: oklch(93% 0.008 85);
-  --color-zinc-950: oklch(96% 0.008 85);
-  --color-blue-50: oklch(74% 0.13 258 / 0.08);
-  --color-blue-100: oklch(74% 0.13 258 / 0.15);
-  --color-blue-200: oklch(74% 0.13 258 / 0.26);
-  --color-blue-300: oklch(84% 0.1 258);
+  --color-zinc-50: oklch(23% 0.007 260);
+  --color-zinc-100: oklch(25% 0.007 260);
+  --color-zinc-200: oklch(31% 0.007 260);
+  --color-zinc-300: oklch(42% 0.007 260);
+  --color-zinc-400: oklch(62% 0.007 260);
+  --color-zinc-500: oklch(68% 0.006 260);
+  --color-zinc-600: oklch(75% 0.006 260);
+  --color-zinc-700: oklch(82% 0.005 260);
+  --color-zinc-800: oklch(88% 0.004 260);
+  --color-zinc-900: oklch(93% 0.004 95);
+  --color-zinc-950: oklch(96% 0.004 95);
+  --color-blue-300: oklch(from var(--accent) calc(l + 0.1) calc(c * 0.8) h);
   --color-blue-400: var(--accent-strong);
   --color-blue-500: var(--accent);
-  --color-blue-700: oklch(66% 0.13 258);
+  --color-blue-700: oklch(from var(--accent) calc(l - 0.08) c h);
 }
 
 /* ---------- 基础壳层 ---------- */
@@ -241,8 +370,11 @@ body,
   height: 100%;
   margin: 0;
   font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 18px;
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum' 0;
   user-select: none;
   cursor: default;
   overflow: hidden;
@@ -252,7 +384,7 @@ body {
   background: var(--bg);
 }
 
-/* OpenFlow 签名：固定环境光斑（蓝 / 紫 / 青 radial）铺在最底层，缓慢漂移呼吸 */
+/* L0 环境光：只留一团极淡 accent 光 + 一团纸色，缓慢漂移 */
 body::before {
   content: '';
   position: fixed;
@@ -260,24 +392,10 @@ body::before {
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(42% 34% at 82% -6%, var(--blob-a), transparent 70%),
-    radial-gradient(36% 30% at -8% 18%, var(--blob-b), transparent 70%),
-    radial-gradient(40% 34% at 55% 108%, var(--blob-c), transparent 70%);
-  animation: ambient-drift 52s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-/* 第二层光斑：反向漂移，叠加出「液体流动」的深度感 */
-body::after {
-  content: '';
-  position: fixed;
-  inset: -8%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(30% 26% at 18% 88%, var(--blob-b), transparent 70%),
-    radial-gradient(28% 24% at 92% 62%, var(--blob-c), transparent 70%);
-  animation: ambient-drift 64s ease-in-out infinite alternate-reverse;
+    radial-gradient(46% 38% at 86% -8%, var(--blob-a), transparent 70%),
+    radial-gradient(40% 34% at -6% 104%, var(--blob-c), transparent 70%),
+    radial-gradient(36% 30% at -8% 18%, var(--blob-b), transparent 70%);
+  animation: ambient-drift 96s ease-in-out infinite alternate;
   will-change: transform;
 }
 
@@ -286,55 +404,50 @@ body::after {
     transform: translate3d(0, 0, 0) scale(1);
   }
   to {
-    transform: translate3d(-2.5%, 2%, 0) scale(1.05);
+    transform: translate3d(-2%, 1.5%, 0) scale(1.04);
   }
 }
 
-/* ---------- Liquid Glass 材质 ----------
- * 规范依据：Apple WWDC25《Meet Liquid Glass》/ HIG Materials
- * - Glass 是「导航/控件层」材质：浮于内容之上，同屏少而精
- * - Regular 变体（默认）：模糊 + 亮度调节保证可读性；Clear 变体：高透，仅用于富媒体背景之上
- * - Lensing：边缘弯折背景光线（SVG 位移滤镜，见 lib/liquid-glass.ts），中心保持清晰
- * - Morph 语义：元素变大（菜单从按钮弹出）→ 材质变厚：更深阴影、更强折射、更柔散射（.pop-in.liquid-glass 自动视为 thick）
- * - 无障碍：prefers-reduced-transparency 降级为近实心面板 */
+/* ---------- 5 · 材质 ----------
+ * L1 框架 .glass —— 仅侧栏 / 标题栏
+ * C  内容 —— 实底 --surface-strong（不上玻璃）
+ * L2 浮层 .liquid-glass —— 菜单、popover、⌘K、toast、BulkBar；morph 时变厚
+ * Clear  .liquid-glass-clear —— 仅媒体之上
+ * 规范依据：Apple WWDC25《Meet Liquid Glass》/ HIG Materials；
+ * prefers-reduced-transparency 降级为实底（见文末） */
+/* 材质与按钮放进 components 层：Tailwind 工具类（absolute / fixed / rounded-* …）可覆盖它们，
+ * 否则无层样式会压过所有 @layer utilities（曾导致 fixed 浮层、toast、BulkBar 定位失效） */
+@layer components {
 .glass {
   background: var(--surface);
-  backdrop-filter: blur(20px) saturate(180%) brightness(1.04);
-  -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.04);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
 .glass-strong {
   background: var(--glass-bright);
-  backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
-  -webkit-backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+}
+.surface {
+  background: var(--surface-strong);
 }
 
-/* 浮层级液体玻璃：玻璃底 + 镜面高光(::before) + 折射描边 + 柔影 */
 .liquid-glass {
   position: relative;
   background: var(--glass-bright);
-  backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
-  -webkit-backdrop-filter: blur(28px) saturate(190%) brightness(1.06);
+  backdrop-filter: blur(32px) saturate(170%) brightness(1.04);
+  -webkit-backdrop-filter: blur(32px) saturate(170%) brightness(1.04);
   border: 1px solid var(--edge-hi);
   box-shadow:
     inset 0 1px 0 var(--spec-hi),
     inset 0 -1px 0 var(--edge-lo),
     inset 0 0 20px var(--inner-glow),
-    0 16px 48px -16px oklch(30% 0.04 80 / 0.25);
+    var(--shadow);
 }
-[data-theme='dark'] .liquid-glass {
-  box-shadow:
-    inset 0 1px 0 var(--spec-hi),
-    inset 0 -1px 0 var(--edge-lo),
-    inset 0 0 24px var(--inner-glow),
-    0 16px 48px -16px oklch(0% 0 0 / 0.6);
-}
-/* Chromium（Electron）下启用真折射：边缘 lensing 由 SVG 位移滤镜完成 */
 .lg-refract .liquid-glass {
-  backdrop-filter: url(#lg-lens) saturate(180%) brightness(1.06);
-  -webkit-backdrop-filter: url(#lg-lens) saturate(180%) brightness(1.06);
+  backdrop-filter: url(#lg-lens) saturate(170%) brightness(1.04);
+  -webkit-backdrop-filter: url(#lg-lens) saturate(170%) brightness(1.04);
 }
-
-/* 顶部弧形镜面高光 —— 液体玻璃的「液面反光」 */
 .liquid-glass::before {
   content: '';
   position: absolute;
@@ -343,8 +456,6 @@ body::after {
   pointer-events: none;
   background: linear-gradient(180deg, var(--spec-lo), transparent 38%);
 }
-
-/* Clear 变体：高透（HIG：仅用于富媒体背景之上的浮层，让内容透出来） */
 .liquid-glass-clear {
   background: oklch(100% 0 0 / 0.16);
   backdrop-filter: blur(10px) saturate(160%);
@@ -357,28 +468,20 @@ body::after {
 [data-theme='dark'] .liquid-glass-clear {
   background: oklch(20% 0 0 / 0.3);
 }
-
-/* Morph 变厚：浮层（pop-in）从按钮弹出时模拟更厚材质——更深阴影、更强折射、更柔散射 */
+/* Morph 变厚：从按钮弹出的浮层 */
 .liquid-glass.pop-in {
   box-shadow:
     inset 0 1px 0 var(--spec-hi),
     inset 0 -1px 0 var(--edge-lo),
     inset 0 0 28px var(--inner-glow),
-    0 28px 64px -20px oklch(30% 0.04 80 / 0.38);
-}
-[data-theme='dark'] .liquid-glass.pop-in {
-  box-shadow:
-    inset 0 1px 0 var(--spec-hi),
-    inset 0 -1px 0 var(--edge-lo),
-    inset 0 0 32px var(--inner-glow),
-    0 28px 64px -20px oklch(0% 0 0 / 0.7);
+    var(--shadow-float);
 }
 .lg-refract .liquid-glass.pop-in {
-  backdrop-filter: url(#lg-lens-thick) saturate(185%) brightness(1.08);
-  -webkit-backdrop-filter: url(#lg-lens-thick) saturate(185%) brightness(1.08);
+  backdrop-filter: url(#lg-lens-thick) saturate(175%) brightness(1.06);
+  -webkit-backdrop-filter: url(#lg-lens-thick) saturate(175%) brightness(1.06);
 }
 
-/* 指针跟随高光（交互创新）：hover 时一束光随鼠标在玻璃表面流动 */
+/* 指针跟随高光：仅 L2 浮层与主按钮使用 */
 [data-glow] {
   position: relative;
 }
@@ -389,24 +492,25 @@ body::after {
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.35s var(--ease-out);
-  background: radial-gradient(130px circle at var(--mx, 50%) var(--my, 50%), var(--glow-dot), transparent 70%);
+  transition: opacity var(--dur-3) var(--ease-out);
+  background: radial-gradient(120px circle at var(--mx, 50%) var(--my, 50%), var(--glow-dot), transparent 70%);
 }
 [data-glow]:hover::after {
   opacity: 1;
 }
 
-/* 液态按钮：渐变底 + 顶部高光 + 弹簧按压回弹 */
+/* 主按钮：accent 单色 + 顶部高光 + 弹簧按压 */
 .btn-liquid {
   position: relative;
   overflow: hidden;
   background: var(--accent-grad);
   color: var(--on-accent);
   box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 0.32),
-    inset 0 -1px 0 oklch(0% 0 0 / 0.12),
-    0 6px 20px -6px var(--accent);
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.25s var(--ease-out), filter 0.2s;
+    inset 0 1px 0 oklch(100% 0 0 / 0.22),
+    inset 0 -1px 0 oklch(0% 0 0 / 0.08),
+    0 1px 2px oklch(from var(--accent) calc(l - 0.2) c h / 0.25),
+    0 4px 12px -6px var(--accent);
+  transition: transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-2) var(--ease-out), filter var(--dur-2);
 }
 .btn-liquid::before {
   content: '';
@@ -414,35 +518,30 @@ body::after {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(180deg, oklch(100% 0 0 / 0.26), transparent 55%);
+  background: linear-gradient(180deg, oklch(100% 0 0 / 0.16), transparent 55%);
 }
 .btn-liquid:hover {
-  filter: brightness(1.07) saturate(1.1);
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 0.4),
-    inset 0 -1px 0 oklch(0% 0 0 / 0.1),
-    0 10px 28px -8px var(--accent);
-  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 .btn-liquid:active {
-  transform: scale(0.96);
-  filter: brightness(0.98);
+  transform: scale(0.97);
+  filter: brightness(0.97);
 }
 
-/* 玻璃质感图标按钮（工具栏通用） */
+/* 工具栏图标按钮：不做 hover 上浮（审计 D-7） */
 .icon-btn {
-  border-radius: 10px;
-  transition: background 0.18s var(--ease-out), transform 0.18s var(--ease-spring), color 0.18s;
+  border-radius: var(--r-sm);
+  transition: background var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-spring), color var(--dur-2);
 }
 .icon-btn:hover {
   background: var(--hover);
-  transform: translateY(-1px);
 }
 .icon-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.94);
+}
 }
 
-/* 兼容层：旧组件里的白色面板 / 灰底统一接入主题变量（预设与深色模式自动生效） */
+/* 兼容层：旧组件的白面板 / 灰底接入主题 */
 .bg-white {
   background-color: var(--surface-strong);
 }
@@ -451,6 +550,22 @@ body::after {
 }
 .bg-\[\#f0f0f3\] {
   background-color: var(--surface);
+}
+
+/* 排版工具类（type scale 之外的两种字距） */
+.caps {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.tight {
+  letter-spacing: var(--tracking-tight);
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 .selectable {
@@ -466,19 +581,18 @@ body::after {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 3px;
+  border: 2px solid transparent;
+  border-radius: 8px;
   background-clip: content-box;
-  transition: background 0.2s;
 }
 :hover::-webkit-scrollbar-thumb,
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
-  background-clip: content-box;
+  background-color: var(--border-strong);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -497,48 +611,13 @@ button {
 
 ::selection {
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: var(--accent-ink);
 }
 
-a:focus-visible,
-button:focus-visible,
-input:focus-visible {
+/* 焦点环：双环、跟随元素自身圆角（审计 D-6） */
+:where(a, button, input, select, textarea, [role='option'], [role='tab'], [tabindex]):focus-visible {
   outline: none;
-  box-shadow:
-    0 0 0 3px var(--accent-soft),
-    0 0 0 1px var(--accent);
-  border-radius: 9px;
-}
-
-/* 减少动态偏好：关闭光斑漂移与微动画 */
-@media (prefers-reduced-motion: reduce) {
-  body::before,
-  body::after {
-    animation: none;
-  }
-  .fade-in,
-  .pop-in {
-    animation-duration: 0.01s;
-  }
-  .btn-liquid,
-  .icon-btn {
-    transition: none;
-  }
-}
-
-/* 系统降低透明度：玻璃降级为近实心面板（保留形态与层次，去掉通透） */
-@media (prefers-reduced-transparency: reduce) {
-  .glass,
-  .glass-strong,
-  .liquid-glass {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background: var(--surface);
-  }
-  .liquid-glass::before,
-  [data-glow]::after {
-    display: none;
-  }
+  box-shadow: var(--focus-ring);
 }
 
 @keyframes fade-in {
@@ -552,18 +631,17 @@ input:focus-visible {
   }
 }
 .fade-in {
-  animation: fade-in 0.18s var(--ease-out);
+  animation: fade-in var(--dur-2) var(--ease-out);
 }
 
 @keyframes pop-in {
-  /* 液态生成：按 WWDC25 规范以「光线弯折调制」渐显——体积先收缩后回弹，玻璃从薄到厚落位 */
   0% {
     opacity: 0;
-    transform: translateY(6px) scale(0.92);
+    transform: translateY(4px) scale(0.96);
   }
   60% {
     opacity: 1;
-    transform: translateY(-1px) scale(1.015);
+    transform: translateY(-1px) scale(1.005);
   }
   100% {
     opacity: 1;
@@ -571,7 +649,7 @@ input:focus-visible {
   }
 }
 .pop-in {
-  animation: pop-in 0.32s var(--ease-spring);
+  animation: pop-in var(--dur-3) var(--ease-spring);
 }
 
 @keyframes spin-slow {
@@ -583,7 +661,7 @@ input:focus-visible {
   animation: spin-slow 1s linear infinite;
 }
 
-/* 点击预览骨架屏 */
+/* 骨架屏 */
 @keyframes shimmer {
   0% {
     opacity: 0.5;
@@ -600,23 +678,24 @@ input:focus-visible {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* 邮件正文（shadow DOM 内也需要的基础样式） */
+/* 邮件正文（shadow DOM 外层宿主） */
 .mail-body-host {
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 22px;
 }
 
-/* 过滤标签行：隐藏横向滚动条（保留滚动能力） */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   scrollbar-width: none;
 }
+/* 横向溢出渐隐（过滤 chip 行） */
+.fade-x {
+  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 24px), transparent);
+}
 
 /* ---------- 交互创新：波纹 / 投放井 / 声呐 / 液态重排 ---------- */
-
-/* 波纹扩散：从操作点（或声呐源）向外扩散的两圈玻璃涟漪 */
 @keyframes ripple-ring {
   0% {
     transform: scale(0.55);
@@ -633,17 +712,16 @@ input:focus-visible {
   border-radius: 9999px;
   border: 1.5px solid var(--accent);
   pointer-events: none;
-  animation: ripple-ring 1.4s ease-out infinite;
+  animation: ripple-ring 1.4s var(--ease-out) infinite;
 }
 
-/* 液态投放井：休眠时轻微呼吸；拖拽靠近时张开 + 泛光 */
 @keyframes well-breathe {
   0%,
   100% {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.05);
+    transform: scale(1.04);
   }
 }
 .drop-well {
@@ -651,20 +729,18 @@ input:focus-visible {
 }
 .drop-well-hot {
   animation: none;
-  transform: scale(1.22);
+  transform: scale(1.18);
   border-color: var(--accent) !important;
   box-shadow:
     inset 0 1px 0 var(--spec-hi),
     inset 0 -1px 0 var(--edge-lo),
-    inset 0 0 24px var(--inner-glow),
     0 0 0 6px var(--accent-soft),
     0 18px 48px -12px var(--accent) !important;
 }
 
-/* 声呐态搜索胶囊入场 */
 @keyframes sonar-rise {
   from {
-    transform: translate(-50%, 14px) scale(0.94);
+    transform: translate(-50%, 8px) scale(0.96);
     opacity: 0;
   }
   to {
@@ -673,23 +749,50 @@ input:focus-visible {
   }
 }
 .sonar-rise {
-  animation: sonar-rise 0.28s var(--ease-spring) both;
+  animation: sonar-rise var(--dur-3) var(--ease-spring) both;
 }
 
-/* View Transitions：液态重排 / 时光机倒带时的流动位移 */
 ::view-transition-old(*),
 ::view-transition-new(*) {
-  animation-duration: 0.26s;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-duration: var(--dur-4);
+  animation-timing-function: var(--ease-out);
 }
 ::view-transition-group(*) {
-  animation-duration: 0.26s;
+  animation-duration: var(--dur-4);
 }
 
-/* 动效降级：用户偏好减少动态效果时关闭液态装饰动画 */
+/* ---------- 无障碍降级 ---------- */
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-3: 0ms;
+    --dur-4: 0ms;
+  }
+  body::before,
   .ripple-ring,
   .drop-well {
     animation: none;
+  }
+  .fade-in,
+  .pop-in,
+  .sonar-rise {
+    animation-duration: 0.01s;
+  }
+  .btn-liquid,
+  .icon-btn {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .liquid-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--surface-strong);
+  }
+  .liquid-glass::before,
+  [data-glow]::after {
+    display: none;
   }
 }

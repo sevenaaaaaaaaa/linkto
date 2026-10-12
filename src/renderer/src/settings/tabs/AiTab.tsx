@@ -126,16 +126,16 @@ export function AiTab() {
         <Toggle checked={s.enabled} onChange={v => update({ enabled: v })} />
       </SettingRow>
 
-      <div className={`rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1 mt-3 ${s.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
-        <div className="flex items-center gap-3 py-3 border-b border-black/[0.04]">
-          <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">预设</span>
+      <div className={`rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1 mt-3 ${s.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+        <div className="flex items-center gap-3 py-3 border-b border-ink/[0.04]">
+          <span className="w-24 text-sm text-zinc-700 shrink-0">预设</span>
           <div className="flex gap-1.5 flex-wrap">
             {PRESETS.map(p => (
               <button
                 key={p.label}
                 onClick={() => update({ baseURL: p.baseURL, model: p.model || s.model })}
-                className={`text-[12.5px] px-2.5 py-1 rounded-full transition ${
-                  s.baseURL === p.baseURL ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                className={`text-xs px-2.5 py-1 rounded-full transition ${
+                  s.baseURL === p.baseURL ? 'bg-blue-600 text-on-accent' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
                 }`}
               >
                 {p.label}
@@ -145,10 +145,10 @@ export function AiTab() {
         </div>
 
         {/* 内置本地引擎：仅轻量任务（结构化 AI 建议用 API 或本地部署端点） */}
-        <div className="py-3 border-b border-black/[0.04]">
+        <div className="py-3 border-b border-ink/[0.04]">
           <div className="flex items-center gap-3">
-            <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">内置引擎</span>
-            <span className="text-[12px] text-zinc-500 flex-1">
+            <span className="w-24 text-sm text-zinc-700 shrink-0">内置引擎</span>
+            <span className="text-xs text-zinc-500 flex-1">
               轻量备用：仅适合摘要 / 翻译等简单任务（Metal GPU 加速 · 断网可用 · 内容不出机）。
               <b className="text-zinc-700">智能洞察 / 筛选判定 / AI 搜索等结构化功能请用上方 API 预设或本地部署 7B+ 模型</b>
               ，4B 级端侧模型无法可靠完成。
@@ -162,27 +162,27 @@ export function AiTab() {
                 <div key={m.id} className="flex items-center gap-2.5 rounded-xl bg-zinc-50 px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-zinc-800">{m.label}</span>
-                      <span className="text-[11.5px] text-zinc-400">{m.desc} · {m.sizeText}</span>
-                      {active && <span className="text-[11px] px-1.5 py-px rounded bg-green-100 text-green-600">使用中</span>}
-                      {m.downloaded && !active && <span className="text-[11px] text-zinc-400">已下载</span>}
+                      <span className="text-sm font-medium text-zinc-800">{m.label}</span>
+                      <span className="text-xs text-zinc-400">{m.desc} · {m.sizeText}</span>
+                      {active && <span className="text-2xs px-1.5 py-px rounded-sm bg-green-100 text-green-600">使用中</span>}
+                      {m.downloaded && !active && <span className="text-2xs text-zinc-400">已下载</span>}
                     </div>
                     {downloading && (
                       <div className="mt-1.5 flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-zinc-200 overflow-hidden">
                           <div className="h-full bg-blue-600 transition-all" style={{ width: `${dl?.percent ?? 0}%` }} />
                         </div>
-                        <span className="text-[11.5px] text-zinc-500 tabular-nums w-9">{dl?.percent ?? 0}%</span>
-                        <button onClick={() => void api.aiLocalCancelDownload()} className="text-[11.5px] text-zinc-400 hover:text-red-500">取消</button>
+                        <span className="text-xs text-zinc-500 tabular-nums w-9">{dl?.percent ?? 0}%</span>
+                        <button onClick={() => void api.aiLocalCancelDownload()} className="text-xs text-zinc-400 hover:text-red-500">取消</button>
                       </div>
                     )}
-                    {dl?.done && dl.error && dl.modelId === m.id && <div className="text-[11.5px] text-red-500 mt-1">{dl.error}</div>}
+                    {dl?.done && dl.error && dl.modelId === m.id && <div className="text-xs text-red-500 mt-1">{dl.error}</div>}
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
                     {downloading ? null : m.downloaded ? (
                       <>
                         {!active && (
-                          <button onClick={() => update({ baseURL: 'builtin-local', model: m.id })} className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                          <button onClick={() => update({ baseURL: 'builtin-local', model: m.id })} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-on-accent hover:bg-blue-700">
                             启用
                           </button>
                         )}
@@ -191,7 +191,7 @@ export function AiTab() {
                             await api.aiLocalRemove(m.id)
                             reloadLocal()
                           }}
-                          className="text-[12px] text-zinc-400 hover:text-red-500"
+                          className="text-xs text-zinc-400 hover:text-red-500"
                         >
                           删除
                         </button>
@@ -199,7 +199,7 @@ export function AiTab() {
                     ) : (
                       <button
                         onClick={() => void api.aiLocalDownload(m.id)}
-                        className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                        className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
                       >
                         下载
                       </button>
@@ -212,24 +212,24 @@ export function AiTab() {
         </div>
 
         {/* 本地推理：一键探测 + 模型列表 + 安装引导 */}
-        <div className="flex items-center gap-3 py-3 border-b border-black/[0.04]">
-          <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">本地模型</span>
+        <div className="flex items-center gap-3 py-3 border-b border-ink/[0.04]">
+          <span className="w-24 text-sm text-zinc-700 shrink-0">本地模型</span>
           <button
             onClick={probeLocal}
             disabled={probe === 'probing'}
-            className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
           >
             {probe === 'probing' ? '探测中…' : '探测本机推理服务'}
           </button>
           {probe === 'found' && probeInfo && (
-            <span className="text-[12.5px] text-green-600">✓ {probeInfo.provider} 在线（{probeInfo.models.length} 个模型，已列出在下方）</span>
+            <span className="text-xs text-green-600">✓ {probeInfo.provider} 在线（{probeInfo.models.length} 个模型，已列出在下方）</span>
           )}
-          {probe === 'none' && <span className="text-[12.5px] text-zinc-500">未检测到本地服务</span>}
+          {probe === 'none' && <span className="text-xs text-zinc-500">未检测到本地服务</span>}
         </div>
         {probe === 'none' && (
-          <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200/60 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
+          <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200/60 px-3.5 py-2.5 text-xs leading-relaxed text-amber-800">
             推荐安装 <b>Ollama</b> 跑端侧小模型（断网可用、隐私不出机）：
-            <code className="block mt-1 bg-white/70 rounded-md px-2 py-1 font-mono text-[11.5px]">brew install --cask ollama && ollama pull qwen3:8b</code>
+            <code className="block mt-1 bg-white/70 rounded-md px-2 py-1 font-mono text-xs">brew install --cask ollama && ollama pull qwen3:8b</code>
             <div className="mt-1 text-amber-700">结构化 AI（洞察/筛选/搜索）建议 7B+：qwen3:8b · llama3.1:8b · gemma3:12b，全部本机运行，内容不出机。</div>
           </div>
         )}
@@ -244,21 +244,21 @@ export function AiTab() {
         />
         <Field label="模型" value={s.model} onChange={v => update({ model: v })} placeholder="glm-4.7" mono />
         {(fetchedModels.length > 0 || isLocal) && (
-          <div className="flex items-start gap-3 py-3 border-b border-black/[0.04]">
-            <span className="w-24 text-[13.5px] text-zinc-700 shrink-0 pt-0.5">可用模型</span>
+          <div className="flex items-start gap-3 py-3 border-b border-ink/[0.04]">
+            <span className="w-24 text-sm text-zinc-700 shrink-0 pt-0.5">可用模型</span>
             <div className="flex-1">
-              <button onClick={fetchModels} className="text-[12px] text-blue-600 hover:underline">
+              <button onClick={fetchModels} className="text-xs text-blue-600 hover:underline">
                 {fetchedModels.length ? '刷新模型列表' : '从服务拉取模型列表'}
               </button>
-              {fetchMsg && <span className="ml-2 text-[12px] text-zinc-400">{fetchMsg}</span>}
+              {fetchMsg && <span className="ml-2 text-xs text-zinc-400">{fetchMsg}</span>}
               {fetchedModels.length > 0 && (
                 <div className="flex gap-1.5 flex-wrap mt-1.5">
                   {fetchedModels.map(m => (
                     <button
                       key={m}
                       onClick={() => update({ model: m })}
-                      className={`text-[11.5px] px-2 py-0.5 rounded-full border transition font-mono ${
-                        s.model === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-zinc-50 text-zinc-600 border-black/[0.08] hover:bg-zinc-100'
+                      className={`text-xs px-2 py-0.5 rounded-full border transition font-mono ${
+                        s.model === m ? 'bg-blue-600 text-on-accent border-blue-600' : 'bg-zinc-50 text-zinc-600 border-ink/[0.08] hover:bg-zinc-100'
                       }`}
                     >
                       {m}
@@ -271,43 +271,43 @@ export function AiTab() {
         )}
 
         <div className="flex items-center gap-3 py-3">
-          <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">连接测试</span>
+          <span className="w-24 text-sm text-zinc-700 shrink-0">连接测试</span>
           <button
             onClick={test}
             disabled={testing === 'testing'}
-            className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
           >
             {testing === 'testing' ? '测试中…' : '测试连接'}
           </button>
-          {testing === 'ok' && <span className="text-[12.5px] text-green-600">✓ {testMsg}</span>}
-          {testing === 'fail' && <span className="text-[12.5px] text-red-500">✕ {testMsg}</span>}
+          {testing === 'ok' && <span className="text-xs text-green-600">✓ {testMsg}</span>}
+          {testing === 'fail' && <span className="text-xs text-red-500">✕ {testMsg}</span>}
         </div>
       </div>
 
       <SectionTitle>自定义咒语</SectionTitle>
-      <div className="text-[12.5px] text-zinc-500 mb-2">启用的咒语会追加到所有 AI 功能的系统提示（摘要 / 起草 / 问答 / 商情 / 洞察），例如「回复保持简洁正式，不超过 120 字」。</div>
+      <div className="text-xs text-zinc-500 mb-2">启用的咒语会追加到所有 AI 功能的系统提示（摘要 / 起草 / 问答 / 商情 / 洞察），例如「回复保持简洁正式，不超过 120 字」。</div>
       {(s.customPrompts ?? []).map(p => (
-        <div key={p.id} className="rounded-xl bg-white border border-black/[0.06] shadow-sm px-3.5 py-2.5 mb-2">
+        <div key={p.id} className="rounded-xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-3.5 py-2.5 mb-2">
           <div className="flex items-center gap-2.5">
             <input
               value={p.name}
               onChange={e => updatePrompt(p.id, { name: e.target.value })}
-              className="w-32 text-[13px] bg-zinc-50 rounded-lg px-2 py-1 outline-none border border-black/[0.05]"
+              className="w-32 text-sm bg-zinc-50 rounded-lg px-2 py-1 outline-none border border-ink/[0.05]"
             />
             <Toggle checked={p.enabled} onChange={v => updatePrompt(p.id, { enabled: v })} />
             <div className="flex-1" />
-            <button onClick={() => removePrompt(p.id)} className="text-[12px] text-zinc-400 hover:text-red-500">删除</button>
+            <button onClick={() => removePrompt(p.id)} className="text-xs text-zinc-400 hover:text-red-500">删除</button>
           </div>
           <textarea
             value={p.text}
             onChange={e => updatePrompt(p.id, { text: e.target.value })}
             placeholder="写你的咒语，例如：用中文回复；先给结论再给细节；语气专业但不生硬…"
             rows={3}
-            className="mt-2 w-full text-[12.5px] bg-zinc-50 rounded-lg px-2.5 py-2 outline-none border border-black/[0.05] resize-y leading-relaxed"
+            className="mt-2 w-full text-xs bg-zinc-50 rounded-lg px-2.5 py-2 outline-none border border-ink/[0.05] resize-y leading-relaxed"
           />
         </div>
       ))}
-      <button onClick={addPrompt} className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200">
+      <button onClick={addPrompt} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200">
         + 添加咒语
       </button>
 
@@ -323,7 +323,7 @@ export function AiTab() {
       </SettingRow>
 
       <SectionTitle>隐私说明</SectionTitle>
-      <div className="text-[12.5px] leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">
+      <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">
         邮件内容仅在你主动触发（摘要 / 起草 / 问答）或开启自动化时，才会发送给你所配置的 AI 服务。选择 Ollama / LM Studio 等本地模型时，内容完全不出本机。
         分类使用本地启发式规则优先，AI 仅作兜底。API Key 与密码一样保存在本机钥匙串中。
       </div>
@@ -333,14 +333,14 @@ export function AiTab() {
 
 function Field(props: { label: string; value: string; onChange(v: string): void; placeholder?: string; type?: string; mono?: boolean }) {
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-black/[0.04]">
-      <span className="w-24 text-[13.5px] text-zinc-700 shrink-0">{props.label}</span>
+    <div className="flex items-center gap-3 py-2.5 border-b border-ink/[0.04]">
+      <span className="w-24 text-sm text-zinc-700 shrink-0">{props.label}</span>
       <input
         type={props.type ?? 'text'}
         value={props.value}
         onChange={e => props.onChange(e.target.value)}
         placeholder={props.placeholder}
-        className={`flex-1 text-[13px] bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-black/[0.05] ${props.mono ? 'font-mono' : ''}`}
+        className={`flex-1 text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05] ${props.mono ? 'font-mono' : ''}`}
       />
     </div>
   )

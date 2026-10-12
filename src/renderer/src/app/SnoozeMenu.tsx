@@ -1,3 +1,4 @@
+import { IconSparkles } from '../components/icons'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 
@@ -58,7 +59,7 @@ export function SnoozeMenu(props: {
       return
     }
     props.onPick(res.at)
-    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 建议 ${fmtSnooze(res.at)}：${res.reason}` }))
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `AI 建议 ${fmtSnooze(res.at)}：${res.reason}` }))
   }
 
   useEffect(() => {
@@ -80,28 +81,28 @@ export function SnoozeMenu(props: {
       className="absolute z-40 w-[218px] glass-strong rounded-[var(--r-sm)] border border-[var(--glass-border)] shadow-[var(--shadow)] p-1.5 pop-in"
       style={props.align === 'left' ? { left: 0 } : { right: 0 }}
     >
-      <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+      <div className="px-2 pt-1 pb-1.5 text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
         稍后处理 · 到点自动回归
       </div>
       {snoozeTargets().map(t => (
         <button
           key={t.key}
           onClick={() => props.onPick(t.at)}
-          className="w-full flex items-center px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)]"
+          className="w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)]"
           style={{ color: 'var(--fg)' }}
         >
           <span className="flex-1 text-left">{t.label}</span>
-          <span className="text-[10.5px]" style={{ color: 'var(--faint)' }}>{fmtSnooze(t.at)}</span>
+          <span className="text-2xs" style={{ color: 'var(--faint)' }}>{fmtSnooze(t.at)}</span>
         </button>
       ))}
       {props.messageId && (
         <button
           onClick={askAi}
           disabled={suggesting}
-          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)] disabled:opacity-50"
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)] disabled:opacity-50"
           style={{ color: 'var(--accent-strong)' }}
         >
-          ✨ {suggesting ? 'AI 判断中…' : 'AI 建议最佳时刻'}
+          <IconSparkles width={11} height={11} /> {suggesting ? 'AI 判断中…' : 'AI 建议最佳时刻'}
         </button>
       )}
       <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-1">
@@ -109,13 +110,13 @@ export function SnoozeMenu(props: {
           type="datetime-local"
           value={custom}
           onChange={e => setCustom(e.target.value)}
-          className="flex-1 min-w-0 text-[11.5px] rounded-lg px-2 py-1 outline-none border border-[var(--border-soft)]"
+          className="flex-1 min-w-0 text-xs rounded-lg px-2 py-1 outline-none border border-[var(--border-soft)]"
           style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
         />
         <button
           onClick={commitCustom}
           disabled={!custom}
-          className="text-[11.5px] px-2 py-1 rounded-lg font-medium disabled:opacity-40"
+          className="text-xs px-2 py-1 rounded-lg font-medium disabled:opacity-40"
           style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
         >
           确定
@@ -124,7 +125,7 @@ export function SnoozeMenu(props: {
       {props.currentlySnoozed && props.onUnsnooze && (
         <button
           onClick={() => props.onUnsnooze?.()}
-          className="w-full text-left px-2.5 py-1.5 rounded-[8px] text-[12px] hover:bg-[var(--hover)]"
+          className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)]"
           style={{ color: 'var(--danger)' }}
         >
           立即取回收件箱

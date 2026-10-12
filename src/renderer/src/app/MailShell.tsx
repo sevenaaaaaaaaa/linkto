@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useView } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
 import { MessageList } from './MessageList'
@@ -14,19 +15,8 @@ import { cycleTheme, themeLabel } from '../lib/theme'
 import { IconClock } from '../components/icons'
 import type { ScheduledSend } from '@shared/types'
 
-type View = 'mail' | 'kb' | 'insights' | 'agent'
-
-const viewFromHash = (): View =>
-  location.hash.startsWith('#/kb')
-    ? 'kb'
-    : location.hash.startsWith('#/insights')
-      ? 'insights'
-      : location.hash.startsWith('#/agent')
-        ? 'agent'
-        : 'mail'
-
 export function MailShell() {
-  const [view, setView] = useState<View>(viewFromHash)
+  const view = useView()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [outbox, setOutbox] = useState<ScheduledSend[]>([])
@@ -37,12 +27,6 @@ export function MailShell() {
   }, [])
 
   const loadOutbox = () => void api.listScheduledSends().then(setOutbox)
-
-  useEffect(() => {
-    const onHash = () => setView(viewFromHash())
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
 
   // 全局 toast（主题 / 预设 / 命令面板反馈）+ 发件队列事件
   useEffect(() => {
@@ -141,6 +125,11 @@ export function MailShell() {
 
       const state = useMail.getState()
       const idx = state.messages.findIndex(m => m.id === state.selectedId)
+      // Esc：退出多选模式
+      if (e.key === 'Escape' && (state.selectedIds.size > 1 || (state.selectedIds.size === 1 && !state.selectedIds.has(state.selectedId ?? '')))) {
+        useMail.setState({ selectedIds: state.selectedId ? new Set([state.selectedId]) : new Set() })
+        return
+      }
       if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault()
         const next = state.messages[Math.min(idx + 1, state.messages.length - 1)]
@@ -176,7 +165,7 @@ export function MailShell() {
         window.dispatchEvent(new CustomEvent('ms:snooze-menu', { detail: [state.selectedId] }))
       } else if (e.key === 'f' && meta) {
         e.preventDefault()
-        ;(document.querySelector('input[placeholder="搜索邮件"]') as HTMLInputElement | null)?.focus()
+        ;(document.querySelector('input[data-mail-search]') as HTMLInputElement | null)?.focus()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -202,22 +191,22 @@ export function MailShell() {
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (
         <div className="fixed bottom-6 right-6 z-40 w-[300px] liquid-glass rounded-[var(--r-md)] p-2 pop-in">
-          <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+          <div className="px-2 pt-1 pb-1.5 text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
             发件队列 · {outbox.length}
           </div>
           <div className="flex flex-col gap-0.5 max-h-[220px] overflow-y-auto">
             {outbox.map(s => (
-              <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded-[10px]">
+              <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
                 <span className="leading-none shrink-0" style={{ color: 'var(--warn)' }}><IconClock width={14} height={14} /></span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{s.subject || '（无主题）'}</div>
-                  <div className="text-[11px]" style={{ color: 'var(--faint)' }}>
+                  <div className="text-xs truncate" style={{ color: 'var(--fg)' }}>{s.subject || '（无主题）'}</div>
+                  <div className="text-2xs" style={{ color: 'var(--faint)' }}>
                     {new Date(s.sendAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} → {s.to[0] ?? ''}
                   </div>
                 </div>
                 <button
                   onClick={() => void api.cancelScheduledSend(s.id)}
-                  className="text-[11.5px] px-2 py-1 rounded-lg shrink-0 hover:bg-[var(--hover)]"
+                  className="text-xs px-2 py-1 rounded-lg shrink-0 hover:bg-[var(--hover)]"
                   style={{ color: 'var(--danger)' }}
                 >
                   撤销
@@ -229,7 +218,7 @@ export function MailShell() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full liquid-glass text-[13px] fade-in" style={{ color: 'var(--fg)' }}>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full liquid-glass text-sm fade-in" style={{ color: 'var(--fg)' }}>
           {toast}
         </div>
       )}

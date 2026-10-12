@@ -69,7 +69,7 @@ export function ThemeMenu() {
 
       {open && (
         <div className="liquid-glass absolute bottom-10 left-0 z-40 w-[300px] rounded-[var(--r-md)] p-2 pop-in">
-          <div className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+          <div className="px-2 pt-1 pb-1.5 text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
             主题预设 · 来自 OpenFlow
           </div>
           <div className="max-h-[300px] overflow-y-auto flex flex-col gap-0.5">
@@ -79,7 +79,7 @@ export function ThemeMenu() {
                 <button
                   key={p.id}
                   onClick={() => apply(p.id)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-left border transition-colors"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left border transition-colors"
                   style={{
                     borderColor: active ? 'var(--accent)' : 'transparent',
                     background: active ? 'var(--accent-soft)' : 'transparent'
@@ -92,13 +92,13 @@ export function ThemeMenu() {
                   }}
                 >
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[12.5px] font-semibold truncate" style={{ color: 'var(--fg)' }}>{p.name}</span>
-                    <span className="block text-[11px] truncate" style={{ color: 'var(--faint)' }}>{p.desc}</span>
+                    <span className="block text-xs font-semibold truncate" style={{ color: 'var(--fg)' }}>{p.name}</span>
+                    <span className="block text-2xs truncate" style={{ color: 'var(--faint)' }}>{p.desc}</span>
                   </span>
                   <span className="flex gap-1 shrink-0">
-                    <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.light.bg }} />
-                    <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.light.accent }} />
-                    <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.dark.bg }} />
+                    <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.light.bg }} />
+                    <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.light.accent }} />
+                    <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.dark.bg }} />
                   </span>
                 </button>
               )

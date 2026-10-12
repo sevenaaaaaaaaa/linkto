@@ -167,6 +167,24 @@ export const IconMore = (p: P) => (
   </svg>
 )
 
+/** 标为未读：信封 + 右上未读点（替代原先误用的刷新图标，审计 IA-10） */
+export const IconMailDot = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M20 13v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h8" />
+    <path d="m4 8 8 5 3.2-2" />
+    <circle cx="19" cy="6" r="2.5" />
+  </svg>
+)
+
+/** 筛选：三道递减横线 */
+export const IconFilter = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 7h16" />
+    <path d="M7 12h10" />
+    <path d="M10 17h4" />
+  </svg>
+)
+
 export const IconUnsub = (p: P) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="10" />

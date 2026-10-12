@@ -7,15 +7,15 @@ import {
 import type { GeneralSettings } from '@shared/types'
 
 export function SectionTitle(props: { children: React.ReactNode }) {
-  return <div className="text-[12px] font-medium text-zinc-400 uppercase tracking-wide mb-1 mt-5">{props.children}</div>
+  return <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-1 mt-5">{props.children}</div>
 }
 
 export function SettingRow(props: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
+    <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
       <div className="flex-1 min-w-0">
-        <div className="text-[13.5px] text-zinc-800">{props.label}</div>
-        {props.desc && <div className="text-[12px] text-zinc-400 mt-0.5">{props.desc}</div>}
+        <div className="text-sm text-zinc-800">{props.label}</div>
+        {props.desc && <div className="text-xs text-zinc-400 mt-0.5">{props.desc}</div>}
       </div>
       {props.children}
     </div>
@@ -31,7 +31,7 @@ export function Toggle(props: { checked: boolean; onChange(v: boolean): void }) 
       }`}
     >
       <span
-        className={`absolute top-[2.5px] w-[20px] h-[20px] rounded-full bg-white shadow transition-all ${
+        className={`absolute top-[2.5px] w-[20px] h-[20px] rounded-full bg-white shadow-[var(--shadow)] transition-all ${
           props.checked ? 'left-[19px]' : 'left-[2.5px]'
         }`}
       />
@@ -44,7 +44,7 @@ export function Select(props: { value: string; onChange(v: string): void; option
     <select
       value={props.value}
       onChange={e => props.onChange(e.target.value)}
-      className="no-drag text-[13px] bg-zinc-100 rounded-lg px-2.5 py-1.5 outline-none border border-black/[0.05]"
+      className="no-drag text-sm bg-zinc-100 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05]"
     >
       {props.options.map(o => (
         <option key={o.value} value={o.value}>
@@ -119,7 +119,7 @@ export function GeneralTab() {
       </SettingRow>
 
       <SectionTitle>快捷键</SectionTitle>
-      <div className="text-[13px] text-zinc-600 leading-loose">
+      <div className="text-sm text-zinc-600 leading-loose">
         <Kbd>⌘K</Kbd> 命令面板 · <Kbd>⌘N</Kbd> 写邮件 · <Kbd>⌘F</Kbd> 搜索 · <Kbd>⌘T</Kbd> 明暗 · <Kbd>⌘,</Kbd> 设置
         <br />
         <Kbd>J</Kbd>/<Kbd>K</Kbd> 下一封 / 上一封 · <Kbd>R</Kbd> 回复 · <Kbd>A</Kbd> 归档 · <Kbd>⌫</Kbd> 删除
@@ -147,20 +147,20 @@ function AppearancePanel() {
 
   const BUILTIN = 'default'
   return (
-    <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm p-4">
+    <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] p-4">
       <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100 w-fit mb-4">
         {(['auto', 'light', 'dark'] as ThemePref[]).map(p => (
           <button
             key={p}
             onClick={() => setThemePref(p)}
-            className="text-[12.5px] px-3.5 py-1.5 rounded-lg transition-all"
+            className="text-xs px-3.5 py-1.5 rounded-lg transition-all"
             style={pref === p ? { background: 'var(--surface-strong)', color: 'var(--accent-strong)', boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
           >
             {p === 'auto' ? '跟随系统' : p === 'light' ? '浅色' : '深色'}
           </button>
         ))}
       </div>
-      <div className="text-[12px] text-zinc-400 mb-2.5">主题预设 · 来自 OpenFlow 设计系统，点击即换肤，再点一次恢复内置</div>
+      <div className="text-xs text-zinc-400 mb-2.5">主题预设 · 来自 OpenFlow 设计系统，点击即换肤，再点一次恢复内置</div>
       <div className="grid grid-cols-2 gap-2">
         {THEME_PRESETS.map(p => {
           const active = presetId === p.id && p.id !== BUILTIN
@@ -180,19 +180,19 @@ function AppearancePanel() {
               }}
             >
               <span className="flex-1 min-w-0">
-                <span className="block text-[12.5px] font-semibold truncate" style={{ color: 'var(--fg)' }}>{p.name}</span>
-                <span className="block text-[11px] truncate" style={{ color: 'var(--faint)' }}>{p.desc}</span>
+                <span className="block text-xs font-semibold truncate" style={{ color: 'var(--fg)' }}>{p.name}</span>
+                <span className="block text-2xs truncate" style={{ color: 'var(--faint)' }}>{p.desc}</span>
               </span>
               <span className="flex gap-1 shrink-0">
-                <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.light.bg }} />
-                <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.light.accent }} />
-                <i className="w-3.5 h-3.5 rounded-[5px] border border-black/10" style={{ background: p.dark.bg }} />
+                <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.light.bg }} />
+                <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.light.accent }} />
+                <i className="w-3.5 h-3.5 rounded-xs border border-ink/10" style={{ background: p.dark.bg }} />
               </span>
             </button>
           )
         })}
       </div>
-      <div className="mt-3 text-[12px] text-zinc-400 leading-relaxed">
+      <div className="mt-3 text-xs text-zinc-400 leading-relaxed">
         阅读风格（信纸皮肤）在阅读窗右上角「风格」菜单切换，24 款设计风格独立于应用主题。
       </div>
     </div>
@@ -204,7 +204,7 @@ function About() {  const [v, setV] = useState<{ app: string; electron: string; 
     void api.getVersions().then(setV)
   }, [])
   return (
-    <div className="text-[12.5px] text-zinc-400 leading-relaxed">
+    <div className="text-xs text-zinc-400 leading-relaxed">
       LinkTo 林可兔 {v?.app} · AI 原生邮件工作台
       <br />
       Electron {v?.electron} · Node {v?.node} · LinKTo / OpenFlow 家族
@@ -214,7 +214,7 @@ function About() {  const [v, setV] = useState<{ app: string; electron: string; 
 
 function Kbd(props: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-block px-1.5 py-0.5 rounded-md bg-zinc-100 border border-black/[0.06] text-[11.5px] font-mono text-zinc-600">
+    <kbd className="inline-block px-1.5 py-0.5 rounded-md bg-zinc-100 border border-ink/[0.06] text-xs font-mono text-zinc-600">
       {props.children}
     </kbd>
   )

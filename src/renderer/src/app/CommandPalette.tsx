@@ -1,3 +1,4 @@
+import { goView } from '../lib/route'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMail, type Scope } from '../stores/mail'
@@ -16,6 +17,7 @@ interface Command {
 }
 
 const emit = (name: string) => window.dispatchEvent(new CustomEvent(name))
+const listAction = (action: string) => window.dispatchEvent(new CustomEvent('ms:list-action', { detail: action }))
 
 /** ⌘K 命令面板 —— ThirdC 式全局快速操作：导航 / 动作 / 邮件直达 */
 export function CommandPalette(props: { open: boolean; onClose(): void }) {
@@ -54,19 +56,23 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     const state = useMail.getState()
     const go = (scope: Partial<Scope>, title: string) => () => {
       useMail.getState().setScope({ kind: 'unified', ...scope, title } as Scope)
-      if (location.hash !== '#/mail') location.hash = '#/mail'
+      goView('mail')
       props.onClose()
     }
     const nav: Command[] = [
       { id: 'nav-unified', group: '前往', label: '统一收件箱', icon: <IconInbox width={14} height={14} />, run: go({ kind: 'unified' }, '统一收件箱') },
-      { id: 'nav-flagged', group: '前往', label: '已加旗标', run: go({ kind: 'flagged' }, '已加旗标') },
-      { id: 'nav-personal', group: '前往', label: '个人邮件', run: go({ kind: 'category', category: 'personal' }, '个人邮件') },
-      { id: 'nav-notification', group: '前往', label: '通知', run: go({ kind: 'category', category: 'notification' }, '通知') },
-      { id: 'nav-newsletter', group: '前往', label: 'Newsletter', run: go({ kind: 'newsletter' }, 'Newsletter') },
-      { id: 'nav-noise', group: '前往', label: '噪声', run: go({ kind: 'category', category: 'noise' }, '噪声') },
-      { id: 'nav-insights', group: '前往', label: '智能洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { location.hash = '#/insights'; props.onClose() } },
-      { id: 'nav-kb', group: '前往', label: '知识库', run: () => { location.hash = '#/kb'; useMail.getState().setScope({ kind: 'unified', title: '知识库' }); props.onClose() } },
-      { id: 'nav-agent', group: '前往', label: 'Agent（记忆 / 对话 / 发件人画像）', run: () => { location.hash = '#/agent'; useMail.getState().setScope({ kind: 'unified', title: 'Agent' }); props.onClose() } },
+      { id: 'nav-flagged', group: '前往', label: '旗标', run: go({ kind: 'flagged' }, '旗标') },
+      { id: 'nav-pinned', group: '前往', label: '置顶', run: go({ kind: 'pinned' }, '置顶') },
+      { id: 'nav-snoozed', group: '前往', label: '稍后处理', keywords: 'snooze 队列', run: go({ kind: 'snoozed' }, '稍后处理') },
+      { id: 'nav-screener', group: '前往', label: '待审批发件人', keywords: 'screener 队列', run: go({ kind: 'screener' }, '待审批发件人') },
+      { id: 'nav-followup', group: '前往', label: '待跟进（我发未回）', keywords: 'followup 队列', run: go({ kind: 'followup' }, '待跟进（我发未回）') },
+      { id: 'nav-personal', group: '前往', label: '个人邮件', keywords: '分类', run: go({ kind: 'category', category: 'personal' }, '个人邮件') },
+      { id: 'nav-notification', group: '前往', label: '通知', keywords: '分类', run: go({ kind: 'category', category: 'notification' }, '通知') },
+      { id: 'nav-newsletter', group: '前往', label: '订阅（Newsletter）', keywords: 'newsletter 分类', run: go({ kind: 'newsletter' }, '订阅') },
+      { id: 'nav-noise', group: '前往', label: '噪声', keywords: '分类', run: go({ kind: 'category', category: 'noise' }, '噪声') },
+      { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { goView('insights'); props.onClose() } },
+      { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
+      { id: 'nav-agent', group: '前往', label: 'Agent（记忆 / 对话 / 发件人画像）', run: () => { goView('agent'); props.onClose() } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,
         group: '前往',
@@ -79,6 +85,14 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       }))
     ]
     const actions: Command[] = [
+      { id: 'list-threads', group: '列表', label: '切换：按会话聚合', run: () => { listAction('toggle-threads'); props.onClose() } },
+      { id: 'list-split', group: '列表', label: '切换：重要 / 其他 双轨', run: () => { listAction('toggle-split'); props.onClose() } },
+      { id: 'list-time', group: '列表', label: '邮箱时光机', run: () => { listAction('toggle-time'); props.onClose() } },
+      { id: 'list-gravity', group: '列表', label: '重力滑块（重要性上浮）', run: () => { listAction('toggle-gravity'); props.onClose() } },
+      { id: 'list-save', group: '列表', label: '把当前视图存为「我的视图」…', run: () => { listAction('save-view'); props.onClose() } },
+      { id: 'list-sort-date', group: '列表', label: '排序：最新在前', run: () => { useMail.getState().setSort('date'); props.onClose() } },
+      { id: 'list-sort-smart', group: '列表', label: '排序：重要优先', run: () => { useMail.getState().setSort('smart'); props.onClose() } },
+      { id: 'list-sort-unread', group: '列表', label: '排序：未读优先', run: () => { useMail.getState().setSort('unread'); props.onClose() } },
       {
         id: 'act-compose', group: '操作', label: '写邮件', hint: '⌘N', icon: <IconCompose width={14} height={14} />,
         run: () => { void api.openCompose(); props.onClose() }
@@ -115,7 +129,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'act-preset', group: '外观', label: '主题预设…', run: () => { props.onClose(); emit('ms:toggle-theme-menu') } },
       { id: 'act-style', group: '外观', label: '阅读风格…', run: () => { props.onClose(); emit('ms:toggle-style-menu') } }
     ]
-    return [...actions, ...nav]
+    return [...actions.filter(c => c.group !== '列表'), ...nav, ...actions.filter(c => c.group === '列表')]
   }, [props.open, props.onClose])
 
   const filtered = useMemo(() => {
@@ -185,21 +199,21 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜索命令、视图，或直接输入关键词找邮件…"
-            className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[var(--faint)]"
+            className="flex-1 bg-transparent outline-none text-sm placeholder:text-[var(--faint)]"
           />
-          <kbd className="text-[10.5px] px-1.5 py-0.5 rounded-md border border-[var(--border)] font-[var(--font-mono)]" style={{ color: 'var(--faint)' }}>
+          <kbd className="text-2xs px-1.5 py-0.5 rounded-md border border-[var(--border)] font-[var(--font-mono)]" style={{ color: 'var(--faint)' }}>
             ESC
           </kbd>
         </div>
         <div ref={listRef} className="max-h-[46vh] overflow-y-auto py-1.5">
-          {items.length === 0 && <div className="px-4 py-6 text-center text-[12.5px]" style={{ color: 'var(--faint)' }}>没有匹配的命令</div>}
+          {items.length === 0 && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--faint)' }}>没有匹配的命令</div>}
           {items.map((c, i) => {
             const showGroup = c.group !== lastGroup
             lastGroup = c.group
             return (
               <div key={c.id}>
                 {showGroup && (
-                  <div className="px-4 pt-2 pb-1 text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  <div className="px-4 pt-2 pb-1 text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                     {c.group}
                   </div>
                 )}
@@ -207,7 +221,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
                   data-active={i === cursor}
                   onMouseEnter={() => setCursor(i)}
                   onClick={() => c.run()}
-                  className="w-full flex items-center gap-2.5 px-4 py-[7px] text-[13px] text-left transition-colors duration-100"
+                  className="w-full flex items-center gap-2.5 px-4 py-[7px] text-sm text-left transition-colors duration-100"
                   style={{
                     background: i === cursor ? 'linear-gradient(90deg, var(--accent-soft), transparent 80%)' : 'transparent',
                     color: 'var(--fg)',
@@ -217,7 +231,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
                   <span className="shrink-0" style={{ color: i === cursor ? 'var(--accent)' : 'var(--faint)' }}>{c.icon ?? <IconCompose width={13} height={13} className="opacity-0" />}</span>
                   <span className="flex-1 truncate">{c.label}</span>
                   {c.hint && (
-                    <kbd className="text-[10.5px] px-1.5 py-0.5 rounded-md border border-[var(--border)] font-[var(--font-mono)]" style={{ color: 'var(--faint)' }}>
+                    <kbd className="text-2xs px-1.5 py-0.5 rounded-md border border-[var(--border)] font-[var(--font-mono)]" style={{ color: 'var(--faint)' }}>
                       {c.hint}
                     </kbd>
                   )}
@@ -226,7 +240,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
             )
           })}
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 border-t border-[var(--border-soft)] text-[11px]" style={{ color: 'var(--faint)' }}>
+        <div className="flex items-center gap-3 px-4 py-2 border-t border-[var(--border-soft)] text-2xs" style={{ color: 'var(--faint)' }}>
           <span>↑↓ 选择</span>
           <span>↵ 执行</span>
           <span className="flex-1" />

@@ -73,7 +73,7 @@ export function NotificationsTab() {
             }
           }}
           disabled={testing}
-          className="no-drag text-[12.5px] px-3 py-1.5 rounded-lg border border-black/[0.08] bg-white hover:bg-zinc-50 disabled:opacity-50"
+          className="no-drag text-xs px-3 py-1.5 rounded-lg border border-ink/[0.08] bg-white hover:bg-zinc-50 disabled:opacity-50"
         >
           {testing ? '已发送' : '发送测试通知'}
         </button>
@@ -88,21 +88,21 @@ export function NotificationsTab() {
 
       <SectionTitle>按账户</SectionTitle>
       {accounts.map(a => (
-        <div key={a.id} className="py-3 border-b border-black/[0.04]">
-          <div className="text-[13.5px] text-zinc-800 mb-2">{a.name}</div>
+        <div key={a.id} className="py-3 border-b border-ink/[0.04]">
+          <div className="text-sm text-zinc-800 mb-2">{a.name}</div>
           <div className="flex items-center gap-6 pl-1">
-            <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+            <label className="flex items-center gap-2 text-sm text-zinc-600">
               <Toggle checked={per(a.id).enabled} onChange={v => setPer(a.id, { enabled: v })} />
               通知
             </label>
-            <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+            <label className="flex items-center gap-2 text-sm text-zinc-600">
               声音
               <Select value={per(a.id).sound} onChange={v => setPer(a.id, { sound: v })} options={SOUNDS} />
             </label>
           </div>
         </div>
       ))}
-      {!accounts.length && <div className="text-[13px] text-zinc-400 py-3">添加账户后可分别设置</div>}
+      {!accounts.length && <div className="text-sm text-zinc-400 py-3">添加账户后可分别设置</div>}
     </div>
   )
 }

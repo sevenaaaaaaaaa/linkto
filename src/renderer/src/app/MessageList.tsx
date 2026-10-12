@@ -1,16 +1,18 @@
+import { avatarStyle } from '../lib/avatar'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
 import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
-import { IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave } from '../components/icons'
+import { MenuButton, type MenuItem } from '../components/Menu'
+import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
-  newsletter: { label: '订阅', cls: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
-  notification: { label: '通知', cls: 'bg-[var(--warn-soft)] text-[var(--warn)]' },
-  noise: { label: '噪声', cls: 'bg-zinc-200/70 text-zinc-500' }
+  newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
+  notification: { label: '通知', cls: 'bg-[var(--warn-soft)] text-[var(--warn-ink)]' },
+  noise: { label: '噪声', cls: 'bg-[var(--hover)] text-[var(--faint)]' }
 }
 
 const SORT_LABEL: Record<ListSort, string> = {
@@ -23,14 +25,53 @@ const SORT_LABEL: Record<ListSort, string> = {
 /** 标签过滤维度：AI 分类 + 状态切片 */
 type ListFilter = 'all' | 'personal' | 'notification' | 'newsletter' | 'noise' | 'unread' | 'attach' | 'flagged' | 'pinned'
 
+/** 头像：发件人低彩度色相 + 右下角账户色点（多账户归属不丢，视觉权重让给未读状态） */
 function Avatar({ name, color }: { name: string; color?: string }) {
   const letter = [...name.trim()][0]?.toUpperCase() ?? '?'
   return (
+    <div className="relative w-8 h-8 shrink-0">
+      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium" style={avatarStyle(name)}>
+        {letter}
+      </div>
+      {color && (
+        <i
+          className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full"
+          style={{ background: color, boxShadow: '0 0 0 2px var(--surface-strong)' }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 多选模式判定（store 派生）：打开的那一封不算「勾选」 */
+const useMultiMode = () => useMail(st => st.selectedIds.size > 1 || (st.selectedIds.size === 1 && !st.selectedIds.has(st.selectedId ?? '')))
+
+/** 头像位勾选框：悬停或多选模式下头像切换为勾选框（不额外占列宽，审计 IA-8） */
+function RowCheck(props: { checked: boolean; show: boolean; onToggle(): void; children: React.ReactNode }) {
+  return (
     <div
-      className="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-medium shrink-0"
-      style={{ background: color ?? `hsl(${(name.charCodeAt(0) * 7) % 360} 55% 55%)`, color: '#fff' }}
+      className="relative w-8 h-8 shrink-0"
+      onClick={e => {
+        if (!props.show) return
+        e.stopPropagation()
+        props.onToggle()
+      }}
     >
-      {letter}
+      <div className="transition-opacity" style={{ opacity: props.show ? 0 : 1, transitionDuration: 'var(--dur-1)' }}>{props.children}</div>
+      {props.show && (
+        <span
+          role="checkbox"
+          aria-checked={props.checked}
+          className="absolute inset-0 m-auto w-[18px] h-[18px] rounded-full border-[1.5px] flex items-center justify-center fade-in"
+          style={{ borderColor: props.checked ? 'var(--accent)' : 'var(--border-strong)', background: props.checked ? 'var(--accent)' : 'var(--surface-strong)' }}
+        >
+          {props.checked && (
+            <svg viewBox="0 0 24 24" width={11} height={11} fill="none" stroke="var(--on-accent)" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </span>
+      )}
     </div>
   )
 }
@@ -40,18 +81,17 @@ function RowMeta(props: { msg: MessageSummary }) {
   const badge = CATEGORY_BADGE[msg.category]
   return (
     <>
-      {msg.unread && <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: 'var(--accent)' }} />}
       {msg.pinned && (
-        <span className="leading-none shrink-0 inline-flex" title="已置顶" style={{ color: 'var(--accent)' }}>
+        <span className="leading-none shrink-0 inline-flex" title="已置顶" style={{ color: 'var(--faint)' }}>
           <IconPin width={11} height={11} />
         </span>
       )}
       {subjectIsAuth(msg.subject) && (
-        <span className="px-1.5 py-px rounded shrink-0 font-medium inline-flex items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }} title="疑似验证码 / 登录链接">
+        <span className="px-1 h-4 rounded-[var(--r-xs)] shrink-0 inline-flex items-center" style={{ background: 'var(--info-soft)', color: 'var(--info-ink)' }} title="疑似验证码 / 登录链接">
           <IconKey width={10} height={10} />
         </span>
       )}
-      {badge && <span className={`text-[10px] px-1.5 py-px rounded ${badge.cls}`}>{badge.label}</span>}
+      {badge && <span className={`text-2xs px-1 h-4 inline-flex items-center rounded-[var(--r-xs)] shrink-0 ${badge.cls}`}>{badge.label}</span>}
       {msg.hasAttachments && <IconAttach width={12} height={12} className="shrink-0" style={{ color: 'var(--faint)' }} />}
       {msg.flagged && <IconFlag width={12} height={12} className="shrink-0" style={{ color: 'var(--warn)' }} />}
     </>
@@ -86,89 +126,61 @@ function MessageRow(props: {
     if (action !== 'flag' && action !== 'pin' && useMail.getState().selectedId === msg.id) useMail.getState().select(null)
   }
 
+  const multi = useMultiMode()
+  const checked = multi && props.checked
   return (
     <div
       onClick={props.onSelect}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      data-glow
       data-lens-id={msg.id}
+      aria-selected={props.selected}
       draggable
       onDragStart={e => {
-        const ids = props.checked ? [...useMail.getState().selectedIds] : [msg.id]
+        const ids = checked ? [...useMail.getState().selectedIds] : [msg.id]
         e.dataTransfer.setData('text/ms-mail-ids', ids.join(','))
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      className={`relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200 ${
-        msg.unread ? '' : 'opacity-[0.78]'
-      } ${props.indent ? 'pl-10' : ''}`}
+      className={`relative flex gap-3 pl-3 pr-3 py-2 border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
       style={{
         viewTransitionName: `mrow-${msg.id}`,
-        background: props.selected
-          ? 'linear-gradient(90deg, var(--accent-soft), transparent 75%)'
-          : hover
-            ? 'var(--hover)'
-            : 'transparent',
-        boxShadow: props.selected ? 'inset 0 1px 0 var(--spec-lo)' : undefined
+        background: props.selected || checked ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent'
       }}
     >
-      {props.selected && (
-        <span
-          className="absolute left-0 top-[10%] bottom-[10%] w-[3px] rounded-full"
-          style={{ background: 'var(--accent-grad)', boxShadow: '0 0 10px var(--accent)' }}
-        />
-      )}
-      <div
-        className="pt-1"
-        onClick={e => {
-          e.stopPropagation()
-          props.onToggle()
-        }}
-      >
-        <span
-          className="block w-[14px] h-[14px] rounded-full border transition-colors"
-          style={{
-            borderColor: props.checked ? 'var(--accent)' : msg.unread && hover ? 'var(--accent)' : 'var(--border-strong)',
-            background: props.checked ? 'var(--accent)' : 'transparent'
-          }}
-        >
-          {props.checked && (
-            <svg viewBox="0 0 24 24" className="w-full h-full" fill="none" stroke="var(--on-accent)" strokeWidth={3}>
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          )}
-        </span>
-      </div>
-      <Avatar name={displayName(msg.from)} color={props.accountColor} />
+      {props.selected && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r-full" style={{ background: 'var(--accent)' }} />}
+      {msg.unread && !props.selected && <span className="absolute left-1 top-[15px] w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} aria-label="未读" />}
+      <RowCheck checked={checked} show={hover || multi} onToggle={props.onToggle}>
+        <Avatar name={displayName(msg.from)} color={props.accountColor} />
+      </RowCheck>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className={`truncate text-[13.5px] ${msg.unread ? 'font-semibold' : ''}`} style={{ color: 'var(--fg)' }}>
+        <div className="flex items-center gap-1.5 h-[18px]">
+          <span className={`truncate text-sm ${msg.unread ? 'font-semibold' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
             {displayName(msg.from) || '（未知发件人）'}
           </span>
           <RowMeta msg={msg} />
-          {!(hover && !props.checked) && (
-            <span className="ml-auto shrink-0 text-[11.5px] tabular-nums" style={{ color: 'var(--faint)' }}>{fmtDate(msg.date)}</span>
+          {!(hover && !multi) && (
+            <span className="ml-auto shrink-0 text-xs tnum" style={{ color: msg.unread ? 'var(--accent-ink)' : 'var(--faint)' }}>{fmtDate(msg.date)}</span>
           )}
         </div>
-        <div className="mt-0.5 truncate text-[13px]" style={{ color: 'var(--fg)', opacity: msg.unread ? 0.92 : 0.72 }}>
+        <div className={`mt-0.5 truncate text-sm ${msg.unread ? 'font-medium' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
           {msg.subject || '（无主题）'}
         </div>
-        <div className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
+        <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
       </div>
 
       {/* 悬停快捷操作 */}
-      {hover && !props.checked && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1 rounded-full liquid-glass fade-in">
+      {hover && !multi && (
+        <div className="absolute right-2 top-1.5 flex items-center gap-0.5 p-0.5 rounded-[var(--r-sm)] liquid-glass fade-in">
           <QuickBtn title={msg.pinned ? '取消置顶' : '置顶'} onClick={e => quick(e, 'pin')} active={msg.pinned}>
             <IconPin width={13} height={13} />
           </QuickBtn>
-          <QuickBtn title="归档" onClick={e => quick(e, 'archive')}>
+          <QuickBtn title="归档（A）" onClick={e => quick(e, 'archive')}>
             <IconArchive width={13} height={13} />
           </QuickBtn>
           <QuickBtn title={msg.flagged ? '取消旗标' : '旗标'} onClick={e => quick(e, 'flag')} active={msg.flagged}>
             <IconFlag width={13} height={13} />
           </QuickBtn>
-          <QuickBtn title="删除" onClick={e => quick(e, 'trash')} danger>
+          <QuickBtn title="删除（⌫）" onClick={e => quick(e, 'trash')} danger>
             <IconTrash width={13} height={13} />
           </QuickBtn>
         </div>
@@ -182,8 +194,8 @@ function QuickBtn(props: { title: string; onClick(e: React.MouseEvent): void; ch
     <button
       title={props.title}
       onClick={props.onClick}
-      className="p-1.5 rounded-full transition-colors"
-      style={{ color: props.active ? 'var(--warn)' : 'var(--muted)' }}
+      className="w-6 h-6 inline-flex items-center justify-center rounded-[var(--r-xs)] transition-colors"
+      style={{ color: props.active ? 'var(--accent-ink)' : 'var(--muted)' }}
       onMouseEnter={e => {
         e.currentTarget.style.background = props.danger ? 'var(--danger-soft)' : 'var(--hover-strong)'
         if (props.danger) e.currentTarget.style.color = 'var(--danger)'
@@ -217,6 +229,7 @@ function ThreadRow(props: {
   const latest = msgs[0]
   const others = msgs.length - 1
   const participants = [...new Set(msgs.map(m => displayName(m.from)))]
+  const threadMulti = useMultiMode()
 
   return (
     <div>
@@ -224,51 +237,32 @@ function ThreadRow(props: {
         onClick={props.onExpand}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        data-glow
         data-lens-id={latest.id}
-        className="relative flex gap-3 px-4 py-3 border-b border-[var(--border-soft)] cursor-default transition-all duration-200"
-        style={{ viewTransitionName: `mrow-${latest.id}`, background: hover ? 'var(--hover)' : 'transparent' }}
+        className="relative flex gap-3 px-3 py-2 border-b border-[var(--border-soft)] cursor-default transition-colors"
+        style={{ viewTransitionName: `mrow-${latest.id}`, background: props.anyChecked && threadMulti ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent' }}
       >
-        <div
-          className="pt-1"
-          onClick={e => {
-            e.stopPropagation()
-            props.onToggleCheck()
-          }}
-        >
-          <span
-            className="block w-[14px] h-[14px] rounded-full border"
-            style={{
-              borderColor: props.anyChecked ? 'var(--accent)' : 'var(--border-strong)',
-              background: props.anyChecked ? 'var(--accent)' : 'transparent'
-            }}
-          >
-            {props.anyChecked && (
-              <svg viewBox="0 0 24 24" className="w-full h-full" fill="none" stroke="var(--on-accent)" strokeWidth={3}>
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </span>
-        </div>
-        <Avatar name={participants[participants.length - 1] ?? ''} color={props.colorByAccount[latest.accountId]} />
+        {latest.unread && <span className="absolute left-1 top-[15px] w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} aria-label="未读" />}
+        <RowCheck checked={props.anyChecked && threadMulti} show={hover || threadMulti} onToggle={props.onToggleCheck}>
+          <Avatar name={participants[participants.length - 1] ?? ''} color={props.colorByAccount[latest.accountId]} />
+        </RowCheck>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`truncate text-[13.5px] ${latest.unread ? 'font-semibold' : ''}`} style={{ color: 'var(--fg)' }}>
+            <span className={`truncate text-sm ${latest.unread ? 'font-semibold' : ''}`} style={{ color: 'var(--fg)' }}>
               {participants.length > 1 ? `${participants[0]} 等 ${participants.length} 人` : displayName(latest.from)}
             </span>
             <span
-              className="text-[10.5px] px-1.5 py-px rounded-full shrink-0 font-medium inline-flex items-center gap-1"
-              style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}
+              className="text-2xs px-1.5 py-px rounded-full shrink-0 font-medium inline-flex items-center gap-1"
+              style={{ background: 'var(--hover)', color: 'var(--muted)' }}
             >
-              <IconChat width={10} height={10} /> {msgs.length} 封
+              <IconChat width={10} height={10} /> {msgs.length}
             </span>
             <RowMeta msg={latest} />
-            <span className="ml-auto shrink-0 text-[11.5px] tabular-nums" style={{ color: 'var(--faint)' }}>{fmtDate(latest.date)}</span>
+            <span className="ml-auto shrink-0 text-xs tabular-nums" style={{ color: 'var(--faint)' }}>{fmtDate(latest.date)}</span>
           </div>
-          <div className="mt-0.5 truncate text-[13px]" style={{ color: 'var(--fg)', opacity: latest.unread ? 0.92 : 0.72 }}>
+          <div className={`mt-0.5 truncate text-sm ${latest.unread ? 'font-medium' : ''}`} style={{ color: latest.unread ? 'var(--fg)' : 'var(--muted)' }}>
             {latest.subject || '（无主题）'}
           </div>
-          <div className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--faint)' }}>
+          <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>
             {expanded ? '点击收起会话' : latest.snippet}
           </div>
         </div>
@@ -406,7 +400,7 @@ export function MessageList() {
       { key: 'noise', label: '噪声' },
       { key: 'unread', label: '未读' },
       { key: 'attach', label: '附件' },
-      { key: 'flagged', label: '星标' },
+      { key: 'flagged', label: '旗标' },
       { key: 'pinned', label: '置顶' }
     ],
     []
@@ -522,7 +516,7 @@ export function MessageList() {
       if (res.query.after) parts.push(`${res.query.after} 之后`)
       if (parts.length === 0 && (res.query.fallbackText || res.query.text)) parts.push(`「${res.query.fallbackText || res.query.text}」`)
       setAiQueryDesc(parts.filter(Boolean).join(' · ') || '全部收件箱')
-      useMail.setState({ nlResults: page.items, messages: page.items, total: page.total, loading: false, scope: { kind: 'search', title: `✨ ${q}` } })
+      useMail.setState({ nlResults: page.items, messages: page.items, total: page.total, loading: false, scope: { kind: 'search', title: `AI 搜索 · ${q}` } })
     } finally {
       setAiSearching(false)
     }
@@ -547,7 +541,6 @@ export function MessageList() {
     }
   }
 
-  const checkedAll = selectedIds.size > 1
   const allSelected = messages.length > 0 && messages.every(m => selectedIds.has(m.id))
 
   // ---- 收件箱纪律：Snooze / Screener / Split Inbox ----
@@ -584,7 +577,7 @@ export function MessageList() {
       for (const v of res.verdicts) map.set(v.addr, { verdict: v.verdict, reason: v.reason })
       setBatchVerdicts(map)
       const allow = res.verdicts.filter(v => v.verdict === 'allow').length
-      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 建议放行 ${allow} 位、拒绝 ${res.verdicts.length - allow} 位，可逐个确认或一键采纳` }))
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `AI 建议放行 ${allow} 位、拒绝 ${res.verdicts.length - allow} 位，可逐个确认或一键采纳` }))
     } finally {
       setBatchBusy(false)
     }
@@ -629,6 +622,93 @@ export function MessageList() {
 
   // ---- Smart Views：保存当前视图组合 ----
   const [saveViewOpen, setSaveViewOpen] = useState(false)
+
+  // —— Phase B：工具条收敛 ——
+  // 多选模式：勾选 ≥2 封，或勾选的那 1 封并非当前打开的邮件（打开 ≠ 勾选，审计 IA-8）
+  const multiMode = selectedIds.size > 1 || (selectedIds.size === 1 && !selectedIds.has(selectedId ?? ''))
+  const [gravityOpen, setGravityOpen] = useState(false)
+  const segmentKeys: ListFilter[] = useMemo(() => {
+    const base: ListFilter[] = ['all', 'unread']
+    return filter !== 'all' && filter !== 'unread' ? [...base, filter] : base
+  }, [filter])
+  const filterMenu: MenuItem[] = useMemo(
+    () => [
+      { kind: 'label', label: 'AI 分类' },
+      ...(['personal', 'notification', 'newsletter', 'noise'] as ListFilter[]).map(k => ({
+        kind: 'check' as const,
+        label: `${filterDefs.find(f => f.key === k)!.label}`,
+        hint: String(filterCounts[k] ?? 0),
+        checked: filter === k,
+        onSelect: () => setFilter(filter === k ? 'all' : k)
+      })),
+      { kind: 'sep' },
+      { kind: 'label', label: '状态' },
+      ...(['unread', 'attach', 'flagged', 'pinned'] as ListFilter[]).map(k => ({
+        kind: 'check' as const,
+        label: `${filterDefs.find(f => f.key === k)!.label}`,
+        hint: String(filterCounts[k] ?? 0),
+        checked: filter === k,
+        onSelect: () => setFilter(filter === k ? 'all' : k)
+      })),
+      ...(filter !== 'all' ? [{ kind: 'sep' as const }, { kind: 'action' as const, label: '清除筛选', onSelect: () => setFilter('all') }] : [])
+    ],
+    [filter, filterCounts, filterDefs]
+  )
+  const toggleSplit = () => {
+    const v = !splitInbox
+    setSplitInbox(v)
+    localStorage.setItem('ms_split', v ? '1' : '0')
+  }
+  const toggleTime = () => {
+    setTimeOpen(o => !o)
+    if (timeOpen) setTimeCut(null)
+  }
+  const listMenu: MenuItem[] = [
+    { kind: 'label', label: '排序' },
+    ...(Object.keys(SORT_LABEL) as ListSort[]).map(k => ({ kind: 'check' as const, label: SORT_LABEL[k], checked: sort === k, onSelect: () => setSort(k) })),
+    { kind: 'sep' },
+    { kind: 'check', label: '按会话聚合', checked: groupThreads, onSelect: () => setGroupThreads(!groupThreads) },
+    ...(scope.kind === 'unified' ? [{ kind: 'check' as const, label: '重要 / 其他 双轨', checked: splitInbox, onSelect: toggleSplit }] : []),
+    { kind: 'sep' },
+    { kind: 'check', label: '邮箱时光机', icon: <IconClock width={13} height={13} />, checked: timeOpen, onSelect: toggleTime },
+    { kind: 'check', label: '重力滑块', icon: <IconSparkles width={13} height={13} />, checked: gravityOpen || gravity > 0, onSelect: () => { if (gravityOpen || gravity > 0) { setGravity(0); setGravityOpen(false) } else setGravityOpen(true) } },
+    { kind: 'sep' },
+    { kind: 'action', label: '存为「我的视图」…', icon: <IconSave width={13} height={13} />, onSelect: () => setSaveViewOpen(true) }
+  ]
+  const runJudgeFollowups = async () => {
+    if (judgeBusy) return
+    setJudgeBusy(true)
+    setJudgeResult(null)
+    try {
+      const res = await api.aiJudgeFollowups(messages.map(m => m.id))
+      if (!res.ok) {
+        window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 判断失败' }))
+        return
+      }
+      const map = new Map<string, { urgency: string; reason: string }>()
+      for (const j of res.judgements) map.set(j.messageId, { urgency: j.urgency, reason: j.reason })
+      setJudgeResult(map)
+      const worth = res.judgements.filter(j => j.needsFollowup).length
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `AI 判断：${res.judgements.length} 封中 ${worth} 封值得跟进` }))
+    } finally {
+      setJudgeBusy(false)
+    }
+  }
+  // ⌘K → 列表动作（工具条溢出项在命令面板可达）
+  const listActionRef = useRef<(a: string) => void>(() => {})
+  listActionRef.current = (a: string) => {
+    if (a === 'toggle-threads') setGroupThreads(!groupThreads)
+    else if (a === 'toggle-split') toggleSplit()
+    else if (a === 'toggle-time') toggleTime()
+    else if (a === 'toggle-gravity') setGravityOpen(o => !o)
+    else if (a === 'save-view') setSaveViewOpen(true)
+    else if (a === 'bulk-ask') setAskOpen(true)
+  }
+  useEffect(() => {
+    const on = (e: Event) => listActionRef.current((e as CustomEvent<string>).detail)
+    window.addEventListener('ms:list-action', on)
+    return () => window.removeEventListener('ms:list-action', on)
+  }, [])
   const [viewName, setViewName] = useState('')
   const saveCurrentView = async () => {
     const name = viewName.trim() || `${scope.title} · ${filterDefs.find(f => f.key === filter)?.label ?? ''}`
@@ -658,14 +738,11 @@ export function MessageList() {
   }
 
   return (
-    <div className="glass w-[380px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
-      <div className="drag-region h-[52px] shrink-0 flex items-center gap-2 px-3">
+    <div className="surface relative w-[var(--list-w)] min-w-[300px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
+      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
         <div
-          className="no-drag flex-1 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2.5 py-1.5 transition-shadow duration-200 focus-within:shadow-[0_0_0_3px_var(--accent-soft),0_0_0_1px_var(--accent)]"
-          style={{
-            background: 'var(--bg-soft)',
-            boxShadow: 'inset 0 1px 0 var(--spec-lo), inset 0 0 0 1px var(--border-soft)'
-          }}
+          className="no-drag flex-1 h-7 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2 border border-[var(--border-soft)] transition-shadow focus-within:shadow-[var(--focus-ring)]"
+          style={{ background: 'var(--bg-soft)' }}
         >
           <IconSearch width={14} height={14} style={{ color: 'var(--faint)' }} />
           <input
@@ -680,8 +757,9 @@ export function MessageList() {
                 if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
               }
             }}
-            placeholder="搜索邮件，或直接提问：上周账单类邮件"
-            className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-[var(--faint)]"
+            data-mail-search
+            placeholder="搜索，或直接提问（⌘F）"
+            className="flex-1 bg-transparent outline-none text-sm placeholder:text-[var(--faint)]"
           />
           <button
             onClick={() => void runAiSearch()}
@@ -708,12 +786,12 @@ export function MessageList() {
         </div>
       </div>
 
-      <div ref={toolbarRef} className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-soft)]">
-        {/* 全选 */}
+      <div ref={toolbarRef} className="shrink-0 h-[var(--toolbar-h)] flex items-center gap-1 pl-3 pr-2 border-b border-[var(--border-soft)]">
+        {/* 全选：仅在多选模式或悬停工具条时出现 */}
         <button
           onClick={selectAll}
           title="全选 / 取消全选"
-          className="w-[15px] h-[15px] rounded-[4px] border flex items-center justify-center shrink-0"
+          className={`w-4 h-4 rounded-[var(--r-xs)] border flex items-center justify-center shrink-0 transition-opacity ${multiMode ? '' : 'opacity-0 hover:opacity-100 focus-visible:opacity-100'}`}
           style={{ borderColor: allSelected ? 'var(--accent)' : 'var(--border-strong)', background: allSelected ? 'var(--accent)' : 'transparent' }}
         >
           {allSelected && (
@@ -722,133 +800,71 @@ export function MessageList() {
             </svg>
           )}
         </button>
-        <h2 className="text-[14.5px] font-semibold truncate" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{scope.title}</h2>
-        {total > 0 && <span className="text-[12px]" style={{ color: 'var(--faint)' }}>{total}</span>}
+        <h2 className="ml-1 text-sm font-semibold truncate tight" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{scope.title}</h2>
+        {total > 0 && <span className="text-xs tnum shrink-0" style={{ color: 'var(--faint)' }}>{total}</span>}
         {progressText && (
-          <span className="text-[11px] tabular-nums truncate max-w-[110px] inline-flex items-center gap-1" style={{ color: 'var(--accent)' }} title={progressText}>
+          <span className="text-2xs tnum truncate max-w-[96px] inline-flex items-center gap-1 shrink-0" style={{ color: 'var(--accent-ink)' }} title={progressText}>
             <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
-            {progressText}
+            {narrow ? '' : progressText}
           </span>
         )}
         <div className="flex-1" />
-        {/* 会话聚合（窄屏只留图标） */}
-        <button
-          onClick={() => setGroupThreads(!groupThreads)}
-          title="按会话聚合"
-          className={`text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${narrow ? 'px-1.5' : ''}`}
-          style={{
-            borderColor: groupThreads ? 'var(--accent)' : 'var(--border)',
-            color: groupThreads ? 'var(--accent-strong)' : 'var(--muted)',
-            background: groupThreads ? 'var(--accent-soft)' : 'transparent'
-          }}
-        >
-          <IconChat width={11} height={11} />
-          {!narrow && '会话'}
-        </button>
-        {/* 排序（窄屏换成图标循环切换） */}
-        {narrow ? (
-          <button
-            onClick={() => {
-              const ks = Object.keys(SORT_LABEL) as ListSort[]
-              setSort(ks[(ks.indexOf(sort) + 1) % ks.length])
-            }}
-            title={`排序：${SORT_LABEL[sort]}（点击切换）`}
-            className="text-[11.5px] px-1.5 py-1 rounded-full border inline-flex items-center"
-            style={{
-              borderColor: sort === 'smart' ? 'var(--accent)' : 'var(--border)',
-              color: sort === 'smart' ? 'var(--accent-strong)' : 'var(--muted)',
-              background: sort === 'smart' ? 'var(--accent-soft)' : 'transparent'
-            }}
-          >
-            {sort === 'smart' ? <IconSparkles width={12} height={12} /> : sort === 'unread' ? <IconInbox width={12} height={12} /> : <IconClock width={12} height={12} />}
-          </button>
-        ) : (
-          <select
-            value={sort}
-            onChange={e => setSort(e.target.value as ListSort)}
-            title="排序方式"
-            className="no-drag text-[11.5px] rounded-full px-2 py-1 outline-none border"
-            style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)', color: sort === 'smart' ? 'var(--accent-strong)' : 'var(--muted)' }}
-          >
-            {(Object.keys(SORT_LABEL) as ListSort[]).map(s => (
-              <option key={s} value={s}>{SORT_LABEL[s]}</option>
-            ))}
-          </select>
-        )}
-        {scope.kind === 'unified' && (
-          <button
-            onClick={() => {
-              const v = !splitInbox
-              setSplitInbox(v)
-              localStorage.setItem('ms_split', v ? '1' : '0')
-            }}
-            title="重要 / 其他 双轨收件箱（AI 分类 + 往来信号）"
-            className={`text-[11.5px] px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${narrow ? 'px-1.5' : ''}`}
-            style={{
-              borderColor: splitInbox ? 'var(--accent)' : 'var(--border)',
-              color: splitInbox ? 'var(--accent-strong)' : 'var(--muted)',
-              background: splitInbox ? 'var(--accent-soft)' : 'transparent'
-            }}
-          >
-            <IconInbox width={11} height={11} />
-            {!narrow && '双轨'}
-          </button>
-        )}
+
+        {/* 分段控件：全部 / 未读（+ 当前生效的筛选）；完整维度在「筛选」菜单 */}
+        <div className="no-drag shrink-0 flex items-center p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="tablist">
+          {segmentKeys.map(k => {
+            const on = filter === k
+            const def = filterDefs.find(f => f.key === k)!
+            return (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={on}
+                onClick={() => setFilter(on && k !== 'all' ? 'all' : k)}
+                title={`${def.label}（${filterCounts[k] ?? 0}）`}
+                className="h-6 px-2 rounded-[var(--r-xs)] text-xs transition-colors"
+                style={on ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 500, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
+              >
+                {def.label}
+                {k !== 'all' && <span className="ml-1 tnum" style={{ color: 'var(--faint)' }}>{filterCounts[k] ?? 0}</span>}
+              </button>
+            )
+          })}
+        </div>
+        <MenuButton title="筛选：分类 / 附件 / 旗标 / 置顶" items={filterMenu} active={filter !== 'all' && filter !== 'unread'} width={200}>
+          <IconFilter width={15} height={15} />
+        </MenuButton>
+
         {scope.kind === 'followup' && messages.length > 0 && (
           <button
-            onClick={async () => {
-              if (judgeBusy) return
-              setJudgeBusy(true)
-              setJudgeResult(null)
-              try {
-                const res = await api.aiJudgeFollowups(messages.map(m => m.id))
-                if (!res.ok) {
-                  window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 判断失败' }))
-                  return
-                }
-                const map = new Map<string, { urgency: string; reason: string }>()
-                for (const j of res.judgements) map.set(j.messageId, { urgency: j.urgency, reason: j.reason })
-                setJudgeResult(map)
-                const worth = res.judgements.filter(j => j.needsFollowup).length
-                window.dispatchEvent(new CustomEvent('ms:toast', { detail: `✨ AI 判断：${res.judgements.length} 封中 ${worth} 封值得跟进` }))
-              } finally {
-                setJudgeBusy(false)
-              }
-            }}
+            onClick={() => void runJudgeFollowups()}
             disabled={judgeBusy}
             title="AI 判断哪些真的值得催"
-            className="text-[11.5px] px-2 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
-            style={{ borderColor: 'var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}
+            className="icon-btn h-7 w-7 inline-flex items-center justify-center disabled:opacity-50"
+            style={{ color: 'var(--accent-ink)' }}
           >
-            <IconSparkles width={11} height={11} className={judgeBusy ? 'spinning' : ''} />
-            {!narrow && (judgeBusy ? '判断中…' : 'AI 判断')}
+            <IconSparkles width={14} height={14} className={judgeBusy ? 'spinning' : ''} />
           </button>
         )}
-        <button
-          onClick={() => setSaveViewOpen(o => !o)}
-          title="把当前视图组合（范围+过滤+排序+聚合）保存为命名视图"
-          className="text-[11.5px] px-2 py-1 rounded-full border inline-flex items-center gap-1"
-          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-        >
-          <IconSave width={11} height={11} />
-          {!narrow && '存视图'}
-        </button>
         {(scope.kind === 'unified' || scope.kind === 'folder' || scope.kind === 'category') && (
           <button
             onClick={aiOrganize}
             disabled={classifying || !messages.length}
-            title="AI 智能整理：分类个人/通知/订阅/噪声"
-            className="no-drag btn-liquid flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-full disabled:opacity-40"
+            title="AI 整理：分类 个人 / 通知 / 订阅 / 噪声"
+            className="icon-btn no-drag h-7 w-7 inline-flex items-center justify-center disabled:opacity-40"
+            style={{ color: 'var(--accent-ink)' }}
           >
-            <IconSparkles width={12} height={12} className={classifying ? 'spinning' : ''} />
-            {!narrow && (classifying ? '整理中…' : 'AI 整理')}
+            <IconSparkles width={14} height={14} className={classifying ? 'spinning' : ''} />
           </button>
         )}
+        <MenuButton title="列表选项：排序 / 聚合 / 双轨 / 时光机 / 重力 / 存视图" items={listMenu} width={232}>
+          <IconMore width={15} height={15} />
+        </MenuButton>
       </div>
 
       {judgeResult && scope.kind === 'followup' && (
         <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border-soft)] fade-in overflow-x-auto no-scrollbar" style={{ background: 'var(--bg-soft)' }}>
-          <span className="text-[11px] shrink-0" style={{ color: 'var(--faint)' }}>✨ 判定：</span>
+          <span className="text-2xs shrink-0" style={{ color: 'var(--faint)' }}>AI 判定：</span>
           {[...judgeResult.entries()].slice(0, 8).map(([id, j]) => {
             const m = messages.find(x => x.id === id)
             if (!m) return null
@@ -858,72 +874,32 @@ export function MessageList() {
                 key={id}
                 onClick={() => setNudgeId(id)}
                 title={`${m.subject}：${j.reason}（点击生成催促信）`}
-                className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border"
+                className="shrink-0 text-2xs px-2 py-0.5 rounded-full border"
                 style={{ borderColor: color, color }}
               >
-                {j.urgency === 'high' ? '🔴' : j.urgency === 'medium' ? '🟡' : '⚪'} {(m.subject || '无主题').slice(0, 10)}
+                <i className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{ background: color }} />{(m.subject || '无主题').slice(0, 10)}
               </button>
             )
           })}
-          <button onClick={() => setJudgeResult(null)} className="ml-auto text-[11px] shrink-0" style={{ color: 'var(--faint)' }}>收起</button>
+          <button onClick={() => setJudgeResult(null)} className="ml-auto text-2xs shrink-0" style={{ color: 'var(--faint)' }}>收起</button>
         </div>
       )}
 
       {aiQueryDesc && (
         <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border-soft)] fade-in" style={{ background: 'var(--accent-soft)' }}>
           <IconSparkles width={11} height={11} style={{ color: 'var(--accent-strong)' }} />
-          <span className="text-[11.5px] truncate" style={{ color: 'var(--accent-strong)' }}>AI 理解为：{aiQueryDesc} · {messages.length} 封</span>
+          <span className="text-xs truncate" style={{ color: 'var(--accent-strong)' }}>AI 理解为：{aiQueryDesc} · {messages.length} 封</span>
           <div className="flex-1" />
-          <button onClick={() => { setAiQueryDesc(null); useMail.setState({ nlResults: null }); useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' }) }} className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          <button onClick={() => { setAiQueryDesc(null); useMail.setState({ nlResults: null }); useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' }) }} className="text-2xs" style={{ color: 'var(--muted)' }}>
             退出
           </button>
         </div>
       )}
 
-      {/* 标签过滤行：AI 分类 + 状态切片（计数实时跟随当前视图）+ 时光机入口 */}
-      <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-[var(--border-soft)] overflow-x-auto no-scrollbar">
-          {filterDefs.map(f => {
-            const active = filter === f.key
-            const count = filterCounts[f.key] ?? 0
-            return (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                title={`${f.label}（${count}）`}
-                className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border transition-colors inline-flex items-center gap-1 ${
-                  active ? 'font-medium' : ''
-                }`}
-                style={{
-                  borderColor: active ? 'var(--accent)' : 'transparent',
-                  color: active ? 'var(--accent-strong)' : count === 0 && f.key !== 'all' ? 'var(--faint)' : 'var(--muted)',
-                  background: active ? 'var(--accent-soft)' : 'transparent'
-                }}
-              >
-                {f.label}
-                <span className="tabular-nums opacity-70">{count}</span>
-              </button>
-            )
-          })}
-          <button
-            onClick={() => {
-              setTimeOpen(o => !o)
-              if (timeOpen) setTimeCut(null)
-            }}
-            title="邮箱时光机：拖动时间轴，倒带这个视图"
-            className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border transition-colors inline-flex items-center gap-1 ml-auto ${timeOpen ? 'font-medium' : ''}`}
-            style={{
-              borderColor: timeOpen ? 'var(--accent)' : 'transparent',
-              color: timeOpen ? 'var(--accent-strong)' : 'var(--muted)',
-              background: timeOpen ? 'var(--accent-soft)' : 'transparent'
-            }}
-          >
-            <IconClock width={11} height={11} /> 时光机
-          </button>
-        </div>
-
-      {/* 重力滑块：向右拖 = 重要性引力增强，邮件像液体一样重新沉降 */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--border-soft)]">
-        <span className="text-[10.5px] shrink-0" style={{ color: gravity ? 'var(--faint)' : 'var(--accent-strong)' }}>时间</span>
+      {/* 重力滑块（按需出现）：向右拖 = 重要性引力增强，邮件像液体一样重新沉降 */}
+      {(gravityOpen || gravity > 0) && (
+      <div className="shrink-0 h-9 flex items-center gap-2 px-3 border-b border-[var(--border-soft)] fade-in">
+        <span className="text-2xs shrink-0" style={{ color: gravity ? 'var(--faint)' : 'var(--accent-strong)' }}>时间</span>
         <div
           ref={gravTrackRef}
           title="重力滑块：向右拖，重要的邮件上浮；向左拖，时间引力回归"
@@ -948,13 +924,17 @@ export function MessageList() {
             <span className="block w-[8px] h-[8px] rounded-full" style={{ background: 'var(--accent-grad)' }} />
           </div>
         </div>
-        <span className="text-[10.5px] shrink-0 inline-flex items-center gap-1" style={{ color: gravity ? 'var(--accent-strong)' : 'var(--faint)' }}>
+        <span className="text-2xs shrink-0 inline-flex items-center gap-1" style={{ color: gravity ? 'var(--accent-strong)' : 'var(--faint)' }}>
           <IconSparkles width={11} height={11} /> 重要
         </span>
-        <span className="text-[10.5px] tabular-nums w-8 text-right shrink-0" style={{ color: 'var(--faint)' }}>
+        <span className="text-2xs tabular-nums w-8 text-right shrink-0" style={{ color: 'var(--faint)' }}>
           {gravity ? `${gravity}%` : '—'}
         </span>
+        <button onClick={() => { setGravity(0); setGravityOpen(false) }} title="关闭重力滑块（恢复时间排序）" className="icon-btn w-6 h-6 inline-flex items-center justify-center shrink-0" style={{ color: 'var(--faint)' }}>
+          <IconClose width={11} height={11} />
+        </button>
       </div>
+      )}
 
       {/* 时光机轨道：拖动倒带，直方图显示时间分布 */}
       {timeOpen && timeSpan && (
@@ -975,21 +955,22 @@ export function MessageList() {
             onChange={e => setViewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && saveCurrentView()}
             placeholder="视图名称，如「账单速办」"
-            className="flex-1 text-[12.5px] rounded-lg px-2.5 py-1.5 outline-none border border-[var(--border-soft)]"
+            className="flex-1 text-xs rounded-lg px-2.5 py-1.5 outline-none border border-[var(--border-soft)]"
             style={{ background: 'var(--surface-strong)', color: 'var(--fg)' }}
           />
-          <button onClick={saveCurrentView} className="text-[12px] font-medium px-3 py-1.5 rounded-lg" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
+          <button onClick={saveCurrentView} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
             保存
           </button>
-          <button onClick={() => setSaveViewOpen(false)} className="text-[12px] px-2 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
+          <button onClick={() => setSaveViewOpen(false)} className="text-xs px-2 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
             取消
           </button>
         </div>
       )}
 
-      {checkedAll && (
+      {multiMode && (
         <BulkBar
           count={selectedIds.size}
+          scopeKind={scope.kind}
           isPinnedView={scope.kind === 'pinned'}
           folders={folders}
           accounts={accounts}
@@ -1059,9 +1040,9 @@ export function MessageList() {
         />
       )}
 
-      <div ref={listRef} className="flex-1 overflow-y-auto">
+      <div ref={listRef} className={`flex-1 overflow-y-auto ${multiMode ? 'pb-14' : ''}`}>
         {loading && !messages.length && (
-          <div className="p-8 text-center text-[13px]" style={{ color: 'var(--faint)' }}>加载中…</div>
+          <div className="p-8 text-center text-sm" style={{ color: 'var(--faint)' }}>加载中…</div>
         )}
         {snoozeMenuFor && (
           <div className="sticky top-2 z-30 flex justify-end px-3">
@@ -1088,14 +1069,14 @@ export function MessageList() {
         {scope.kind === 'screener' && screenerSenders.length > 0 && (
           <div className="px-3 py-2 space-y-1.5 fade-in">
             <div className="flex items-center gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[.08em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+              <div className="text-2xs font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                 {screenerSenders.length} 位新发件人待审 · 放行后邮件才进入收件箱
               </div>
               <div className="flex-1" />
               {batchVerdicts && batchVerdicts.size > 0 && (
                 <button
                   onClick={() => void applyAllVerdicts()}
-                  className="text-[11px] font-medium px-2.5 py-1 rounded-full"
+                  className="text-2xs font-medium px-2.5 py-1 rounded-full"
                   style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                 >
                   一键采纳（{batchVerdicts.size}）
@@ -1104,11 +1085,11 @@ export function MessageList() {
               <button
                 onClick={() => void runBatchScreen()}
                 disabled={batchBusy}
-                className="text-[11px] font-medium px-2.5 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
+                className="text-2xs font-medium px-2.5 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
                 style={{ borderColor: 'var(--accent)', color: 'var(--accent-strong)' }}
               >
                 <IconSparkles width={10} height={10} className={batchBusy ? 'spinning' : ''} />
-                {batchBusy ? '判定中…' : '✨ 全部 AI 判定'}
+                {batchBusy ? '判定中…' : '全部 AI 判定'}
               </button>
             </div>
             {screenerSenders.map(sc => (
@@ -1125,12 +1106,12 @@ export function MessageList() {
         )}
         {!loading && !messages.length && (
           <div className="p-10 text-center">
-            <div className="text-[13px]" style={{ color: 'var(--muted)' }}>这里还没有邮件</div>
+            <div className="text-sm" style={{ color: 'var(--muted)' }}>这里还没有邮件</div>
             {(scope.kind === 'unified' || scope.kind === 'category') && (
-              <div className="mt-2 text-[12px]" style={{ color: 'var(--faint)' }}>收件箱同步后会出现在这里</div>
+              <div className="mt-2 text-xs" style={{ color: 'var(--faint)' }}>收件箱同步后会出现在这里</div>
             )}
             {scope.kind === 'pinned' && (
-              <div className="mt-2 text-[12px]" style={{ color: 'var(--faint)' }}>悬停邮件点图钉图标，或多选后点「置顶」，重要的邮件会固定在这里</div>
+              <div className="mt-2 text-xs" style={{ color: 'var(--faint)' }}>悬停邮件点图钉图标，或多选后点「置顶」，重要的邮件会固定在这里</div>
             )}
           </div>
         )}
@@ -1141,11 +1122,11 @@ export function MessageList() {
                 className="sticky top-0 z-10 flex items-center gap-2 px-4 py-1.5 border-b border-[var(--border-soft)] glass"
                 onClick={() => !section.important && setOthersOpen(o => !o)}
               >
-                <span className="text-[10.5px] font-semibold tracking-[.08em] uppercase" style={{ color: section.important ? 'var(--accent-strong)' : 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
-                  {section.important ? '⭐ 重要' : '其他'}
+                <span className="text-2xs font-semibold tracking-[0.06em] uppercase" style={{ color: section.important ? 'var(--accent-strong)' : 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  {section.important ? '重要' : '其他'}
                 </span>
-                <span className="text-[10.5px] tabular-nums" style={{ color: 'var(--faint)' }}>{section.items.length}</span>
-                {!section.important && <span className="ml-auto text-[10.5px]" style={{ color: 'var(--faint)' }}>{othersOpen ? '收起' : '展开'}</span>}
+                <span className="text-2xs tabular-nums" style={{ color: 'var(--faint)' }}>{section.items.length}</span>
+                {!section.important && <span className="ml-auto text-2xs" style={{ color: 'var(--faint)' }}>{othersOpen ? '收起' : '展开'}</span>}
               </div>
             )}
             {(!splitInbox || scope.kind !== 'unified' || section.important || othersOpen) &&
@@ -1228,8 +1209,14 @@ export function MessageList() {
   )
 }
 
+/**
+ * 多选操作条 —— 浮动 L2 液态玻璃（不占列表高度，审计 IA-5）
+ * 主动作按上下文切换：待审批 → 放行 / 拒绝；稍后处理 → 取回；其余 → 归档 / 已读 / 稍后 / 移动
+ * 次级动作（置顶、旗标、魔法排序、提问、删除）收进「⋯」
+ */
 function BulkBar(props: {
   count: number
+  scopeKind: string
   isPinnedView: boolean
   folders: Folder[]
   accounts: { id: string; name: string; color: string }[]
@@ -1263,22 +1250,45 @@ function BulkBar(props: {
   }, [props.moveMenu])
 
   const accountIds = [...new Set(props.folders.map(f => f.accountId))]
+  const screener = props.scopeKind === 'screener'
+  const snoozed = props.scopeKind === 'snoozed'
+  const more: MenuItem[] = [
+    { kind: 'action', label: props.isPinnedView ? '取消置顶' : '置顶', icon: <IconPin width={13} height={13} />, onSelect: props.onPin },
+    { kind: 'action', label: '加旗标', icon: <IconFlag width={13} height={13} />, onSelect: props.onFlag },
+    ...(screener || snoozed ? [{ kind: 'action' as const, label: '标为已读', onSelect: props.onRead }] : []),
+    ...(snoozed ? [] : screener ? [{ kind: 'action' as const, label: '稍后处理', icon: <IconClock width={13} height={13} />, onSelect: props.onSnooze }] : []),
+    { kind: 'sep' },
+    { kind: 'action', label: 'AI 魔法排序', icon: <IconSparkles width={13} height={13} />, onSelect: props.onMagicSort },
+    { kind: 'action', label: 'AI 提问（基于所选邮件）', icon: <IconChat width={13} height={13} />, onSelect: props.onAsk },
+    { kind: 'sep' },
+    { kind: 'action', label: '删除', icon: <IconTrash width={13} height={13} />, danger: true, onSelect: props.onDelete }
+  ]
 
   return (
-    <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-soft)] text-[12.5px] flex-wrap" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
-      <span className="px-0.5">已选 {props.count} 封</span>
+    <div className="absolute left-3 right-3 bottom-3 z-30 liquid-glass pop-in rounded-[var(--r-md)] h-10 flex items-center gap-0.5 pl-3 pr-1 text-xs" role="toolbar" aria-label="批量操作">
+      <span className="font-semibold tnum shrink-0" style={{ color: 'var(--accent-ink)' }}>已选 {props.count}</span>
       <div className="flex-1" />
-      <BulkBtn onClick={props.onAllow}>放行</BulkBtn>
-      <BulkBtn onClick={props.onDeny} danger>拒绝</BulkBtn>
-      <BulkBtn onClick={props.onSnooze}>⏰ 稍后</BulkBtn>
-      <BulkBtn onClick={props.onUnsnooze}>取回</BulkBtn>
-      <BulkBtn onClick={props.onPin}>置顶</BulkBtn>
-      <BulkBtn onClick={props.onRead}>已读</BulkBtn>
-      <BulkBtn onClick={props.onFlag}>旗标</BulkBtn>
+      {screener ? (
+        <>
+          <BulkBtn onClick={props.onAllow}>放行</BulkBtn>
+          <BulkBtn onClick={props.onDeny} danger>拒绝</BulkBtn>
+        </>
+      ) : snoozed ? (
+        <>
+          <BulkBtn onClick={props.onUnsnooze}>取回</BulkBtn>
+          <BulkBtn onClick={props.onArchive}>归档</BulkBtn>
+        </>
+      ) : (
+        <>
+          <BulkBtn onClick={props.onArchive}>归档</BulkBtn>
+          <BulkBtn onClick={props.onRead}>已读</BulkBtn>
+          <BulkBtn onClick={props.onSnooze}>稍后</BulkBtn>
+        </>
+      )}
       <div className="relative" ref={ref}>
-        <BulkBtn onClick={() => props.setMoveMenu(!props.moveMenu)}>移动到…</BulkBtn>
+        <BulkBtn onClick={() => props.setMoveMenu(!props.moveMenu)}>移动</BulkBtn>
         {props.moveMenu && (
-          <div className="absolute top-8 right-0 z-30 w-[230px] max-h-[300px] overflow-y-auto liquid-glass rounded-[var(--r-sm)] p-1.5 pop-in">
+          <div className="absolute bottom-full mb-2 right-0 z-30 w-[230px] max-h-[300px] overflow-y-auto liquid-glass rounded-[var(--r-md)] p-1 pop-in">
             {accountIds.map(accId => {
               const accFolders = props.folders.filter(f => f.accountId === accId)
               const acc = props.accounts.find(a => a.id === accId)
@@ -1286,7 +1296,7 @@ function BulkBar(props: {
               const cross = props.selectedAccounts.length > 0 && !props.selectedAccounts.includes(accId)
               return (
                 <div key={accId} style={cross ? { opacity: 0.4 } : undefined}>
-                  <div className="px-2 pt-1.5 pb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.08em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  <div className="caps px-2 pt-1.5 pb-1 flex items-center gap-1.5" style={{ color: 'var(--faint)' }}>
                     <i className="w-1.5 h-1.5 rounded-full" style={{ background: acc?.color ?? 'var(--faint)' }} />
                     {acc?.name ?? accId}
                     {cross && <span className="normal-case">（跨账户不可移）</span>}
@@ -1295,11 +1305,11 @@ function BulkBar(props: {
                     <button
                       key={f.id}
                       onClick={() => props.onMoveToFolder(f)}
-                      className="w-full text-left px-2.5 py-1.5 rounded-[8px] text-[12.5px] hover:bg-[var(--hover)] truncate inline-flex items-center gap-1.5"
+                      className="w-full h-7 text-left px-2 rounded-[var(--r-sm)] text-sm hover:bg-[var(--hover-strong)] truncate inline-flex items-center gap-2"
                       style={{ color: 'var(--fg)' }}
                     >
                       <span className="shrink-0 inline-flex" style={{ color: 'var(--faint)' }}>
-                        {f.special === 'inbox' ? <IconInbox width={12} height={12} /> : f.special === 'trash' ? <IconTrash width={12} height={12} /> : f.special === 'archive' ? <IconArchive width={12} height={12} /> : <IconFolder width={12} height={12} />}
+                        {f.special === 'inbox' ? <IconInbox width={13} height={13} /> : f.special === 'trash' ? <IconTrash width={13} height={13} /> : f.special === 'archive' ? <IconArchive width={13} height={13} /> : <IconFolder width={13} height={13} />}
                       </span>
                       {f.name}
                     </button>
@@ -1310,15 +1320,13 @@ function BulkBar(props: {
           </div>
         )}
       </div>
-      <BulkBtn onClick={props.onMagicSort} accent>
-        <span className="inline-flex items-center gap-1"><IconSparkles width={12} height={12} /> 魔法排序</span>
-      </BulkBtn>
-      <BulkBtn onClick={props.onAsk} accent>
-        <span className="inline-flex items-center gap-1"><IconChat width={12} height={12} /> 提问</span>
-      </BulkBtn>
-      <BulkBtn onClick={props.onArchive}>归档</BulkBtn>
-      <BulkBtn onClick={props.onDelete} danger>删除</BulkBtn>
-      <BulkBtn onClick={props.onClear} muted>取消</BulkBtn>
+      <MenuButton title="更多批量操作" items={more} side="top" width={210}>
+        <IconMore width={15} height={15} />
+      </MenuButton>
+      <span className="w-px h-4 mx-0.5" style={{ background: 'var(--border)' }} />
+      <button onClick={props.onClear} title="取消选择（Esc）" className="icon-btn w-7 h-7 inline-flex items-center justify-center" style={{ color: 'var(--muted)' }}>
+        <IconClose width={12} height={12} />
+      </button>
     </div>
   )
 }
@@ -1327,10 +1335,10 @@ function BulkBtn(props: { children: React.ReactNode; onClick(): void; danger?: b
   return (
     <button
       onClick={props.onClick}
-      className="px-2 py-1 rounded-lg whitespace-nowrap transition-colors hover:bg-[var(--hover-strong)]"
+      className="h-7 px-2 rounded-[var(--r-sm)] whitespace-nowrap transition-colors hover:bg-[var(--hover-strong)]"
       style={{
-        color: props.danger ? 'var(--danger)' : props.accent ? 'var(--accent-strong)' : props.muted ? 'var(--muted)' : 'var(--fg)',
-        fontWeight: props.accent ? 600 : undefined
+        color: props.danger ? 'var(--danger-ink)' : props.accent ? 'var(--accent-ink)' : props.muted ? 'var(--muted)' : 'var(--fg)',
+        fontWeight: props.accent ? 600 : 500
       }}
     >
       {props.children}
@@ -1378,7 +1386,7 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
       >
         <div className="flex items-center gap-2">
           <span className="inline-flex" style={{ color: 'var(--accent)' }}><IconChat width={16} height={16} /></span>
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>就 {props.ids.length} 封邮件提问</span>
+          <span className="text-base font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>就 {props.ids.length} 封邮件提问</span>
           <div className="flex-1" />
           <button onClick={props.onClose} className="p-1.5 rounded-lg hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }}>
             <IconClose width={14} height={14} />
@@ -1390,46 +1398,46 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && ask()}
             placeholder="例如：这批邮件里有什么待办？帮我按优先级整理"
-            className="flex-1 text-[13px] rounded-[10px] px-3 py-2.5 outline-none border border-[var(--border-soft)] selectable"
+            className="flex-1 text-sm rounded-lg px-3 py-2.5 outline-none border border-[var(--border-soft)] selectable"
             style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
           />
           <button
             onClick={ask}
             disabled={busy}
-            className="text-[13px] font-medium px-4 py-2.5 rounded-[10px] disabled:opacity-50"
+            className="text-sm font-medium px-4 py-2.5 rounded-lg disabled:opacity-50"
             style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
           >
             {busy ? '思考中…' : '提问'}
           </button>
         </div>
-        {error && <div className="mt-2.5 text-[12.5px]" style={{ color: 'var(--danger)' }}>{error}</div>}
+        {error && <div className="mt-2.5 text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
         {answer && (
           <div className="mt-3.5 rounded-[var(--r-sm)] border border-[var(--border-soft)] px-4 py-3" style={{ background: 'var(--bg-soft)' }}>
-            <div className="selectable text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>{answer}</div>
+            <div className="selectable text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>{answer}</div>
           </div>
         )}
         {todos.length > 0 && (
           <div className="mt-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[.08em] mb-1.5" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+            <div className="text-2xs font-semibold uppercase tracking-[0.06em] mb-1.5" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
               提炼出 {todos.length} 项待办
             </div>
             <div className="space-y-1">
               {todos.map((t, i) => (
-                <label key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-[10px] border border-[var(--border-soft)]" style={{ background: 'var(--surface)' }}>
+                <label key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[var(--border-soft)]" style={{ background: 'var(--surface)' }}>
                   <input type="checkbox" defaultChecked className="accent-[var(--accent)]" onChange={() => {}} />
-                  <span className="flex-1 text-[12.5px]" style={{ color: 'var(--fg)' }}>{t.title}</span>
-                  {t.due && <span className="text-[11px] shrink-0" style={{ color: 'var(--faint)' }}>{t.due}</span>}
+                  <span className="flex-1 text-xs" style={{ color: 'var(--fg)' }}>{t.title}</span>
+                  {t.due && <span className="text-2xs shrink-0" style={{ color: 'var(--faint)' }}>{t.due}</span>}
                 </label>
               ))}
             </div>
             <div className="mt-2.5 flex justify-end gap-2">
-              <button onClick={props.onClose} className="text-[12.5px] px-3 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
+              <button onClick={props.onClose} className="text-xs px-3 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
                 关闭
               </button>
               <button
                 onClick={saveSet}
                 disabled={saved}
-                className="text-[12.5px] font-medium px-3.5 py-1.5 rounded-lg disabled:opacity-60"
+                className="text-xs font-medium px-3.5 py-1.5 rounded-lg disabled:opacity-60"
                 style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
               >
                 {saved ? '✓ 已存入待办清单' : '存为待办清单 →'}
@@ -1475,7 +1483,7 @@ function TimeScrubber(props: {
 
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--border-soft)]">
-      <span className="text-[10.5px] shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.min)}</span>
+      <span className="text-2xs shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.min)}</span>
       <div
         ref={trackRef}
         title="拖动倒带：手柄左侧的邮件会浮现，拖到最右恢复全部"
@@ -1509,8 +1517,8 @@ function TimeScrubber(props: {
           <span className="absolute inset-[5px] rounded-full" style={{ background: 'var(--accent-grad)' }} />
         </div>
       </div>
-      <span className="text-[10.5px] shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.max)}</span>
-      <span className="text-[11px] shrink-0 font-medium tabular-nums" style={{ color: 'var(--accent-strong)' }}>
+      <span className="text-2xs shrink-0 tabular-nums" style={{ color: 'var(--faint)' }}>{day(props.max)}</span>
+      <span className="text-2xs shrink-0 font-medium tabular-nums" style={{ color: 'var(--accent-strong)' }}>
         ≤ {day(props.value)}
       </span>
     </div>
@@ -1553,27 +1561,27 @@ function ScreenerCard(props: { addr: string; name: string; count: number; preset
   }
 
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border glass" style={{ borderColor: 'var(--border-soft)' }}>
-      <span className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-medium shrink-0" style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}>
+    <div className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border surface" style={{ borderColor: 'var(--border-soft)' }}>
+      <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0" style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}>
         {[...props.name][0]?.toUpperCase() ?? '?'}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] truncate" style={{ color: 'var(--fg)' }}>{props.name} <span className="text-[11px]" style={{ color: 'var(--faint)' }}>{props.addr} · {props.count} 封</span></div>
+        <div className="text-xs truncate" style={{ color: 'var(--fg)' }}>{props.name} <span className="text-2xs" style={{ color: 'var(--faint)' }}>{props.addr} · {props.count} 封</span></div>
         {suggest && (
-          <div className="text-[11px] mt-0.5" style={{ color: suggest.verdict === 'allow' ? 'var(--ok)' : 'var(--danger)' }}>
-            ✨ AI 建议{suggest.verdict === 'allow' ? '放行' : '拒绝'}：{suggest.reason}
+          <div className="text-2xs mt-0.5" style={{ color: suggest.verdict === 'allow' ? 'var(--ok)' : 'var(--danger)' }}>
+            AI 建议{suggest.verdict === 'allow' ? '放行' : '拒绝'}：{suggest.reason}
           </div>
         )}
       </div>
       {!suggest && (
-        <button onClick={ask} disabled={suggesting} className="text-[11.5px] px-2 py-1 rounded-lg shrink-0 disabled:opacity-50" style={{ background: 'var(--bg-soft)', color: 'var(--accent-strong)' }}>
-          {suggesting ? '判定中…' : '✨ AI 判定'}
+        <button onClick={ask} disabled={suggesting} className="text-xs px-2 py-1 rounded-lg shrink-0 disabled:opacity-50" style={{ background: 'var(--bg-soft)', color: 'var(--accent-strong)' }}>
+          <span className="inline-flex items-center gap-1"><IconSparkles width={11} height={11} />{suggesting ? '判定中…' : 'AI 判定'}</span>
         </button>
       )}
-      <button onClick={() => props.onDecide('allow')} className="text-[11.5px] px-2.5 py-1 rounded-lg shrink-0 font-medium" style={{ background: suggest?.verdict === 'allow' ? 'var(--accent)' : 'var(--ok-soft)', color: suggest?.verdict === 'allow' ? 'var(--on-accent)' : 'var(--ok)' }}>
+      <button onClick={() => props.onDecide('allow')} className="text-xs px-2.5 py-1 rounded-lg shrink-0 font-medium" style={{ background: suggest?.verdict === 'allow' ? 'var(--accent)' : 'var(--ok-soft)', color: suggest?.verdict === 'allow' ? 'var(--on-accent)' : 'var(--ok)' }}>
         放行
       </button>
-      <button onClick={() => props.onDecide('deny')} className="text-[11.5px] px-2.5 py-1 rounded-lg shrink-0" style={{ background: suggest?.verdict === 'deny' ? 'var(--danger)' : 'var(--danger-soft)', color: suggest?.verdict === 'deny' ? 'var(--on-accent)' : 'var(--danger)' }}>
+      <button onClick={() => props.onDecide('deny')} className="text-xs px-2.5 py-1 rounded-lg shrink-0" style={{ background: suggest?.verdict === 'deny' ? 'var(--danger)' : 'var(--danger-soft)', color: suggest?.verdict === 'deny' ? 'var(--on-accent)' : 'var(--danger)' }}>
         拒绝
       </button>
     </div>
@@ -1621,42 +1629,42 @@ function NudgePanel(props: { messageId: string; onClose(): void }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <span className="text-[15px]">📣</span>
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>AI 催促信</span>
+          <span style={{ color: 'var(--accent)' }}><IconBellRing width={16} height={16} /></span>
+          <span className="text-base font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>AI 催促信</span>
           <div className="flex-1" />
           <button onClick={props.onClose} className="p-1.5 rounded-lg hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }}>
             <IconClose width={14} height={14} />
           </button>
         </div>
         {busy && (
-          <div className="py-10 text-center text-[13px]" style={{ color: 'var(--faint)' }}>
+          <div className="py-10 text-center text-sm" style={{ color: 'var(--faint)' }}>
             <IconSparkles width={16} height={16} className="spinning inline-block mr-1.5" />
             正在基于原邮件起草…
           </div>
         )}
-        {error && <div className="py-6 text-center text-[12.5px]" style={{ color: 'var(--danger)' }}>{error}</div>}
+        {error && <div className="py-6 text-center text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
         {!busy && !error && (
           <>
             <input
               value={subject}
               onChange={e => setSubject(e.target.value)}
-              className="mt-3 w-full text-[13.5px] font-medium rounded-[10px] px-3 py-2 outline-none border border-[var(--border-soft)] selectable"
+              className="mt-3 w-full text-sm font-medium rounded-lg px-3 py-2 outline-none border border-[var(--border-soft)] selectable"
               style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
             />
             <textarea
               value={body}
               onChange={e => setBody(e.target.value)}
               rows={7}
-              className="mt-2 w-full text-[13px] leading-relaxed rounded-[10px] px-3 py-2.5 outline-none border border-[var(--border-soft)] resize-none selectable"
+              className="mt-2 w-full text-sm leading-relaxed rounded-lg px-3 py-2.5 outline-none border border-[var(--border-soft)] resize-none selectable"
               style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
             />
             <div className="mt-3 flex justify-end gap-2">
-              <button onClick={props.onClose} className="text-[12.5px] px-3 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
+              <button onClick={props.onClose} className="text-xs px-3 py-1.5 rounded-lg" style={{ color: 'var(--muted)' }}>
                 取消
               </button>
               <button
                 onClick={send}
-                className="text-[12.5px] font-medium px-4 py-1.5 rounded-lg"
+                className="text-xs font-medium px-4 py-1.5 rounded-lg"
                 style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
               >
                 打开撰写窗发送 →

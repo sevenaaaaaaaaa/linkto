@@ -52,22 +52,22 @@ export function RulesTab() {
   return (
     <div className="flex gap-5 h-full">
       <div className="w-[250px] shrink-0 flex flex-col">
-        <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm flex-1 overflow-y-auto">
+        <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] flex-1 overflow-y-auto">
           {rules.map(r => (
             <button
               key={r.id}
               onClick={() => setCurrent(r)}
-              className={`w-full px-3.5 py-3 text-left border-b border-black/[0.04] last:border-0 ${
-                current?.id === r.id ? 'bg-blue-600 text-white' : 'hover:bg-black/[0.03]'
+              className={`w-full px-3.5 py-3 text-left border-b border-ink/[0.04] last:border-0 ${
+                current?.id === r.id ? 'bg-selected text-accent-ink font-medium' : 'hover:bg-ink/[0.03]'
               }`}
             >
-              <span className="block text-[13px] font-medium truncate">{r.name}</span>
-              <span className={`block text-[11.5px] mt-0.5 ${current?.id === r.id ? 'text-white/70' : 'text-zinc-400'}`}>
+              <span className="block text-sm font-medium truncate">{r.name}</span>
+              <span className={`block text-xs mt-0.5 ${current?.id === r.id ? 'text-accent-ink/70' : 'text-zinc-400'}`}>
                 {r.enabled ? '已启用' : '已停用'} · {r.conditions.length} 个条件
               </span>
             </button>
           ))}
-          {!rules.length && <div className="p-4 text-[13px] text-zinc-400 text-center">还没有规则</div>}
+          {!rules.length && <div className="p-4 text-sm text-zinc-400 text-center">还没有规则</div>}
         </div>
         <div className="mt-2.5 flex gap-1">
           <button
@@ -84,7 +84,7 @@ export function RulesTab() {
               await reload()
               setCurrent(r)
             }}
-            className="p-2 rounded-lg text-zinc-500 hover:bg-black/5"
+            className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5"
           >
             <IconPlus width={16} height={16} />
           </button>
@@ -116,7 +116,7 @@ export function RulesTab() {
             }}
           />
         ) : (
-          <div className="text-[13.5px] text-zinc-400 mt-16 text-center">
+          <div className="text-sm text-zinc-400 mt-16 text-center">
             规则在邮件同步入库时自动执行（条件全部满足才触发）。
             <br />
             例如：发件人包含「boss」→ 标记类别为「个人」。
@@ -137,14 +137,14 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
         <input
           value={r.name}
           onChange={e => props.onChange({ ...r, name: e.target.value })}
-          className="flex-1 text-[15px] font-semibold outline-none bg-transparent"
+          className="flex-1 text-md font-semibold outline-none bg-transparent"
         />
-        <span className="text-[12.5px] text-zinc-500">启用</span>
+        <span className="text-xs text-zinc-500">启用</span>
         <Toggle checked={r.enabled} onChange={v => props.onChange({ ...r, enabled: v })} />
       </div>
 
       <SectionTitle>当邮件满足所有条件</SectionTitle>
-      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-2 space-y-2">
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-2 space-y-2">
         {r.conditions.map((c, i) => (
           <div key={i} className="flex items-center gap-2">
             <Select
@@ -174,7 +174,7 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                   props.onChange({ ...r, conditions })
                 }}
                 placeholder="关键词"
-                className="flex-1 text-[13px] bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-black/[0.05]"
+                className="flex-1 text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05]"
               />
             ) : (
               <Select
@@ -202,14 +202,14 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
           onClick={() =>
             props.onChange({ ...r, conditions: [...r.conditions, { field: 'subject', op: 'contains', value: '' }] as RuleCondition[] })
           }
-          className="flex items-center gap-1 text-[12.5px] text-blue-600 hover:underline"
+          className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
         >
           <IconPlus width={12} height={12} /> 添加条件
         </button>
       </div>
 
       <SectionTitle>执行动作</SectionTitle>
-      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-2 space-y-2">
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-2 space-y-2">
         {r.actions.map((a, i) => (
           <div key={i} className="flex items-center gap-2">
             <Select
@@ -243,14 +243,14 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
         ))}
         <button
           onClick={() => props.onChange({ ...r, actions: [...r.actions, { type: 'markRead' }] })}
-          className="flex items-center gap-1 text-[12.5px] text-blue-600 hover:underline"
+          className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
         >
           <IconPlus width={12} height={12} /> 添加动作
         </button>
       </div>
 
       <div className="flex justify-end">
-        <button onClick={props.onSave} className="text-[13px] font-medium px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700">
+        <button onClick={props.onSave} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 text-on-accent hover:bg-blue-700">
           保存规则
         </button>
       </div>

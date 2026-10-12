@@ -1,0 +1,168 @@
+/*
+ * Mail Studio · Design Tokens v2（Phase A 目标风格板 · 草案）
+ * ------------------------------------------------------------
+ * 状态：待 owner 确认。尚未被任何文件 import —— Phase C 时整体并入
+ *       src/renderer/src/styles/global.css 的 :root / [data-theme='dark'] / @theme。
+ * 方向：「石墨纸」中性底（几乎无彩，极轻暖意）+ 单一高辨识 accent「铜绿 Verdigris」
+ *       + 语义色拆分为 fill / ink / soft 三档，所有文字组合已过 WCAG AA（见 docs/DESIGN-AUDIT.md §4.1）。
+ * 兼容：变量名沿用 v1（--bg / --fg / --accent …），新增项均为增量；主题预设引擎
+ *       PRESET_VAR_MAP 无需改签名，只需为新增 --*-ink 补映射（缺省回退到 v1 色）。
+ */
+
+/* ============ 1. 色板 Color ============ */
+:root {
+  /* 中性：hue 260 冷灰骨架 + bg 带 95 微暖，避免「医院白」 */
+  --bg: oklch(97.6% 0.004 95);
+  --bg-soft: oklch(95.2% 0.005 95);
+  --surface: oklch(99.4% 0.002 95 / 0.72);      /* 玻璃层底色（仅 L1/L2 材质使用） */
+  --surface-strong: oklch(99.4% 0.002 95);       /* 实底内容面：列表 / 阅读卡 / 设置卡 */
+  --fg: oklch(21% 0.008 260);                    /* 16.5:1 */
+  --muted: oklch(43% 0.008 260);                 /*  7.6:1 —— 次级正文、摘要 */
+  --faint: oklch(53.5% 0.008 260);               /*  4.8:1 —— 时间戳、计数、分组标题（AA 下限） */
+  --border: oklch(89% 0.004 260);
+  --border-strong: oklch(80% 0.006 260);
+  --border-soft: oklch(21% 0.008 260 / 0.07);    /* 发丝分隔线 */
+  --hover: oklch(21% 0.008 260 / 0.045);
+  --hover-strong: oklch(21% 0.008 260 / 0.085);
+  --selected: oklch(52% 0.105 192 / 0.10);       /* 新增：选中行（区别于 hover，也区别于勾选） */
+
+  /* Accent · 铜绿 Verdigris —— 全应用唯一品牌色 */
+  --accent: oklch(52% 0.105 192);                /* 填充 / 图标 / 焦点环；白字 5.1:1 */
+  --accent-strong: oklch(46% 0.1 192);           /* 按下 / 激活 */
+  --accent-ink: oklch(45% 0.1 192);              /* 新增：soft 底上的文字 5.7:1 */
+  --accent-soft: oklch(52% 0.105 192 / 0.12);
+  --accent-2: var(--accent);                     /* v1 渐变第二色退役：单色即品牌 */
+  --accent-grad: linear-gradient(180deg, oklch(56% 0.105 192), oklch(50% 0.105 194));
+  --on-accent: oklch(100% 0 0);
+
+  /* 语义色：fill（点/图标）· ink（文字）· soft（底） */
+  --ok: oklch(52% 0.13 148);       --ok-ink: oklch(45% 0.12 148);      --ok-soft: oklch(52% 0.13 148 / 0.12);
+  --warn: oklch(55% 0.12 65);      --warn-ink: oklch(47% 0.11 62);     --warn-soft: oklch(70% 0.13 75 / 0.16);
+  --danger: oklch(53% 0.19 22);    --danger-ink: oklch(48% 0.18 22);   --danger-soft: oklch(53% 0.19 22 / 0.10);
+  --info: oklch(52% 0.12 255);     --info-ink: oklch(46% 0.12 255);    --info-soft: oklch(52% 0.12 255 / 0.10);
+  /* 分类色（列表 chip）：只用 ink + soft，不再使用 Tailwind 原生 violet/amber */
+  --cat-personal: var(--accent-ink);
+  --cat-notification: var(--warn-ink);
+  --cat-newsletter: oklch(47% 0.11 300);
+  --cat-noise: var(--faint);
+
+  /* 环境光：v1 五团彩斑 → 一团极淡 accent 光，只在 L0 出现 */
+  --blob-a: oklch(80% 0.06 192 / 0.18);
+  --blob-b: transparent;
+  --blob-c: oklch(85% 0.03 95 / 0.25);
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: oklch(17.5% 0.006 260);
+  --bg-soft: oklch(20% 0.006 260);
+  --surface: oklch(21.5% 0.007 260 / 0.72);
+  --surface-strong: oklch(21.5% 0.007 260);
+  --fg: oklch(94% 0.004 95);                     /* 15.9:1 */
+  --muted: oklch(73% 0.006 260);                 /*  7.9:1 */
+  --faint: oklch(62% 0.007 260);                 /*  4.8:1 on surface */
+  --border: oklch(100% 0 0 / 0.09);
+  --border-strong: oklch(100% 0 0 / 0.16);
+  --border-soft: oklch(100% 0 0 / 0.055);
+  --hover: oklch(100% 0 0 / 0.05);
+  --hover-strong: oklch(100% 0 0 / 0.09);
+  --selected: oklch(78% 0.11 188 / 0.13);
+
+  --accent: oklch(78% 0.11 188);
+  --accent-strong: oklch(84% 0.1 188);
+  --accent-ink: oklch(85% 0.1 188);
+  --accent-soft: oklch(78% 0.11 188 / 0.14);
+  --accent-grad: linear-gradient(180deg, oklch(80% 0.11 188), oklch(75% 0.11 190));
+  --on-accent: oklch(18% 0.03 190);              /* 深字压亮 accent 9.8:1 */
+
+  --ok: oklch(76% 0.13 148);       --ok-ink: oklch(84% 0.12 148);      --ok-soft: oklch(76% 0.13 148 / 0.14);
+  --warn: oklch(80% 0.12 75);      --warn-ink: oklch(86% 0.11 78);     --warn-soft: oklch(80% 0.12 75 / 0.14);
+  --danger: oklch(70% 0.16 22);    --danger-ink: oklch(80% 0.13 22);   --danger-soft: oklch(70% 0.16 22 / 0.14);
+  --info: oklch(74% 0.11 255);     --info-ink: oklch(83% 0.1 255);     --info-soft: oklch(74% 0.11 255 / 0.14);
+  --cat-newsletter: oklch(82% 0.09 300);
+
+  --blob-a: oklch(55% 0.08 192 / 0.14);
+  --blob-b: transparent;
+  --blob-c: oklch(40% 0.02 260 / 0.25);
+  color-scheme: dark;
+}
+
+/* ============ 2. 字号表 Type scale（7 级，替代现存 17 种临时值） ============ */
+:root {
+  --font-display: 'Space Grotesk', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /*            size     line   用途                                  替代的 v1 临时值 */
+  --text-2xs: 11px;  --lh-2xs: 14px;  /* 徽标计数、kbd、分组标题（mono 大写） 9.5/10/10.5/11 */
+  --text-xs: 12px;   --lh-xs: 16px;   /* 元信息、时间、chip、次级按钮       11.5/12/12.5 */
+  --text-sm: 13px;   --lh-sm: 18px;   /* UI 默认：侧栏、列表主题、菜单项     13/13.5 */
+  --text-base: 14px; --lh-base: 22px; /* 阅读正文、设置说明、输入框          14/14.5 */
+  --text-md: 16px;   --lh-md: 22px;   /* 区块标题、对话框标题               15/16 */
+  --text-lg: 20px;   --lh-lg: 26px;   /* 阅读窗主题、视图标题               18/19/22 */
+  --text-xl: 26px;   --lh-xl: 32px;   /* 空状态 / 洞察大字                   26 */
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600;   /* 禁用 700（CJK 粗体糊） */
+  --tracking-caps: 0.06em;            /* 仅 mono 大写标签 */
+  --tracking-tight: -0.01em;          /* 仅 --text-lg 及以上的 display 字 */
+}
+
+/* ============ 3. 间距表 Spacing（4px 基线，限 10 档） ============ */
+:root {
+  --space-0-5: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-3: 12px;
+  --space-4: 16px;  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  /* 组件节拍（所有尺寸都是 4 的倍数） */
+  --titlebar-h: 52px;   /* 红绿灯区 = 列表头 = 阅读工具栏，三栏顶边对齐 */
+  --toolbar-h: 44px;    /* 列表工具条合并后的唯一一行 */
+  --row-side-h: 28px;   /* 侧栏行 */
+  --row-list-cozy: 72px;    /* 列表行：发件人+主题+摘要 3 行 */
+  --row-list-compact: 44px; /* 紧凑：发件人·主题 1 行 + 摘要隐藏（GeneralSettings.density） */
+  --control-h-sm: 24px; --control-h: 28px; --control-h-lg: 32px;
+  --sidebar-w: 232px; --list-w: 360px; --list-w-min: 300px; --reader-min: 480px;
+  --pad-pane: 16px;     /* 栏内左右内边距统一 */
+}
+
+/* ============ 4. 圆角与描边 Radius & stroke ============ */
+:root {
+  --r-xs: 4px;   /* kbd、徽标、chip 内角 */
+  --r-sm: 6px;   /* 按钮、输入框、列表/侧栏行 */
+  --r-md: 10px;  /* 卡片、菜单、popover、附件卡 */
+  --r-lg: 14px;  /* 窗口级面板：⌘K、设置卡、撰写 sheet */
+  --r-full: 9999px; /* 仅头像与计数胶囊 */
+  /* 规则：嵌套圆角 = 外圆角 − 内边距（例：r-lg 面板内 4px 边距的行用 r-md） */
+  --stroke: 1px;
+  --hairline: 0.5px;    /* Retina 下分隔线；非 HiDPI 回退 1px（Phase C 用 @media (resolution) 判断） */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);   /* 双环：任何底色上都可见 */
+}
+
+/* ============ 5. 材质规则 Materials（三层，同屏 ≤ 2 种） ============ */
+/*
+ * L0 基底   body：--bg 实色 + 单团 --blob-a 环境光（静止或 120s 漂移）。
+ * L1 框架   侧栏 / 标题栏：.glass（regular，blur 20）。仅「导航 chrome」可用。
+ * C  内容   列表栏、阅读区、设置内容区：--surface-strong 实底 + --border-soft 分隔。内容永不上玻璃。
+ * L2 浮层   菜单、popover、⌘K、toast、BulkBar、Snooze 面板：.liquid-glass（thick on morph）。
+ *           浮层内部禁止再嵌套 glass；子卡片一律 --hover 底。
+ * Clear     .liquid-glass-clear 仅用于图片/视频之上的控件（附件预览、远程图片栏）。
+ * 阴影      只留两档，且只配合 L2：
+ */
+:root {
+  --shadow-sm: 0 1px 2px oklch(21% 0.008 260 / 0.06), 0 4px 12px -6px oklch(21% 0.008 260 / 0.12);
+  --shadow: 0 2px 6px oklch(21% 0.008 260 / 0.06), 0 20px 48px -20px oklch(21% 0.008 260 / 0.28);
+}
+[data-theme='dark'] {
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.3), 0 4px 12px -6px oklch(0% 0 0 / 0.4);
+  --shadow: 0 2px 6px oklch(0% 0 0 / 0.3), 0 20px 48px -20px oklch(0% 0 0 / 0.65);
+}
+
+/* ============ 6. 动效曲线 Motion ============ */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);     /* 默认：颜色、hover、淡入 */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);  /* 进入 / morph / 拖拽松手 */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);          /* 新增：退出（菜单关闭、行删除） */
+  --dur-1: 90ms;    /* 按压、颜色、图标切换 */
+  --dur-2: 160ms;   /* hover 背景、chip 选中、焦点环 */
+  --dur-3: 240ms;   /* popover / 菜单进入、BulkBar 出现 */
+  --dur-4: 360ms;   /* 视图切换、液态重排、时光机 */
+  /* 规则：退出 = 进入 × 0.7 且用 --ease-in；位移 ≤ 8px；缩放 ≥ 0.96；
+           hover 不做 translateY（v1 .icon-btn 的 -1px 上浮在密集工具栏里会抖）；
+           reduced-motion：dur-3/4 → 0，保留不透明度过渡 dur-1。 */
+}

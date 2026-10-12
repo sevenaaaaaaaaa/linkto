@@ -1,3 +1,4 @@
+import { avatarStyle } from '../lib/avatar'
 import { useEffect, useRef, useState } from 'react'
 import { useMail } from '../stores/mail'
 import { api, displayName } from '../lib/api'
@@ -11,8 +12,8 @@ function MiniAvatar({ name }: { name: string }) {
   const letter = [...name.trim()][0]?.toUpperCase() ?? '?'
   return (
     <div
-      className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-medium shrink-0"
-      style={{ background: `hsl(${(name.charCodeAt(0) * 7) % 360} 55% 55%)`, color: '#fff' }}
+      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
+      style={avatarStyle(name)}
     >
       {letter}
     </div>
@@ -87,16 +88,16 @@ export function LensLayer() {
       {msg ? (
         <div className="flex flex-col items-center gap-1.5 w-full fade-in">
           <MiniAvatar name={displayName(msg.from) || '?'} />
-          <div className="w-full truncate text-[12.5px] font-semibold" style={{ color: 'var(--fg)' }}>
+          <div className="w-full truncate text-xs font-semibold" style={{ color: 'var(--fg)' }}>
             {displayName(msg.from) || '（未知发件人）'}
           </div>
           <div
-            className="w-full text-[12px] leading-snug line-clamp-2"
+            className="w-full text-xs leading-snug line-clamp-2"
             style={{ color: 'var(--fg)', opacity: 0.85 }}
           >
             {msg.subject || '（无主题）'}
           </div>
-          <div className="w-full text-[11px] leading-snug line-clamp-2" style={{ color: 'var(--faint)' }}>
+          <div className="w-full text-2xs leading-snug line-clamp-2" style={{ color: 'var(--faint)' }}>
             {msg.snippet}
           </div>
           <div className="flex items-center gap-1.5">
@@ -104,13 +105,13 @@ export function LensLayer() {
             {subjectIsAuth(msg.subject) && (
               <span className="inline-flex" style={{ color: 'var(--accent-strong)' }}><IconKey width={11} height={11} /></span>
             )}
-            <span className="text-[10.5px] tabular-nums" style={{ color: 'var(--faint)' }}>
+            <span className="text-2xs tabular-nums" style={{ color: 'var(--faint)' }}>
               {new Date(msg.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
             </span>
           </div>
         </div>
       ) : (
-        <div className="text-[11.5px] leading-relaxed" style={{ color: 'var(--faint)' }}>
+        <div className="text-xs leading-relaxed" style={{ color: 'var(--faint)' }}>
           玻璃透镜
           <br />
           划过列表速览邮件
@@ -192,29 +193,29 @@ export function RipplePanel() {
           {sug.action === 'archive' ? <IconArchive width={15} height={15} /> : <IconTrash width={15} height={15} />}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>
+          <div className="text-sm font-semibold" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>
             波纹 · {sug.why}
           </div>
-          <div className="mt-0.5 text-[12px]" style={{ color: 'var(--muted)' }}>
+          <div className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
             还有 <b style={{ color: 'var(--accent-strong)' }}>{sug.count}</b> 封同类邮件，一起{sug.action === 'archive' ? '归档' : '删除'}？
           </div>
           <div className="mt-2 flex items-center gap-2">
             <button
               onClick={() => void run()}
-              className="btn-liquid text-[12px] font-medium px-3 py-1.5 rounded-full"
+              className="btn-liquid text-xs font-medium px-3 py-1.5 rounded-full"
             >
               一起处理 →
             </button>
             <button
               onClick={() => setSug(null)}
-              className="text-[12px] px-2.5 py-1.5 rounded-full hover:bg-[var(--hover)]"
+              className="text-xs px-2.5 py-1.5 rounded-full hover:bg-[var(--hover)]"
               style={{ color: 'var(--muted)' }}
             >
               忽略
             </button>
           </div>
         </div>
-        <button onClick={() => setSug(null)} className="p-1 rounded hover:bg-[var(--hover)] shrink-0" style={{ color: 'var(--faint)' }}>
+        <button onClick={() => setSug(null)} className="p-1 rounded-sm hover:bg-[var(--hover)] shrink-0" style={{ color: 'var(--faint)' }}>
           <IconClose width={12} height={12} />
         </button>
       </div>
@@ -341,7 +342,7 @@ export function DropWell(props: { bottom: number }) {
       {menu.length > 0 && pending && (
         <div className="absolute bottom-[68px] right-0 w-[264px] max-h-[320px] overflow-y-auto liquid-glass pop-in rounded-[var(--r-md)] p-1.5">
           <div
-            className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[.08em]"
+            className="px-2 pt-1 pb-1.5 text-2xs font-semibold uppercase tracking-[0.06em]"
             style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
           >
             速投 {pending.length} 封到…
@@ -350,7 +351,7 @@ export function DropWell(props: { bottom: number }) {
             <button
               key={`${it.instanceId}-${it.actionId}-${i}`}
               onClick={() => void run(it)}
-              className="w-full text-left px-2.5 py-2 rounded-[10px] text-[12.5px] hover:bg-[var(--hover)] inline-flex items-center gap-2"
+              className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-[var(--hover)] inline-flex items-center gap-2"
               style={{ color: 'var(--fg)' }}
             >
               <i className="w-2 h-2 rounded-full shrink-0" style={{ background: it.color }} />
@@ -441,10 +442,10 @@ export function SonarBar() {
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="声呐检索 · 说个关键词"
-          className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-[var(--faint)]"
+          className="flex-1 bg-transparent outline-none text-base placeholder:text-[var(--faint)]"
           style={{ color: 'var(--fg)' }}
         />
-        <span className="text-[11px] shrink-0 whitespace-nowrap" style={{ color: 'var(--faint)' }}>
+        <span className="text-2xs shrink-0 whitespace-nowrap" style={{ color: 'var(--faint)' }}>
           松开空格跳转 · Esc 退出
         </span>
       </div>

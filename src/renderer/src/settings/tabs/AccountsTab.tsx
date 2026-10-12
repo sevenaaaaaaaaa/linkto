@@ -35,28 +35,28 @@ export function AccountsTab() {
     <div className="flex gap-5 h-full">
       {/* 左侧账户列表 */}
       <div className="w-[230px] shrink-0 flex flex-col">
-        <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm flex-1 overflow-y-auto">
+        <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] flex-1 overflow-y-auto">
           {accounts.map(a => (
             <button
               key={a.id}
               onClick={() => setSelected(a.id)}
-              className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left border-b border-black/[0.04] last:border-0 ${
-                selected === a.id ? 'bg-blue-600 text-white' : 'hover:bg-black/[0.03]'
+              className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left border-b border-ink/[0.04] last:border-0 ${
+                selected === a.id ? 'bg-selected text-accent-ink font-medium' : 'hover:bg-ink/[0.03]'
               }`}
             >
-              <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-medium shrink-0" style={{ background: a.color }}>
+              <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium shrink-0" style={{ background: a.color }}>
                 {a.name[0]?.toUpperCase()}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium truncate">{a.name}</span>
-                <span className={`block text-[11.5px] truncate ${selected === a.id ? 'text-white/70' : 'text-zinc-400'}`}>{a.email}</span>
+                <span className="block text-sm font-medium truncate">{a.name}</span>
+                <span className={`block text-xs truncate ${selected === a.id ? 'text-accent-ink/70' : 'text-zinc-400'}`}>{a.email}</span>
               </span>
             </button>
           ))}
-          {!accounts.length && <div className="p-4 text-[13px] text-zinc-400 text-center">还没有账户</div>}
+          {!accounts.length && <div className="p-4 text-sm text-zinc-400 text-center">还没有账户</div>}
         </div>
         <div className="mt-2.5 flex items-center gap-1">
-          <button onClick={() => setAdding(true)} className="p-2 rounded-lg text-zinc-500 hover:bg-black/5" title="添加账户">
+          <button onClick={() => setAdding(true)} className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5" title="添加账户">
             <IconPlus width={16} height={16} />
           </button>
           <button
@@ -75,7 +75,7 @@ export function AccountsTab() {
           <div className="flex-1" />
           <button
             onClick={() => selected && void api.syncAccountNow(selected)}
-            className="p-2 rounded-lg text-zinc-500 hover:bg-black/5"
+            className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5"
             title="立即同步"
           >
             <IconRefresh width={15} height={15} />
@@ -87,7 +87,7 @@ export function AccountsTab() {
       <div className="flex-1 min-w-0 overflow-y-auto">
         {adding && <AddAccount onDone={() => { setAdding(false); reload() }} onCancel={() => setAdding(false)} />}
         {!adding && current && <AccountDetail account={current} onChanged={reload} />}
-        {!adding && !current && <div className="text-[13.5px] text-zinc-400 mt-10 text-center">点击 + 添加你的第一个邮箱</div>}
+        {!adding && !current && <div className="text-sm text-zinc-400 mt-10 text-center">点击 + 添加你的第一个邮箱</div>}
       </div>
     </div>
   )
@@ -116,34 +116,34 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
   return (
     <div className="max-w-[560px]">
       <div className="flex items-center gap-3 mb-4">
-        <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-[15px] font-medium" style={{ background: a.color }}>
+        <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-md font-medium" style={{ background: a.color }}>
           {a.name[0]?.toUpperCase()}
         </span>
         <div>
-          <div className="text-[15px] font-semibold text-zinc-800">{a.name}</div>
-          <div className="text-[12.5px] text-zinc-400">{a.email}</div>
+          <div className="text-md font-semibold text-zinc-800">{a.name}</div>
+          <div className="text-xs text-zinc-400">{a.email}</div>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1">
-        <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
-          <span className="flex-1 text-[13.5px] text-zinc-800">启用</span>
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1">
+        <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+          <span className="flex-1 text-sm text-zinc-800">启用</span>
           <ToggleMini checked={a.enabled} onChange={v => void api.setAccountEnabled(a.id, v).then(props.onChanged)} />
         </div>
-        <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
-          <span className="flex-1 text-[13.5px] text-zinc-800">状态</span>
-          <span className={`text-[13px] ${status.cls}`}>{status.label}{a.statusText && a.status === 'error' ? ` · ${a.statusText}` : ''}</span>
+        <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+          <span className="flex-1 text-sm text-zinc-800">状态</span>
+          <span className={`text-sm ${status.cls}`}>{status.label}{a.statusText && a.status === 'error' ? ` · ${a.statusText}` : ''}</span>
         </div>
-        <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
-          <span className="flex-1 text-[13.5px] text-zinc-800">名称</span>
+        <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+          <span className="flex-1 text-sm text-zinc-800">名称</span>
           <input
             defaultValue={a.name}
             onBlur={e => e.target.value !== a.name && update({ name: e.target.value })}
-            className="text-[13px] text-right bg-transparent outline-none w-48"
+            className="text-sm text-right bg-transparent outline-none w-48"
           />
         </div>
-        <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
-          <span className="flex-1 text-[13.5px] text-zinc-800">颜色</span>
+        <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+          <span className="flex-1 text-sm text-zinc-800">颜色</span>
           <div className="flex gap-1.5">
             {ACCOUNT_COLORS.map(c => (
               <button
@@ -157,23 +157,23 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
         </div>
         {a.authType === 'oauth' ? (
           <div className="flex items-center gap-4 py-2.5">
-            <span className="flex-1 text-[13.5px] text-zinc-800">
+            <span className="flex-1 text-sm text-zinc-800">
               OAuth 授权
-              <span className="block text-[11.5px] text-zinc-400 mt-0.5">凭据自动管理 · token 临期自动刷新</span>
+              <span className="block text-xs text-zinc-400 mt-0.5">凭据自动管理 · token 临期自动刷新</span>
             </span>
             <button
               onClick={() => void reauthorize()}
               disabled={reauthorizing}
-              className="text-[13px] text-blue-600 disabled:opacity-40"
+              className="text-sm text-blue-600 disabled:opacity-40"
             >
               {reauthorizing ? '等待授权…' : '重新授权'}
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-4 py-2.5">
-            <span className="flex-1 text-[13.5px] text-zinc-800">
+            <span className="flex-1 text-sm text-zinc-800">
               {showPwd ? '重新输入密码' : '密码'}
-              <span className="block text-[11.5px] text-zinc-400 mt-0.5">状态异常时可用此重置凭证</span>
+              <span className="block text-xs text-zinc-400 mt-0.5">状态异常时可用此重置凭证</span>
             </span>
             {showPwd ? (
               <span className="flex items-center gap-1.5">
@@ -182,7 +182,7 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="授权码 / 应用专用密码"
-                  className="text-[13px] bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none w-52 border border-black/[0.05]"
+                  className="text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none w-52 border border-ink/[0.05]"
                 />
                 <button
                   onClick={() => {
@@ -190,7 +190,7 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
                     setShowPwd(false)
                     setPassword('')
                   }}
-                  className="p-1.5 rounded-lg bg-blue-600 text-white"
+                  className="p-1.5 rounded-lg bg-blue-600 text-on-accent"
                 >
                   <IconCheck width={13} height={13} />
                 </button>
@@ -199,14 +199,14 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
                 </button>
               </span>
             ) : (
-              <button onClick={() => setShowPwd(true)} className="text-[13px] text-blue-600">更新密码</button>
+              <button onClick={() => setShowPwd(true)} className="text-sm text-blue-600">更新密码</button>
             )}
           </div>
         )}
       </div>
 
       <SectionTitle>服务器</SectionTitle>
-      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1 text-[13px]">
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1 text-sm">
         <ServerRow label="IMAP" value={`${a.imap.host}:${a.imap.port} ${a.imap.secure ? 'SSL' : ''}`} />
         <ServerRow label="SMTP" value={`${a.smtp.host}:${a.smtp.port} ${a.smtp.secure ? 'SSL' : ''}`} />
         <ServerRow label="用户名" value={a.user} />
@@ -217,9 +217,9 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
 
 function ServerRow(props: { label: string; value: string }) {
   return (
-    <div className="flex items-center py-2.5 border-b border-black/[0.04] last:border-0">
+    <div className="flex items-center py-2.5 border-b border-ink/[0.04] last:border-0">
       <span className="w-20 text-zinc-500">{props.label}</span>
-      <span className="text-zinc-800 font-mono text-[12.5px]">{props.value}</span>
+      <span className="text-zinc-800 font-mono text-xs">{props.value}</span>
     </div>
   )
 }
@@ -227,7 +227,7 @@ function ServerRow(props: { label: string; value: string }) {
 function ToggleMini(props: { checked: boolean; onChange(v: boolean): void }) {
   return (
     <button onClick={() => props.onChange(!props.checked)} className={`w-[38px] h-[22px] rounded-full relative transition-colors ${props.checked ? 'bg-blue-600' : 'bg-zinc-300'}`}>
-      <span className={`absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-all ${props.checked ? 'left-[18px]' : 'left-[2px]'}`} />
+      <span className={`absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow-[var(--shadow)] transition-all ${props.checked ? 'left-[18px]' : 'left-[2px]'}`} />
     </button>
   )
 }
@@ -267,28 +267,28 @@ function QuickPick(props: {
       <SectionTitle>添加邮箱</SectionTitle>
 
       {/* 快速开始：输入地址直接走 */}
-      <div className="max-w-[560px] rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-3 mb-4">
-        <div className="text-[13px] text-zinc-700 mb-2">直接输入邮箱地址，自动识别服务商并进入对应流程：</div>
+      <div className="max-w-[560px] rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-3 mb-4">
+        <div className="text-sm text-zinc-700 mb-2">直接输入邮箱地址，自动识别服务商并进入对应流程：</div>
         <div className="flex gap-2">
           <input
             value={quick}
             onChange={e => { setQuick(e.target.value); setErr('') }}
             onKeyDown={e => e.key === 'Enter' && quickGo()}
             placeholder="you@qq.com · you@gmail.com · …"
-            className="flex-1 text-[13px] bg-zinc-50 rounded-xl px-3 py-2.5 outline-none border border-black/[0.05] focus:border-blue-400 focus:bg-white transition"
+            className="flex-1 text-sm bg-zinc-50 rounded-xl px-3 py-2.5 outline-none border border-ink/[0.05] focus:border-blue-400 focus:bg-white transition"
           />
           <button
             onClick={quickGo}
-            className="text-[13px] font-medium px-4 py-2 rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+            className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 text-on-accent shadow-[var(--shadow-sm)] hover:bg-blue-700 disabled:opacity-40"
             disabled={!quick.trim()}
           >
             开始添加
           </button>
         </div>
-        {err && <div className="mt-2 text-[12.5px] text-red-500">{err}</div>}
+        {err && <div className="mt-2 text-xs text-red-500">{err}</div>}
       </div>
 
-      <div className="text-[11px] font-semibold tracking-[.08em] uppercase text-zinc-400 mb-2">或选择服务商</div>
+      <div className="text-2xs font-semibold tracking-[0.06em] uppercase text-zinc-400 mb-2">或选择服务商</div>
       <div className="grid grid-cols-3 gap-2.5 max-w-[560px]">
         {PROVIDER_PRESETS.map(p => {
           const kind = oauthKindOf(p.key)
@@ -296,10 +296,10 @@ function QuickPick(props: {
             <button
               key={p.key}
               onClick={() => props.onPickKey(p.key)}
-              className="relative flex flex-col items-center gap-2 py-4 rounded-2xl bg-white border border-black/[0.06] shadow-sm hover:border-blue-300 transition"
+              className="relative flex flex-col items-center gap-2 py-4 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] hover:border-blue-300 transition"
             >
               <span
-                className={`absolute top-2 right-2 text-[9.5px] px-1.5 py-px rounded-full font-medium inline-flex items-center gap-0.5 ${
+                className={`absolute top-2 right-2 text-2xs px-1.5 py-px rounded-full font-medium inline-flex items-center gap-0.5 ${
                   kind ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                 }`}
               >
@@ -309,15 +309,15 @@ function QuickPick(props: {
                   <><IconKey width={9} height={9} /> 授权码</>
                 )}
               </span>
-              <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-medium" style={{ background: p.color }}>
+              <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-base font-medium" style={{ background: p.color }}>
                 {p.label[0]}
               </span>
-              <span className="text-[13px] text-zinc-700">{p.label}</span>
+              <span className="text-sm text-zinc-700">{p.label}</span>
             </button>
           )
         })}
       </div>
-      <button onClick={props.onCancel} className="mt-5 text-[13px] text-zinc-500 hover:underline">取消</button>
+      <button onClick={props.onCancel} className="mt-5 text-sm text-zinc-500 hover:underline">取消</button>
     </div>
   )
 }
@@ -436,70 +436,69 @@ function OAuthStep(props: {
     <div className="max-w-[520px]">
       <SectionTitle>添加 {label}</SectionTitle>
       {phase === 'device' && device ? (
-        <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm p-5">
-          <div className="text-[13.5px] text-zinc-700 mb-1">1. 在浏览器中打开微软登录页并输入以下代码：</div>
+        <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] p-5">
+          <div className="text-sm text-zinc-700 mb-1">1. 在浏览器中打开微软登录页并输入以下代码：</div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-[26px] font-bold tracking-[.2em] text-zinc-900 font-mono select-all">{device.userCode}</span>
+            <span className="text-xl font-semibold tracking-[.2em] text-zinc-900 font-mono select-all">{device.userCode}</span>
             <button
               onClick={() => void navigator.clipboard.writeText(device.userCode)}
-              className="text-[12px] px-2 py-1 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              className="text-xs px-2 py-1 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             >
               复制代码
             </button>
           </div>
-          <div className="text-[13.5px] text-zinc-700 mb-3">2. 登录你的 {label} 账户并确认授权：</div>
+          <div className="text-sm text-zinc-700 mb-3">2. 登录你的 {label} 账户并确认授权：</div>
           <button
             onClick={() => void api.openExternal(device.verificationUri)}
-            className="text-[13px] px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+            className="text-sm px-4 py-2 rounded-xl bg-blue-600 text-on-accent hover:bg-blue-700"
           >
             打开 {device.verificationUri}
           </button>
-          <div className="mt-4 flex items-center gap-2 text-[12.5px] text-zinc-400">
+          <div className="mt-4 flex items-center gap-2 text-xs text-zinc-400">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
             等待你在浏览器中完成授权…
           </div>
-          <button onClick={props.onBack} className="mt-4 block text-[13px] text-zinc-500 hover:underline">取消</button>
+          <button onClick={props.onBack} className="mt-4 block text-sm text-zinc-500 hover:underline">取消</button>
         </div>
       ) : (
         <>
-          <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm p-5">
+          <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] p-5">
             {props.pickEmail && (
-              <div className="mb-3 inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
+              <div className="mb-3 inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
                 <IconCheck width={11} height={11} /> {props.pickEmail}
               </div>
             )}
-            <p className="text-[13.5px] text-zinc-700 leading-relaxed mb-4">
+            <p className="text-sm text-zinc-700 leading-relaxed mb-4">
               点击下方按钮，将在浏览器打开 {kind === 'oauth-google' ? 'Google' : 'Microsoft'} 授权页面，确认后自动完成添加——无需手动输入密码。
             </p>
             <button
               onClick={() => void start()}
               disabled={phase === 'working' || !configured}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[14px] font-semibold text-white shadow-sm disabled:opacity-40 transition active:scale-[.99]"
-              style={{ background: kind === 'oauth-google' ? '#22c55e' : '#0ea5e9' }}
+              className="btn-liquid w-full flex items-center justify-center gap-2 py-3 rounded-xl text-base font-semibold disabled:opacity-40"
             >
               {phase === 'working' ? '等待授权完成…' : `使用 ${label} 账号授权登录`}
             </button>
             {!configured && (
-              <div className="mt-3 text-[12.5px] text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
+              <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
                 尚未配置 {kind === 'oauth-google' ? 'Google' : 'Microsoft'} OAuth 应用凭据。可在下方填入凭据启用一键授权，或改用应用专用密码手动添加。
               </div>
             )}
-            {error && <div className="mt-3 text-[13px] text-red-500">{error}</div>}
+            {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
           </div>
 
           <div className="mt-3 flex items-center gap-2">
-            <button onClick={() => setShowCreds(s => !s)} className="text-[12.5px] text-zinc-500 hover:text-zinc-700">
+            <button onClick={() => setShowCreds(s => !s)} className="text-xs text-zinc-500 hover:text-zinc-700">
               {showCreds ? '收起 OAuth 应用凭据' : '高级：配置 OAuth 应用凭据 ▾'}
             </button>
             <div className="flex-1" />
-            <button onClick={props.onFallback} className="text-[12.5px] text-zinc-500 hover:text-zinc-700">
+            <button onClick={props.onFallback} className="text-xs text-zinc-500 hover:text-zinc-700">
               改用应用专用密码添加
             </button>
           </div>
 
           {showCreds && <OAuthCredsForm cfg={props.oauthCfg} kind={kind} onSaved={props.onConfigSaved} />}
 
-          <button onClick={props.onBack} className="mt-4 text-[13px] text-zinc-500 hover:underline">返回选择服务商</button>
+          <button onClick={props.onBack} className="mt-4 text-sm text-zinc-500 hover:underline">返回选择服务商</button>
         </>
       )}
     </div>
@@ -526,8 +525,8 @@ function OAuthCredsForm(props: { cfg: OAuthClientConfig; kind: Exclude<OAuthKind
   }
 
   return (
-    <div className="mt-2 rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1">
-      <p className="text-[11.5px] text-zinc-400 leading-relaxed py-2">
+    <div className="mt-2 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1">
+      <p className="text-xs text-zinc-400 leading-relaxed py-2">
         凭据只保存在本机（加密）。{props.kind === 'oauth-google'
           ? 'Google Cloud Console → 创建 OAuth 客户端（桌面应用）→ 启用 IMAP scope（https://mail.google.com/）。'
           : 'Azure 门户 → 应用注册（公共客户端）→ 添加 IMAP.AccessAsUser.All 与 SMTP.Send 委托权限。'}
@@ -542,8 +541,8 @@ function OAuthCredsForm(props: { cfg: OAuthClientConfig; kind: Exclude<OAuthKind
         <Field label="Azure Client ID" value={mId} onChange={setMId} placeholder="Application (client) ID" />
       )}
       <div className="py-2.5 flex justify-end">
-        {saved && <span className="text-[12px] text-green-600 mr-2">已保存</span>}
-        <button onClick={() => void save()} className="text-[12.5px] px-3 py-1.5 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700">
+        {saved && <span className="text-xs text-green-600 mr-2">已保存</span>}
+        <button onClick={() => void save()} className="text-xs px-3 py-1.5 rounded-lg bg-ink text-app hover:bg-ink/85">
           保存凭据
         </button>
       </div>
@@ -623,7 +622,7 @@ function PasswordForm(props: {
       provider: props.provider,
       name: name || email,
       email,
-      color: '#3b82f6',
+      color: '#3b82f6', // 账户色是持久化数据（侧栏圆点），非主题色，豁免 token 规则
       imap: { ...imap, secure: imapEnc === 'ssl' },
       smtp: { ...smtp, secure: smtpEnc === 'ssl' },
       user: email,
@@ -643,13 +642,13 @@ function PasswordForm(props: {
       {/* 分步教学：应用内直达，降低授权码获取门槛 */}
       {preset.steps && preset.steps.length > 0 && (
         <div className="mb-4 rounded-2xl bg-amber-50 border border-amber-200/60 px-4 py-3.5">
-          <div className="text-[12.5px] font-semibold text-amber-800 mb-2">
+          <div className="text-xs font-semibold text-amber-800 mb-2">
             获取{preset.passwordLabel ?? '授权码'}的 {preset.steps.length} 个步骤：
           </div>
           <ol className="space-y-1.5">
             {preset.steps.map((s, i) => (
-              <li key={i} className="flex gap-2 text-[12.5px] leading-relaxed text-amber-800">
-                <span className="shrink-0 w-[18px] h-[18px] rounded-full bg-amber-200 text-amber-900 text-[10.5px] font-semibold flex items-center justify-center mt-0.5">
+              <li key={i} className="flex gap-2 text-xs leading-relaxed text-amber-800">
+                <span className="shrink-0 w-[18px] h-[18px] rounded-full bg-amber-200 text-amber-900 text-2xs font-semibold flex items-center justify-center mt-0.5">
                   {i + 1}
                 </span>
                 <span>{s}</span>
@@ -662,7 +661,7 @@ function PasswordForm(props: {
                 <button
                   key={l.url}
                   onClick={() => void api.openExternal(l.url)}
-                  className="text-[11.5px] px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition"
+                  className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition"
                 >
                   {l.label} ↗
                 </button>
@@ -673,7 +672,7 @@ function PasswordForm(props: {
       )}
 
       {!preset.steps && preset.hint && (
-        <div className="mb-3 text-[12.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
+        <div className="mb-3 text-xs leading-relaxed text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
           {preset.hint}
           {preset.guideUrl && (
             <button onClick={() => preset.guideUrl && void api.openExternal(preset.guideUrl)} className="ml-2 underline hover:no-underline">
@@ -683,7 +682,7 @@ function PasswordForm(props: {
         </div>
       )}
 
-      <div className="rounded-2xl bg-white border border-black/[0.06] shadow-sm px-4 py-1">
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1">
         <Field label="邮箱地址" value={email} onChange={v => detectPreset(v)} placeholder="you@example.com" />
         <Field
           label={preset.passwordLabel ?? '密码 / 授权码'}
@@ -693,15 +692,15 @@ function PasswordForm(props: {
           placeholder={preset.passwordPlaceholder ?? '应用专用密码或授权码'}
         />
         {pasteFeedback && (
-          <div className={`flex items-center gap-1.5 pb-2.5 -mt-1 text-[12px] ${pasteFeedback.ok ? 'text-green-600' : 'text-amber-600'}`}>
-            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: pasteFeedback.ok ? '#16a34a' : '#d97706' }} />
+          <div className={`flex items-center gap-1.5 pb-2.5 -mt-1 text-xs ${pasteFeedback.ok ? 'text-green-600' : 'text-amber-600'}`}>
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: pasteFeedback.ok ? 'var(--ok)' : 'var(--warn)' }} />
             {pasteFeedback.text}
           </div>
         )}
         <Field label="显示名称" value={name} onChange={setName} placeholder="如 Seven Gmail" />
         <button
           onClick={() => setShowAdvanced(s => !s)}
-          className="w-full flex items-center justify-between py-2.5 border-b border-black/[0.04] text-[13px] text-zinc-500 hover:text-zinc-700"
+          className="w-full flex items-center justify-between py-2.5 border-b border-ink/[0.04] text-sm text-zinc-500 hover:text-zinc-700"
         >
           服务器设置{preset.imap ? '（已按官方推荐预填）' : ''}
           <span>{showAdvanced ? '▴' : '▾'}</span>
@@ -717,14 +716,14 @@ function PasswordForm(props: {
           </>
         )}
       </div>
-      {error && <div className="mt-3 text-[13px] text-red-500">{error}</div>}
+      {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
       <div className="mt-4 flex gap-2">
-        <button onClick={props.onBack} className="text-[13px] px-3.5 py-2 rounded-xl text-zinc-500 hover:bg-black/5">返回</button>
+        <button onClick={props.onBack} className="text-sm px-3.5 py-2 rounded-xl text-zinc-500 hover:bg-ink/5">返回</button>
         <div className="flex-1" />
         <button
           onClick={submit}
           disabled={busy || !email || !password}
-          className="text-[13px] font-medium px-5 py-2 rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+          className="text-sm font-medium px-5 py-2 rounded-xl bg-blue-600 text-on-accent shadow-[var(--shadow-sm)] hover:bg-blue-700 disabled:opacity-40"
         >
           {busy ? '验证并添加中…' : '验证并添加'}
         </button>
@@ -742,15 +741,15 @@ function EncRow(props: {
 }) {
   const opts: ('ssl' | 'starttls' | 'none')[] = ['ssl', 'starttls', 'none']
   return (
-    <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04]">
-      <span className="w-32 text-[13.5px] text-zinc-700 shrink-0">{props.label}</span>
+    <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+      <span className="w-32 text-sm text-zinc-700 shrink-0">{props.label}</span>
       <div className="flex gap-1 p-0.5 rounded-lg bg-zinc-100">
         {opts.map(o => (
           <button
             key={o}
             type="button"
             onClick={() => props.onChange(o)}
-            className={`text-[12px] px-2.5 py-1 rounded-md transition ${props.value === o ? 'bg-white shadow-sm text-zinc-800 font-medium' : 'text-zinc-500 hover:text-zinc-700'}`}
+            className={`text-xs px-2.5 py-1 rounded-md transition ${props.value === o ? 'bg-white shadow-[var(--shadow-sm)] text-zinc-800 font-medium' : 'text-zinc-500 hover:text-zinc-700'}`}
           >
             {props.labels[o]}
           </button>
@@ -762,14 +761,14 @@ function EncRow(props: {
 
 function Field(props: { label: string; value: string; onChange(v: string): void; type?: string; placeholder?: string }) {
   return (
-    <div className="flex items-center gap-4 py-2.5 border-b border-black/[0.04] last:border-0">
-      <span className="w-32 text-[13.5px] text-zinc-700 shrink-0">{props.label}</span>
+    <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04] last:border-0">
+      <span className="w-32 text-sm text-zinc-700 shrink-0">{props.label}</span>
       <input
         type={props.type ?? 'text'}
         value={props.value}
         onChange={e => props.onChange(e.target.value)}
         placeholder={props.placeholder}
-        className="flex-1 text-[13px] bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-black/[0.05]"
+        className="flex-1 text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05]"
       />
     </div>
   )
