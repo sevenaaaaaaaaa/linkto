@@ -104,7 +104,8 @@ export const useMail = create<MailState>((set, get) => ({
         return
       }
       if (gs.lockedUntil > Date.now()) {
-        set({ guard: 'locked', guardLockUntil: gs.lockedUntil, guardFailsLeft: gs.fails })
+        // 注意展示剩余次数（15 - 累计失败），而非原始累计失败数
+        set({ guard: 'locked', guardLockUntil: gs.lockedUntil, guardFailsLeft: BURN_AT_FAILS - gs.fails })
         return
       }
       set({ guard: 'locked', guardFailsLeft: BURN_AT_FAILS - gs.fails, guardLockUntil: 0, accounts: await loadAccounts() })

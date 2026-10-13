@@ -107,16 +107,19 @@ export class ImapLite {
   }
 
   async connect(acc: ImapAccount, timeoutMs = 15000): Promise<void> {
+    // 关键：react-native-tcp-socket v6 的 createConnection 会静默忽略 tls 选项（原生 connect 仅从
+    // startTLS 注册的 pendingTLS 取 TLS 配置），必须用 connectTLS 才真正走 TLS 握手。
+    // 不传 rejectUnauthorized=false → 使用系统 CA 校验证书；自签证书即握手失败（中间人信号，
+    // 错误消息带 cert/ssl/handshake 特征供守卫判定，见 security/guard.isMitmError）。
     const sock = await new Promise<TcpSocket.Socket>((resolve, reject) => {
-      const s = TcpSocket.createConnection(
-        { host: acc.host, port: acc.port, tls: acc.secure, tlsCheckValidity: true },
-        () => resolve(s)
-      )
+      const opts = { host: acc.host, port: acc.port }
+      const s: TcpSocket.Socket = acc.secure
+        ? TcpSocket.connectTLS(opts, () => resolve(s))
+        : TcpSocket.createConnection(opts, () => resolve(s))
       s.setTimeout(timeoutMs, () => {
         s.destroy()
         reject(new Error('连接超时'))
       })
-      // 证书校验失败 = 中间人信号：错误消息带 cert/ssl 特征供守卫判定（见 security/guard.isMitmError）
       s.on('error', (e: unknown) => reject(new Error(`连接失败：${(e as { message?: string }).message ?? String(e)}`)))
     })
     this.sock = sock
