@@ -67,6 +67,22 @@ interface MailState {
 
 const imap: { client: ImapLite | null } = { client: null }
 
+/** 网络类错误（区别于 MITM/认证错误）：可重连重试 */
+function isNetErr(msg: string): boolean {
+  return /未连接|网络错误|响应超时|连接超时/.test(msg)
+}
+
+/** 重连一次并重试 op；成功返回结果，失败返回 undefined（调用方回退原错误展示） */
+async function retryAfterReconnect<T>(op: () => Promise<T>): Promise<T | undefined> {
+  try {
+    if (!imap.client) return undefined
+    await imap.client.reconnect()
+    return await op()
+  } catch {
+    return undefined
+  }
+}
+
 async function disconnect() {
   try { await imap.client?.logout() } catch { /* ignore */ }
   imap.client = null
@@ -200,7 +216,15 @@ export const useMail = create<MailState>((set, get) => ({
       set({ body: body || '（空正文）' })
       if (imap.client) await imap.client.markSeen(mailbox, m.uid).catch(() => {})
     } catch (e) {
-      set({ body: `正文加载失败：${e instanceof Error ? e.message : String(e)}` })
+      const msg = e instanceof Error ? e.message : String(e)
+      // 断线（空闲超时/服务器踢线/切后台）→ 重连重试一次
+      const retried = isNetErr(msg) ? await retryAfterReconnect(() => imap.client!.fetchBody(mailbox, m.uid)) : undefined
+      if (retried !== undefined) {
+        set({ body: retried || '（空正文）' })
+        await imap.client?.markSeen(mailbox, m.uid).catch(() => {})
+        return
+      }
+      set({ body: `正文加载失败：${msg}` })
     }
   },
 
@@ -218,10 +242,13 @@ export const useMail = create<MailState>((set, get) => ({
     set(s => ({ messages: patch(s.messages), reading: s.reading?.uid === m.uid ? patch([s.reading])[0] : s.reading }))
     const active = get().active
     if (!active || !imap.client) return
+    const apply = () => (wasSeen ? imap.client!.markUnseen(get().mailbox, m.uid) : imap.client!.markSeen(get().mailbox, m.uid))
     try {
-      if (wasSeen) await imap.client.markUnseen(get().mailbox, m.uid)
-      else await imap.client.markSeen(get().mailbox, m.uid)
-    } catch {
+      await apply()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // 断线（空闲超时/服务器踢线/切后台）→ 重连重试一次；仍失败才回滚
+      if (isNetErr(msg) && (await retryAfterReconnect(apply)) !== undefined) return
       // 回滚
       set(s => ({ messages: s.messages.map(x => (x.uid === m.uid ? { ...x, flags: m.flags } : x)) }))
       set({ statusText: '标记失败，请稍后重试' })
