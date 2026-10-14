@@ -20,6 +20,28 @@ mac:
   hardenedRuntime: false
   # 本地构建：跳过代码签名（Apple 时间戳服务不可达会导致打包失败；自用 dmg 无需签名）
   identity: null
+dmg:
+  # DMG layout: app + Applications link + Gatekeeper helper + install notes.
+  # Paths are relative to the repo root (electron-builder must run from there).
+  window:
+    width: 660
+    height: 440
+  contents:
+    - x: 170
+      y: 150
+      type: file
+    - x: 490
+      y: 150
+      type: link
+      path: /Applications
+    - x: 170
+      y: 320
+      type: file
+      path: "packaging/macos/打不开？双击我.command"
+    - x: 490
+      y: 320
+      type: file
+      path: packaging/macos/安装说明.txt
 win:
   icon: build/icon.png
   target:
