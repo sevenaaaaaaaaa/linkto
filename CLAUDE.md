@@ -4,7 +4,9 @@
 
 ## 接手必读
 
-**做任何 UI/交互/配色工作前，先完整阅读 [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md)** —— 那是产品定位、现状全景、设计约束与验证方法的唯一权威交接文档。
+**做任何 UI/交互/配色工作前，先完整阅读 `ops/design/DESIGN-HANDOFF.md`**（仅本地，`ops/` 已 gitignore，不进 GitHub）—— 那是产品定位、现状全景、设计约束与验证方法的唯一权威交接文档。设计审计 `ops/design/DESIGN-AUDIT.md` 与审计截图 `ops/design/audit/` 同样只在本地。
+
+过程性文档（审计、交接、截图、待办、复盘）一律放 `ops/`，不进公开仓库；面向用户的版本说明只写根目录 `CHANGELOG.md`。
 
 ## 快速命令
 
@@ -25,17 +27,26 @@ node scripts/cdp-shot-only.mjs /tmp/shot.png   # CDP 截图（需先 npx electro
 5. 深色模式与 9 套主题预设靠 `[data-theme]` + token 覆盖层驱动，新样式必须同时适配两层
 6. 验证闭环：typecheck → build → 启动应用 → CDP 截图人工核验（当前机器启动慢，等 9~12s；`~/Library/Application Support/linkto/` 是运行时数据，勿删勿改）
 
-## 发版（每日）
+## 发版（Nightly + 正式版本）
 
-**规则：每天开发结束必须跑一次 daily-release（或由 launchd 自动跑）。**
+版本号唯一来源：根目录 `package.json` 的 `version`（`package-lock.json` 随 `npm version` 同步）。`mobile/` 独立编号（`mobile/package.json`、Android `versionName`、iOS `MARKETING_VERSION` 三处一致，见 `mobile/README.md`），不随桌面版发包。
+
+**每日构建（Nightly）**：每天开发结束跑一次（或由全局 launchd 调度 `~/.local/bin/daily-release-all.sh`）。
 
 ```bash
-scripts/daily-release.sh             # 正式发版
-scripts/daily-release.sh --dry-run   # 只在本地构建打包并校验 DMG，不提交/打 tag/推送/发 Release/安装
-scripts/daily-release.sh --no-install  # 发版但不替换 /Applications/LinkTo.app
-scripts/daily-release.sh --force     # 自上个 v* tag 以来无新提交也强制发版
+scripts/daily-release.sh               # 构建并刷新 GitHub 上唯一的 nightly 预发布
+scripts/daily-release.sh --dry-run     # 只在本地构建打包并校验 DMG，不打 tag/推送/发 Release/安装
+scripts/daily-release.sh --no-install  # 不替换 /Applications/LinkTo.app
+scripts/daily-release.sh --force       # nightly tag 已在 HEAD 也重新构建
 ```
 
-流程：必须在 `main` 且工作区干净（脏则打印并以 0 退出「skipped」，绝不自动提交 WIP）→ `git fetch` + `git pull --rebase --autostash`（冲突则 abort 并失败退出）→ `npm run typecheck` → 无新提交则跳过 → patch 版本号 +1（`package.json` + `package-lock.json`；`mobile/` 独立版本不动）→ `npm run dist`（mac dmg + win nsis + linux AppImage）→ 校验 DMG 内容 → 提交 `chore(release): vX.Y.Z` + 附注 tag → 推送 main 与 tag → `gh release create`（说明为上个 tag 以来的提交标题，上传 dmg/exe/AppImage；Release 已存在时只补缺失资产、不覆盖）→ 优雅退出本机 LinkTo、用 `ditto` 替换 `/Applications/LinkTo.app`、去隔离标记、原先在运行则重新打开。若上次已打 tag 但未发布，会自动续传。日志：`~/Library/Logs/linkto-daily-release.log`。无 CI，Release 资产全部来自本机构建。
+流程：必须在 `main`、工作区干净（脏则打印并以 0 退出「skipped」，绝不自动提交 WIP）、与 origin 同步（落后则 `pull --rebase --autostash`，冲突即失败；本地领先则跳过，先自己 push）→ `npm run typecheck` → `nightly` tag 已指向 HEAD 且 Release 已完成则跳过 → 版本号**只注入构建、从不提交**：下一个次版本 + `-nightly.YYYYMMDD`（`package.json` 为 0.3.3 时是 `0.4.0-nightly.20261014`，排在所有 0.3.x 之后、正式 0.4.0 之前；经 `electron-builder -c.extraMetadata.version` 写入安装包，Info.plist / Windows 文件版本用纯数字 `0.4.0`）→ mac dmg + win nsis + linux AppImage → 校验 DMG 内含打开助手 → 强制移动 tag `nightly` 到 HEAD 并 `push -f` → 更新唯一的预发布 `nightly`（标题「Nightly · YYYY-MM-DD」，`--prerelease --latest=false`，说明 = 上个正式 `v*` 以来的提交标题 + 安装提示，资产 `--clobber` 覆盖并删除旧 nightly 资产）→ 优雅退出本机 LinkTo、`ditto` 替换 `/Applications/LinkTo.app`、去隔离、原先在运行则重开。单实例锁；失败直接重跑即可续上（Release 说明里记录了所构建的提交）。最后一行固定输出 `RESULT: built nightly <版本> <sha>` / `RESULT: skipped <原因>` / `RESULT: failed <原因>`，供全局调度脚本判定。日志：`~/Library/Logs/linkto-daily-release.log`。无 CI，资产全部来自本机构建。
+
+**正式版本**：只发主版本 `X.Y.0`（`X.Y.Z` 仅用于正式版的紧急修复）。先在 `CHANGELOG.md` 写好 `## X.Y.0 — YYYY-MM-DD · 主题`（补丁写 `### X.Y.Z — 日期  修复：…`）并提交，然后：
+
+```bash
+scripts/release.sh 0.4.0 --dry-run   # 预览从 CHANGELOG 提取的发布说明
+scripts/release.sh 0.4.0             # bump package.json → chore(release): v0.4.0 + 附注 tag → 构建 → push → gh release create --latest
+```
 
 macOS 打开助手：DMG 内含 `LinkTo.app`、`Applications` 链接、`打不开？双击我.command`、`安装说明.txt`（由 `electron-builder.yml` 的 `dmg.contents` 打入，模板在 `packaging/macos/`）。安装包未签名/未公证（本机只有 Apple Development 证书），`.command` 会移除 `com.apple.quarantine`、签名校验失败时做 ad-hoc 重签，然后打开应用，避免「已损坏，无法打开」。
