@@ -205,6 +205,11 @@ export class AccountWorker {
         this.kickSync()
       }
     })
+    // ImapFlow 的套接字错误（含超时）是异步 emit 的 error 事件，不走任何被 await 的 promise，
+    // 不挂监听会以 uncaughtException 击穿主进程；这里兜住事件并断开，重连交给主循环的 backoff
+    client.on('error', () => {
+      try { client.close() } catch { /* ignore */ }
+    })
     await client.connect()
     this.client = client
   }

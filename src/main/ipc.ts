@@ -205,6 +205,8 @@ export function registerIpc(ctx: AppContext) {
         connectionTimeout: 15_000,
         greetingTimeout: 15_000
       })
+      // 短连接兜底：吞掉异步 socket 错误（超时等），避免以 uncaughtException 击穿主进程
+      client.on('error', () => {})
       try {
         await client.connect()
         return { ok: true }
@@ -284,6 +286,8 @@ export function registerIpc(ctx: AppContext) {
         connectionTimeout: 15_000,
         greetingTimeout: 15_000
       })
+      // 短连接兜底：同 verifyAccount
+      client.on('error', () => {})
       try {
         await client.connect()
         return { ok: true }

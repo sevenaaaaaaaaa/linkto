@@ -18,6 +18,15 @@ import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-i
 import { registerIpc, type AppContext } from './ipc'
 import { DEFAULT_AI } from './store'
 
+// 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
+// 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
+process.on('uncaughtException', err => {
+  console.error('[main] uncaughtException:', err)
+})
+process.on('unhandledRejection', reason => {
+  console.error('[main] unhandledRejection:', reason)
+})
+
 let appStore: AppStore
 let mailStore: MailStore
 let engine: SyncEngine
