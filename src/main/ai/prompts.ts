@@ -61,3 +61,16 @@ export const FOLLOWUP_DRAFT = `你是邮件写作助手。用户发出一封邮�
 
 /** json() 强化重试时追加的硬约束 */
 export const JSON_RETRY_NUDGE = `重要：你的上一次回复不是JSON。现在只输出一个 JSON 对象，以 { 开头、} 结尾，不要任何解释、不要 markdown 代码块。`
+
+// ================= 规则 AI 条件判断 =================
+
+export const RULE_AI_JUDGE = `You decide whether an email satisfies a user-written condition. Read the email and the condition, then output ONLY one JSON object: {"match":true|false}. Be strict: answer true only when the email clearly satisfies the condition.`
+
+// ================= Agent 可执行动作 =================
+
+/** 追加到 Agent 对话系统提示：用户要求「去做」时，在回答末尾给出待确认的动作 */
+export const AGENT_ACTIONS = `你可以替用户处理邮件，但所有动作都要用户点「确认」后才会执行。当用户明确要求你处理（归档、删除、标记、稍后处理、建待办、起草回复）时，先用一两句话说明你打算做什么，然后在回答最后输出一个代码块：
+\`\`\`linkto-actions
+[{"type":"archive|trash|markRead|markUnread|flag|snooze|todo|draftReply","ref":"E1","until":"YYYY-MM-DD HH:mm（仅 snooze）","title":"待办标题（仅 todo）","due":"YYYY-MM-DD（仅 todo，可省略）","body":"回复正文（仅 draftReply）","reason":"一句话理由"}]
+\`\`\`
+规则：ref 只能引用上下文里出现的邮件编号（E1、E2…），不要编造；todo 可以不带 ref；用户没有要求动手时不要输出这个代码块；动作最多 10 个。`

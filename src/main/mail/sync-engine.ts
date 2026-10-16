@@ -9,7 +9,7 @@ import { DEFAULT_GENERAL } from '../store'
 import { heuristicClassify, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
 import { parseEmailRaw } from './parse-pool'
-import type { Rule } from '@shared/types'
+import type { Rule, RuleAction } from '@shared/types'
 
 const SEP = '::'
 export const folderIdOf = (accountId: string, path: string) => `${accountId}${SEP}${path}`
@@ -114,6 +114,8 @@ export interface SyncEvents {
   progress(accountId: string, text: string): void
   changed(accountId?: string): void
   newMail(accountId: string, messageId: string, subject: string, from: string, category: string): void
+  /** 新到达的收件箱邮件（不含首次同步/历史回填）：执行规则动作、AI 条件规则 */
+  arrived(accountId: string, messageId: string, ruleActions: RuleAction[]): void
 }
 
 /** 单账户 IMAP 工作线程：连接、文件夹、增量同步、按需正文、命令 */
@@ -543,6 +545,8 @@ export class AccountWorker {
     const client = this.client
     if (!client) return
     const fid = folderIdOf(this.account.id, folderPath)
+    // 只有增量抓取（且不是首次同步）的邮件才算「新到达」，规则动作只作用于它们
+    const arrival = advanceCursor && this.store.getFolderLastSync(fid).lastSyncUid > 0
     for (let i = 0; i < uids.length; i += FETCH_CHUNK) {
       if (!this.running) return
       const part = uids.slice(i, i + FETCH_CHUNK)
@@ -576,14 +580,14 @@ export class AccountWorker {
       this.touchActivity()
       for (const env of batch) {
         if (!this.running) return
-        this.persistEnvelope(folderPath, special, env)
+        this.persistEnvelope(folderPath, special, env, arrival)
       }
       if (advanceCursor) this.store.setFolderLastSync(fid, part[part.length - 1])
       if (uids.length > FETCH_CHUNK) this.events.changed(this.account.id)
     }
   }
 
-  private persistEnvelope(folderPath: string, special: SpecialFolder, env: EnvelopeData) {
+  private persistEnvelope(folderPath: string, special: SpecialFolder, env: EnvelopeData, arrival = false) {
     const id = messageIdOf(this.account.id, folderPath, env.uid)
     const norm = normalizeSubject(env.subject)
     const listUnsub = env.headers['list-unsubscribe'] ?? null
@@ -661,6 +665,9 @@ export class AccountWorker {
     }
     if (inserted && special === 'inbox' && !held && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
       this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name ?? env.from.address) : '', category)
+    }
+    if (inserted && special === 'inbox' && arrival) {
+      this.events.arrived(this.account.id, id, actions.filter(a => a.type !== 'setCategory' && a.type !== 'markNewsletter'))
     }
     // 性能：近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），
     // 避免初始同步串行下载全量正文拖慢列表可见时间

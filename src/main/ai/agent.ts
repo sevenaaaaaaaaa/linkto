@@ -3,6 +3,7 @@ import type { AgentMemory, AISettings, ContactProfile, MemoryScope } from '@shar
 import type { MailStore } from '../db'
 import { aiReady, type AIService } from './service'
 import { searchTerms, rankByTerms } from '../search-terms'
+import { AGENT_ACTIONS } from './prompts'
 
 const SCOPES: MemoryScope[] = ['fact', 'preference', 'person', 'commitment', 'routine']
 
@@ -261,7 +262,8 @@ export class AgentService {
   // ---------- Agent 对话 ----------
 
   /** Agent 对话：长期记忆 + 知识库 + 近期邮件全文检索 共同支撑 */
-  async chat(question: string): Promise<{ system: string; user: string; usedIds: string[] }> {
+  /** mailRefs[i] 对应上下文里的 [E{i+1}]，供 Agent 动作按编号定位邮件 */
+  async chat(question: string): Promise<{ system: string; user: string; usedIds: string[]; mailRefs: string[] }> {
     const mem = this.memoryPrompt(question, 12)
     // 知识库检索（轻量打分）
     const terms = searchTerms(question)
@@ -270,13 +272,23 @@ export class AgentService {
       .map(s => ({ i: s.item, score: s.score }))
     // 近期邮件检索（FTS 全文）
     let mailCtx = ''
+    let mailRefs: string[] = []
     try {
-      const hits = this.deps.store.searchByTerms(terms, 8)
+      let hits = this.deps.store.searchByTerms(terms, 8)
+      let label = '相关近期邮件（来自全文检索）'
+      // 「把今天的通知都标已读」这类指令检索不到关键词：退回最近的收件箱邮件
+      if (hits.length < 3) {
+        const recent = this.deps.store.getMessages({ scope: 'unified', limit: 12, offset: 0 }).items
+        const seen = new Set(hits.map(h => h.id))
+        hits = [...hits, ...recent.filter(r => !seen.has(r.id))].slice(0, 12)
+        label = '相关及最近收件箱邮件'
+      }
+      mailRefs = hits.map(h => h.id)
       if (hits.length) {
-        mailCtx = `\n\n【相关近期邮件（来自全文检索）】\n${hits
+        mailCtx = `\n\n【${label}】\n${hits
           .map(
             (h, i) =>
-              `[E${i + 1}] ${h.subject}（${h.from?.name || h.from?.address || ''}，${new Date(h.date).toLocaleDateString('zh-CN')}）：${h.snippet.slice(0, 120)}`
+              `[E${i + 1}] ${h.subject}（${h.from?.name || h.from?.address || ''}，${new Date(h.date).toLocaleString('zh-CN')}${h.unread ? '，未读' : ''}）：${h.snippet.slice(0, 120)}`
           )
           .join('\n')}`
       }
@@ -288,8 +300,9 @@ export class AgentService {
       `你是 LinkTo——用户的个人邮件 Agent。你不是一次性助手：你拥有与用户日积月累的长期记忆，了解用户的人和事、偏好与惯例，也持续学习新的信息。` +
       `回答规则：优先基于【长期记忆】【知识库】【相关近期邮件】作答并标注来源（如 [M1] [K2] [E3]）；记忆与用户当前问题冲突时以用户本次表述为准；` +
       `不确定就明说，不编造；回答用简体中文，条理清晰、直接有用。如果用户在对话中透露了新的长期有价值信息，在回答末尾用「📌 记住：…」列出一到三条你认为值得沉淀的记忆（没有则不加）。` +
+      `\n\n${AGENT_ACTIONS}` +
       (mem.block ? `\n${mem.block}` : '')
     const user = `${question}${kbCtx}${mailCtx}`
-    return { system, user, usedIds: mem.usedIds }
+    return { system, user, usedIds: mem.usedIds, mailRefs }
   }
 }

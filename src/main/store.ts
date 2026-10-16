@@ -50,8 +50,9 @@ export const DEFAULT_AI: AISettings = {
   model: 'glm-4.7',
   autoClassify: false,
   autoSummary: false,
-  autoInsights: true,
-  autoDigest: true,
+  // 自动化会把新邮件内容发给所配置的 AI 服务：默认关闭，由用户在 设置 → AI 主动开启
+  autoInsights: false,
+  autoDigest: false,
   customPrompts: []
 }
 

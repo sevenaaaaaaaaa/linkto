@@ -46,6 +46,14 @@ export function Reader() {
   // 工具栏宽度自适应：不足 600px 时次要按钮只留图标（审计 IA-6 窄屏溢出）
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [compact, setCompact] = useState(false)
+  // AI 未配置时不展示一排点了才报错的按钮，改为一个「去配置」入口；设置窗改完回到主窗时重新检查
+  const [aiReady, setAiReady] = useState<{ ready: boolean; reason?: string } | null>(null)
+  useEffect(() => {
+    const check = () => void api.aiStatus().then(setAiReady).catch(() => {})
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [])
   useEffect(() => {
     const el = toolbarRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -625,7 +633,12 @@ export function Reader() {
             </span>
             <span className="text-sm font-medium whitespace-nowrap" style={{ color: 'var(--fg)' }}>AI 助手</span>
             <div className="flex-1 min-w-2" />
-            {/* 动作作为一组整体换行，窄宽度下不会拆成错位的两截 */}
+            {aiReady?.ready === false ? (
+              <button onClick={() => api.openSettings('ai')} className="h-6 px-2 rounded-[var(--r-sm)] text-xs whitespace-nowrap hover:bg-[var(--hover-strong)]" style={{ color: 'var(--accent-ink)' }}>
+                {aiReady.reason} · 去配置
+              </button>
+            ) : (
+            /* 动作作为一组整体换行，窄宽度下不会拆成错位的两截 */
             <div className="flex flex-wrap items-center gap-1">
               <AIChip label="摘要" onClick={() => runAI('summary')} active={aiMode === 'summary'} />
               <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
@@ -633,6 +646,7 @@ export function Reader() {
               <AIChip label={extracting ? '提炼中…' : '提炼'} onClick={runExtract} active={false} />
               <AIChip label={learning ? '学习中…' : '学习'} onClick={runAgentLearn} active={false} />
             </div>
+            )}
           </div>
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">

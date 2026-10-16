@@ -18,7 +18,9 @@ import type {
   SendResult,
   Signature,
   ProviderKey,
-  OAuthTokens
+  OAuthTokens,
+  AgentAction,
+  RuleAction
 } from '@shared/types'
 import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
@@ -32,6 +34,7 @@ import { installUserConnector, listUserConnectorFiles, loadUserConnectors, remov
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
+import { aiReady } from './ai/service'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
@@ -116,6 +119,126 @@ export function registerIpc(ctx: AppContext) {
       store.deleteMessageCascade(messageId)
     }
     ctx.event(BrowserWindow.getAllWindows()[0], { type: 'messages-changed' })
+  }
+
+  // ---------- Agent 动作 / 规则动作执行 ----------
+
+  function requireRow(messageId: string | undefined) {
+    const row = messageId ? store.getMessageRow(messageId) : null
+    if (!row) throw new Error('找不到这封邮件（可能已被移走）')
+    return row
+  }
+
+  async function runAgentAction(a: AgentAction) {
+    switch (a.type) {
+      case 'archive':
+      case 'trash':
+        requireRow(a.messageId)
+        await moveOrDelete(a.messageId!, a.type)
+        return
+      case 'markRead':
+      case 'markUnread':
+        requireRow(a.messageId)
+        await handlers.markRead([[a.messageId!], a.type === 'markRead'] as never, undefined as never)
+        return
+      case 'flag':
+        requireRow(a.messageId)
+        await handlers.markFlagged([[a.messageId!], true] as never, undefined as never)
+        return
+      case 'snooze': {
+        requireRow(a.messageId)
+        const until = a.until ? Date.parse(a.until.replace(' ', 'T')) : NaN
+        if (!Number.isFinite(until) || until <= Date.now()) throw new Error('稍后处理的时间无效')
+        store.setSnoozed([a.messageId!], until)
+        return
+      }
+      case 'todo': {
+        const title = (a.title ?? '').trim()
+        if (!title) throw new Error('待办缺少标题')
+        store.insertInsight({
+          id: `todo-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: 'todo',
+          messageId: a.messageId && store.getMessageRow(a.messageId) ? a.messageId : null,
+          title,
+          data: { from: 'Agent' },
+          dueAt: a.due ? Date.parse(a.due) || null : null
+        })
+        return
+      }
+      case 'draftReply': {
+        const row = requireRow(a.messageId)
+        const html = (a.body ?? '')
+          .split(/\n{2,}/)
+          .map(p => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`)
+          .join('')
+        // 只打开撰写窗供用户修改，绝不自动发送
+        await ctx.openCompose({
+          accountId: row.account_id,
+          relatedMessageId: row.id,
+          to: row.from_addr ? [row.from_addr] : [],
+          subject: row.subject ? `回复：${row.subject}` : '',
+          html
+        } as never)
+        return
+      }
+      default:
+        throw new Error(`不支持的动作：${(a as { type: string }).type}`)
+    }
+  }
+
+  /** 规则命中后的动作（新邮件到达时由主进程调用；分类类动作已在同步时生效） */
+  async function runRuleActions(messageId: string, actions: RuleAction[]) {
+    const row = store.getMessageRow(messageId)
+    if (!row) return
+    // 移动类动作放最后，避免先移走后其他动作找不到邮件
+    const ordered = [...actions].sort((x, y) => Number(x.type === 'moveTrash') - Number(y.type === 'moveTrash'))
+    for (const action of ordered) {
+      try {
+        switch (action.type) {
+          case 'setCategory':
+            if (action.value) store.setCategory([messageId], action.value as never)
+            break
+          case 'markNewsletter':
+            store.setNewsletterFlag(messageId, true)
+            break
+          case 'markRead':
+            await handlers.markRead([[messageId], true] as never, undefined as never)
+            break
+          case 'flag':
+            await handlers.markFlagged([[messageId], true] as never, undefined as never)
+            break
+          case 'unflag':
+            await handlers.markFlagged([[messageId], false] as never, undefined as never)
+            break
+          case 'saveToKb': {
+            const full = store.getMessageFull(messageId)
+            store.saveKbItem({
+              id: randomUUID(),
+              kind: 'message',
+              title: row.subject || '（无主题）',
+              content: (full?.text || row.snippet || '').slice(0, 20_000),
+              sourceMessageId: messageId,
+              sourceLabel: row.from_name || row.from_addr || null,
+              tags: ['规则'],
+              createdAt: Date.now()
+            })
+            break
+          }
+          case 'runConnector': {
+            const [instanceId, actionId] = (action.value ?? '').split(':')
+            if (instanceId && actionId) await handlers.runConnectorAction([instanceId, actionId, {}, messageId] as never, undefined as never)
+            break
+          }
+          case 'moveTrash':
+            await moveOrDelete(messageId, 'trash')
+            break
+          // notify 由主进程通知模块处理
+        }
+      } catch (err) {
+        console.error('[rules]', action.type, err)
+      }
+    }
+    ctx.event(null as never, { type: 'messages-changed' })
   }
 
   // ---------- AI 任务 ----------
@@ -996,18 +1119,41 @@ export function registerIpc(ctx: AppContext) {
     agentChat: async ([question, requestId]: [string, string]) => {
       const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
       try {
-        const { system, user } = await agent.chat(question)
+        const { system, user, mailRefs } = await agent.chat(question)
         await ai.stream(requestId, [
           { role: 'system', content: system },
           { role: 'user', content: user }
         ], delta => {
           if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta, done: false })
         })
-        if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true })
+        // refs：回答里 E1、E2… 对应的邮件 id，渲染进程据此把动作块映射到具体邮件
+        if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true, refs: mailRefs })
       } catch (err) {
         if (win && !win.isDestroyed())
           win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true, error: err instanceof Error ? err.message : String(err) })
       }
+    },
+
+    agentExecuteActions: async ([actions]: [AgentAction[]]) => {
+      let ok = 0
+      const failed: { index: number; error: string }[] = []
+      for (const [index, a] of (actions ?? []).slice(0, 20).entries()) {
+        try {
+          await runAgentAction(a)
+          ok++
+        } catch (err) {
+          failed.push({ index, error: err instanceof Error ? err.message : String(err) })
+        }
+      }
+      ctx.event(null as never, { type: 'messages-changed' })
+      return { ok, failed }
+    },
+
+    aiStatus: () => {
+      const s = appStore.getAI()
+      if (aiReady(s)) return { ready: true }
+      if (!s.enabled) return { ready: false, reason: 'AI 未开启' }
+      return { ready: false, reason: '未配置 API Key' }
     },
 
     saveTodoSet: ([title, todos, messageId]: [string, { title: string; due?: string | null }[], string | null | undefined]) => {
@@ -1190,6 +1336,7 @@ export function registerIpc(ctx: AppContext) {
 
   // 主进程内部复用的能力（与渲染进程调用走同一实现）
   return {
+    runRuleActions,
     aiClassify: async (messageIds: string[]): Promise<void> => {
       await handlers.aiClassify([messageIds], undefined as never)
     }

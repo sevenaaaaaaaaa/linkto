@@ -312,6 +312,11 @@ export function AiTab() {
       </button>
 
       <SectionTitle>自动化</SectionTitle>
+      {!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(s.baseURL) && s.baseURL !== 'builtin-local' && (
+        <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-2.5 mb-2">
+          以下自动化开启后，新邮件内容会在你不操作时自动发送给当前的云端 AI 服务（{s.baseURL.replace(/^https?:\/\//, '').split('/')[0]}）。介意的话保持关闭，或改用本地模型。
+        </div>
+      )}
       <SettingRow label="自动分类新邮件" desc="新邮件入库后自动标记：个人 / 通知 / 订阅 / 噪声">
         <Toggle checked={s.autoClassify} onChange={v => update({ autoClassify: v })} />
       </SettingRow>
@@ -325,7 +330,7 @@ export function AiTab() {
       <SectionTitle>隐私说明</SectionTitle>
       <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">
         邮件内容仅在你主动触发（摘要 / 起草 / 问答）或开启自动化时，才会发送给你所配置的 AI 服务。选择 Ollama / LM Studio 等本地模型时，内容完全不出本机。
-        分类使用本地启发式规则优先，AI 仅作兜底。API Key 与密码一样保存在本机钥匙串中。
+        分类使用本地启发式规则优先，AI 仅作兜底。API Key 与密码一样经系统钥匙串加密保存在本机。
       </div>
     </div>
   )
