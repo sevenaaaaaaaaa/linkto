@@ -31,6 +31,7 @@ import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
+import { searchTerms, rankByTerms } from './search-terms'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
@@ -623,8 +624,8 @@ export function registerIpc(ctx: AppContext) {
       )
       return true
     },
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
-    setAISettings: ([s]: [AISettings]) => appStore.set('ai', s),
+    getAISettings: () => appStore.getAI(),
+    setAISettings: ([s]: [AISettings]) => appStore.setAI(s),
     // ---- 内置本地引擎 ----
     aiLocalStatus: () => localEngine.localStatus(),
     aiLocalDownload: async ([modelId]: [string]) => {
@@ -665,7 +666,7 @@ export function registerIpc(ctx: AppContext) {
     },
     /** 按当前 baseURL 拉取模型列表（OpenAI 兼容 /models，失败回退 Ollama 原生 /api/tags） */
     aiListModels: async () => {
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       const base = s.baseURL.replace(/\/+$/, '')
       const tryFetch = async (url: string, native: boolean): Promise<string[]> => {
         try {
@@ -735,7 +736,7 @@ export function registerIpc(ctx: AppContext) {
     aiCancel: ([requestId]: [string]) => ai.cancel(requestId),
 
     aiClassify: async ([messageIds]: [string[]]) => {
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       if (!s.enabled) return
       const rows = messageIds.map(id => ({ id, row: store.getMessageRow(id) })).filter(r => r.row)
       if (!rows.length) return
@@ -822,18 +823,7 @@ export function registerIpc(ctx: AppContext) {
     },
 
     aiAskKnowledgeBase: async ([question, requestId]: [string, string]) => {
-      const items = store.listKbItems()
-      const q = question.toLowerCase()
-      const scored = items
-        .map(i => {
-          const hay = `${i.title} ${i.content} ${i.tags.join(' ')}`.toLowerCase()
-          const terms = q.split(/\s+/).filter(t => t.length > 1)
-          let score = 0
-          for (const t of terms) if (hay.includes(t)) score += 1
-          return { item: i, score }
-        })
-        .filter(s => s.score > 0)
-        .sort((a, b) => b.score - a.score)
+      const scored = rankByTerms(store.listKbItems(), searchTerms(question), i => ({ title: i.title, body: `${i.content} ${i.tags.join(' ')}` }))
         .slice(0, 8)
       const context = scored.length
         ? scored.map((s, i) => `[${i + 1}] ${s.item.title}\n${s.item.content.slice(0, 1500)}`).join('\n\n———\n\n')
@@ -861,7 +851,7 @@ export function registerIpc(ctx: AppContext) {
     aiTagKbItem: async ([kbItemId]: [string]) => {
       const item = store.listKbItems().find(i => i.id === kbItemId)
       if (!item) return
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       if (!s.enabled) return
       try {
         const answer = await aiChat([
@@ -1196,6 +1186,13 @@ export function registerIpc(ctx: AppContext) {
         throw err
       }
     })
+  }
+
+  // 主进程内部复用的能力（与渲染进程调用走同一实现）
+  return {
+    aiClassify: async (messageIds: string[]): Promise<void> => {
+      await handlers.aiClassify([messageIds], undefined as never)
+    }
   }
 }
 

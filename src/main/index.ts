@@ -6,7 +6,7 @@ import { MailStore } from './db'
 import { SyncEngine, friendlyError } from './mail/sync-engine'
 import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
-import { AIService } from './ai/service'
+import { AIService, aiReady } from './ai/service'
 import { LocalEngine } from './ai/local-engine'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
@@ -30,6 +30,26 @@ process.on('unhandledRejection', reason => {
 let appStore: AppStore
 let mailStore: MailStore
 let engine: SyncEngine
+let classifyMessages: ((ids: string[]) => Promise<void>) | null = null
+const autoClassifyQueue: string[] = []
+let autoClassifyTimer: NodeJS.Timeout | null = null
+
+function queueAutoClassify(messageId: string) {
+  autoClassifyQueue.push(messageId)
+  scheduleAutoClassify()
+}
+
+function scheduleAutoClassify() {
+  if (autoClassifyTimer || !autoClassifyQueue.length) return
+  autoClassifyTimer = setTimeout(() => {
+    autoClassifyTimer = null
+    const batch = autoClassifyQueue.splice(0, 30)
+    scheduleAutoClassify()
+    void classifyMessages?.(batch)
+      .then(() => broadcast({ type: 'messages-changed' }))
+      .catch(err => console.error('[auto-classify]', err))
+  }, 3000)
+}
 let sender: MailSender
 let localEngine: LocalEngine
 let aiService: AIService
@@ -333,7 +353,7 @@ async function bootstrap() {
 
   sender = new MailSender()
   localEngine = new LocalEngine(appStore)
-  aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))
+  aiService = new AIService(() => appStore.getAI())
   aiService.attachLocalEngine(localEngine)
 
   outbox = new Outbox({
@@ -363,7 +383,7 @@ async function bootstrap() {
   insights = new InsightsService({
     ai: aiService,
     store: mailStore,
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    getAISettings: () => appStore.getAI(),
     event: payload => broadcast(payload),
     // Agent 长期记忆注入（agent 稍后初始化，闭包延迟求值）
     getMemoryContext: q => agent?.memoryBlock(q) || null,
@@ -373,7 +393,7 @@ async function bootstrap() {
   agent = new AgentService({
     ai: aiService,
     store: mailStore,
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    getAISettings: () => appStore.getAI(),
     event: payload => broadcast(payload)
   })
 
@@ -394,11 +414,13 @@ async function bootstrap() {
         broadcast({ type: 'new-mail', accountId, subject, from })
         notifier.notify({ accountId, messageId, subject, from, category }, 0)
         // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
-        const ai = appStore.get('ai', DEFAULT_AI)
+        const ai = appStore.getAI()
         const row = mailStore.getMessageRow(messageId)
         if (ai.enabled && ai.autoInsights && row && InsightsService.worthExtracting(row.subject, row.snippet ?? '', !!row.is_newsletter)) {
           void insights.extractFromMessage(messageId).catch(() => {})
         }
+        // 「自动分类新邮件」：攒 3 秒成一批，一次 AI 调用分完（启发式结果先生效，AI 结果覆盖）
+        if (ai.autoClassify && aiReady(ai)) queueAutoClassify(messageId)
       }
     },
     () => mailStore.listRules(),
@@ -488,7 +510,7 @@ async function bootstrap() {
     openSettings: tab => createSettingsWindow(tab),
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }
-  registerIpc(ctx)
+  classifyMessages = registerIpc(ctx).aiClassify
 
   buildAppMenu()
   initNativeIntegration({

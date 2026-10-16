@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentMemory, AISettings, ContactProfile, MemoryScope } from '@shared/types'
 import type { MailStore } from '../db'
-import type { AIService } from './service'
+import { aiReady, type AIService } from './service'
+import { searchTerms, rankByTerms } from '../search-terms'
 
 const SCOPES: MemoryScope[] = ['fact', 'preference', 'person', 'commitment', 'routine']
 
@@ -48,8 +49,8 @@ export class AgentService {
   ) {}
 
   private ready(): boolean {
-    const s = this.deps.getAISettings()
-    return s.enabled && !!s.apiKey
+    // 内置小模型不做记忆提炼/画像（结构化重任务）；API 与本地部署（Ollama 等，无需 Key）均可
+    return aiReady(this.deps.getAISettings(), false)
   }
 
   private emitChanged() {
@@ -263,22 +264,14 @@ export class AgentService {
   async chat(question: string): Promise<{ system: string; user: string; usedIds: string[] }> {
     const mem = this.memoryPrompt(question, 12)
     // 知识库检索（轻量打分）
-    const kbItems = this.deps.store.listKbItems()
-    const q = question.toLowerCase()
-    const terms = q.split(/\s+/).filter(t => t.length > 1)
-    const kb = kbItems
-      .map(i => {
-        const hay = `${i.title} ${i.content} ${i.tags.join(' ')}`.toLowerCase()
-        return { i, score: terms.filter(t => hay.includes(t)).length }
-      })
-      .filter(s => s.score > 0)
-      .sort((a, b) => b.score - a.score)
+    const terms = searchTerms(question)
+    const kb = rankByTerms(this.deps.store.listKbItems(), terms, i => ({ title: i.title, body: `${i.content} ${i.tags.join(' ')}` }))
       .slice(0, 5)
+      .map(s => ({ i: s.item, score: s.score }))
     // 近期邮件检索（FTS 全文）
     let mailCtx = ''
     try {
-      const page = this.deps.store.getMessages({ scope: 'search', search: question, limit: 8, offset: 0 })
-      const hits = page.items ?? []
+      const hits = this.deps.store.searchByTerms(terms, 8)
       if (hits.length) {
         mailCtx = `\n\n【相关近期邮件（来自全文检索）】\n${hits
           .map(
