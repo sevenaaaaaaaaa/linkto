@@ -171,10 +171,12 @@ log "building: electron-vite build + electron-builder -mwl (mac dmg + win nsis +
 ./node_modules/.bin/electron-vite build || die "electron-vite build failed"
 # extraMetadata.version -> packaged package.json (app.getVersion()) and artifact names.
 # Numeric-only fields (CFBundleShortVersionString/CFBundleVersion, Windows FileVersion) get the plain next version.
+# The mac ${version} macro resolves to bundleShortVersion, so the DMG name is pinned to the nightly version explicitly.
 ./node_modules/.bin/electron-builder -mwl \
   "-c.extraMetadata.version=${version}" \
   "-c.buildVersion=${next_version}" \
   "-c.mac.bundleShortVersion=${next_version}" \
+  "-c.dmg.artifactName=${APP_NAME}-${version}-\${arch}.\${ext}" \
   || die "electron-builder failed"
 log "build finished in $(( $(date +%s) - build_start ))s"
 [ -f "$dmg" ] || die "expected DMG not found: $dmg"
