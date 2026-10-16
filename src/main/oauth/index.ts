@@ -21,7 +21,8 @@ const GOOGLE_SCOPE = 'https://mail.google.com/ openid email'
 
 const MS_DEVICE_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode'
 const MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
-const MS_SCOPE = 'offline_access https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send'
+/** openid/profile/email 让 v2 端点返回 id_token，才能拿到邮箱地址（preferred_username） */
+const MS_SCOPE = 'openid profile email offline_access https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send'
 
 function decodeJwtPayload(jwt: string): Record<string, unknown> {
   try {
