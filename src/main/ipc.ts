@@ -203,12 +203,15 @@ export function registerIpc(ctx: AppContext) {
         logger: false,
         tls: { rejectUnauthorized: false },
         connectionTimeout: 15_000,
-        greetingTimeout: 15_000
+        greetingTimeout: 15_000,
+        clientInfo: { name: 'LinkTo', vendor: 'LinkTo', version: app.getVersion() }
       })
       // 短连接兜底：吞掉异步 socket 错误（超时等），避免以 uncaughtException 击穿主进程
       client.on('error', () => {})
       try {
         await client.connect()
+        // 163/126 等登录成功但 SELECT 才报 Unsafe Login：验证时一并打开收件箱，避免「验证通过、同步失败」
+        await client.mailboxOpen('INBOX', { readOnly: true })
         return { ok: true }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -264,7 +267,11 @@ export function registerIpc(ctx: AppContext) {
 
     syncAccountNow: async ([id]: [string]) => {
       const current = accountById(id)
-      if (current?.enabled) engine.startAccount(current)
+      if (!current?.enabled) return
+      // 已有 worker：原连接上立即完整同步（不重建连接、不丢 IDLE）；否则启动
+      const worker = engine.getWorker(id)
+      if (worker) worker.syncNow()
+      else engine.startAccount(current)
     },
 
     // ================= OAuth（Gmail / Outlook 一键授权） =================
@@ -284,12 +291,15 @@ export function registerIpc(ctx: AppContext) {
         logger: false,
         tls: { rejectUnauthorized: false },
         connectionTimeout: 15_000,
-        greetingTimeout: 15_000
+        greetingTimeout: 15_000,
+        clientInfo: { name: 'LinkTo', vendor: 'LinkTo', version: app.getVersion() }
       })
       // 短连接兜底：同 verifyAccount
       client.on('error', () => {})
       try {
         await client.connect()
+        // 163/126 等登录成功但 SELECT 才报 Unsafe Login：验证时一并打开收件箱，避免「验证通过、同步失败」
+        await client.mailboxOpen('INBOX', { readOnly: true })
         return { ok: true }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

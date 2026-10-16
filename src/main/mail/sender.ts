@@ -7,6 +7,9 @@ function fmtAddr(a: Address): AddrValue {
   return a.name ? { name: a.name, address: a.address } : a.address
 }
 
+/** 仅生成 RFC822 原文、不发送（keepBcc：已发送副本保留密送人） */
+const rawComposer = nodemailer.createTransport({ streamTransport: true, buffer: true, keepBcc: true } as any)
+
 export interface MailCreds {
   pass?: string
   accessToken?: string
@@ -42,9 +45,9 @@ export class MailSender {
     this.transporters.delete(accountId)
   }
 
-  async send(account: AccountConfig, creds: MailCreds, draft: ComposeDraft): Promise<{ messageId?: string }> {
+  async send(account: AccountConfig, creds: MailCreds, draft: ComposeDraft): Promise<{ messageId?: string; raw?: Buffer }> {
     const t = this.get(account, creds)
-    const info = await t.sendMail({
+    const mail = {
       from: account.name ? { name: account.name, address: account.email } : account.email,
       to: draft.to.map(fmtAddr),
       cc: draft.cc.map(fmtAddr),
@@ -54,7 +57,14 @@ export class MailSender {
       inReplyTo: draft.inReplyToMessageId,
       references: draft.inReplyToMessageId,
       attachments: draft.attachmentPaths.map(p => ({ path: p }))
-    })
-    return { messageId: info.messageId }
+    }
+    const info = await t.sendMail(mail)
+    // 「已发送」副本：用同一份选项 + 同一 Message-ID 重新编码，保证编码/附件/Bcc 与实际发出的一致
+    let raw: Buffer | undefined
+    try {
+      const built = await rawComposer.sendMail({ ...mail, messageId: info.messageId })
+      raw = built.message as Buffer
+    } catch { /* 生成副本失败只影响存入已发送 */ }
+    return { messageId: info.messageId, raw }
   }
 }

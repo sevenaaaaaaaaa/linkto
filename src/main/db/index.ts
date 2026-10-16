@@ -171,6 +171,36 @@ export class MailStore {
     this.db.prepare('UPDATE folders SET last_sync_uid = ? WHERE id = ?').run(uid, folderId)
   }
 
+  setFolderUidValidity(folderId: string, uidValidity: number) {
+    this.db.prepare('UPDATE folders SET uid_validity = ? WHERE id = ?').run(uidValidity, folderId)
+  }
+
+  /** 本地已入库的 UID（升序），用于与服务器对账：清理已删除、回填缺口 */
+  listFolderUids(folderId: string): number[] {
+    const rows = this.db.prepare('SELECT uid FROM messages WHERE folder_id = ? ORDER BY uid').all(folderId) as any[]
+    return rows.map(r => Number(r.uid))
+  }
+
+  /** 近期缺正文的邮件（预取失败或被打断后补拉） */
+  listRecentWithoutBody(folderId: string, since: number, limit: number): { uid: number; date: number }[] {
+    const rows = this.db
+      .prepare('SELECT uid, date FROM messages WHERE folder_id = ? AND body_fetched = 0 AND date >= ? ORDER BY date DESC LIMIT ?')
+      .all(folderId, since, limit) as any[]
+    return rows.map(r => ({ uid: Number(r.uid), date: Number(r.date) }))
+  }
+
+  /** 清空文件夹的本地邮件（UIDVALIDITY 变化后旧 UID 全部失效） */
+  clearFolderMessages(folderId: string) {
+    const msgs = this.db.prepare('SELECT id FROM messages WHERE folder_id = ?').all(folderId) as any[]
+    for (const m of msgs) this.deleteMessageCascade(m.id)
+  }
+
+  /** 移除文件夹及其本地邮件（服务器已删除/改名，或属于不同步的 All Mail） */
+  deleteFolder(folderId: string) {
+    this.clearFolderMessages(folderId)
+    this.db.prepare('DELETE FROM folders WHERE id = ?').run(folderId)
+  }
+
   // ================= 邮件 =================
 
   /** 已知的 message_id → thread_id 映射，用于会话归并 */

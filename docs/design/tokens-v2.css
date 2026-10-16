@@ -4,7 +4,7 @@
  * 状态：待 owner 确认。尚未被任何文件 import —— Phase C 时整体并入
  *       src/renderer/src/styles/global.css 的 :root / [data-theme='dark'] / @theme。
  * 方向：「石墨纸」中性底（几乎无彩，极轻暖意）+ 单一高辨识 accent「铜绿 Verdigris」
- *       + 语义色拆分为 fill / ink / soft 三档，所有文字组合已过 WCAG AA（见 docs/DESIGN-AUDIT.md §4.1）。
+ *       + 语义色拆分为 fill / ink / soft 三档，所有文字组合已过 WCAG AA（见 design audit §4.1, kept locally in ops/design/）。
  * 兼容：变量名沿用 v1（--bg / --fg / --accent …），新增项均为增量；主题预设引擎
  *       PRESET_VAR_MAP 无需改签名，只需为新增 --*-ink 补映射（缺省回退到 v1 色）。
  */

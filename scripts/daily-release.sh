@@ -1,21 +1,30 @@
 #!/bin/bash
-# Daily release for LinkTo: sync -> typecheck -> bump patch -> build (mac dmg + win + linux)
-# -> commit/tag -> push -> GitHub Release -> update /Applications/LinkTo.app.
+# Nightly build for LinkTo: sync -> typecheck -> build (mac dmg + win + linux) with an injected
+# nightly version -> move the `nightly` tag -> refresh the single GitHub pre-release `nightly`
+# -> update /Applications/LinkTo.app.
 #
 # Usage: scripts/daily-release.sh [--dry-run] [--no-install] [--force]
-#   --dry-run     build + package locally only (no bump/commit/tag/push/release/install)
+#   --dry-run     build + package locally only (no tag/push/release/install)
 #   --no-install  do not replace /Applications/LinkTo.app
-#   --force       release even if there are no new commits since the latest v* tag
+#   --force       build even if the `nightly` tag already points at HEAD
 #
-# Safe for unattended launchd runs: no prompts; exits 0 when skipped, non-zero only on real failure.
+# Nothing is ever committed: the version source (package.json) stays at the last formal release;
+# the nightly version `<next minor>-nightly.YYYYMMDD` (e.g. 0.4.0-nightly.20261014, which sorts above
+# every 0.3.x and below the formal 0.4.0) is injected into the build only. Formal releases: scripts/release.sh.
+#
+# Safe for unattended runs: no prompts; exits 0 when skipped. The last line of output is always one of
+#   RESULT: built nightly <version> <shortsha> | RESULT: skipped <reason> | RESULT: failed <reason>
+# (parsed by ~/.local/bin/daily-release-all.sh).
 
 set -euo pipefail
 
 APP_NAME="LinkTo"
 GH_REPO="sevenaaaaaaaaa/linkto"
 BRANCH="main"
+NIGHTLY_TAG="nightly"
 LOG_FILE="${HOME}/Library/Logs/linkto-daily-release.log"
 INSTALL_PATH="/Applications/${APP_NAME}.app"
+LOCK_DIR="${TMPDIR:-/tmp}/linkto-daily-release.lock"
 
 DRY_RUN=0
 NO_INSTALL=0
@@ -25,8 +34,8 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1 ;;
     --no-install) NO_INSTALL=1 ;;
     --force) FORCE=1 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) echo "unknown flag: $arg" >&2; exit 2 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    *) echo "unknown flag: $arg" >&2; echo "RESULT: failed unknown flag $arg"; exit 2 ;;
   esac
 done
 
@@ -41,10 +50,36 @@ mkdir -p "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
-die() { log "ERROR: $*"; exit 1; }
-skip() { log "SKIPPED: $*"; exit 0; }
 
-log "==== ${APP_NAME} daily release start (dry-run=${DRY_RUN} no-install=${NO_INSTALL} force=${FORCE}) in ${REPO_ROOT}"
+# Exactly one RESULT line, always last. die/skip/finish set it; the EXIT trap prints it.
+RESULT=""
+FAIL_REASON="unexpected error"
+on_exit() {
+  local rc=$?
+  [ "${HAVE_LOCK:-0}" -eq 1 ] && rm -rf "$LOCK_DIR"
+  if [ -z "$RESULT" ]; then
+    if [ "$rc" -eq 0 ]; then RESULT="skipped no result recorded"; else RESULT="failed ${FAIL_REASON} (rc=${rc})"; fi
+  fi
+  echo "RESULT: ${RESULT}"
+}
+trap on_exit EXIT
+die() { log "ERROR: $*"; FAIL_REASON="$*"; RESULT="failed $*"; exit 1; }
+skip() { log "SKIPPED: $*"; RESULT="skipped $*"; exit 0; }
+
+# ---------- 0. Single instance ----------
+HAVE_LOCK=0
+if mkdir "$LOCK_DIR" 2>/dev/null; then
+  HAVE_LOCK=1; echo $$ > "$LOCK_DIR/pid"
+else
+  other="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then
+    skip "another run is in progress (pid ${other})"
+  fi
+  log "removing stale lock (pid ${other:-?})"
+  rm -rf "$LOCK_DIR"; mkdir "$LOCK_DIR" && HAVE_LOCK=1 && echo $$ > "$LOCK_DIR/pid" || die "cannot take lock $LOCK_DIR"
+fi
+
+log "==== ${APP_NAME} nightly start (dry-run=${DRY_RUN} no-install=${NO_INSTALL} force=${FORCE}) in ${REPO_ROOT}"
 
 for tool in git node npm; do
   command -v "$tool" >/dev/null || die "missing tool: $tool"
@@ -54,7 +89,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
   gh auth status >/dev/null 2>&1 || die "gh is not authenticated (run: gh auth login)"
 fi
 
-# ---------- 1. Preconditions ----------
+# ---------- 1. Preconditions: main, clean, synced, typecheck ----------
 current_branch="$(git rev-parse --abbrev-ref HEAD)"
 dirty="$(git status --porcelain)"
 
@@ -64,14 +99,15 @@ if [ "$DRY_RUN" -eq 1 ]; then
 else
   [ "$current_branch" = "$BRANCH" ] || skip "not on '${BRANCH}' (on '${current_branch}')"
   if [ -n "$dirty" ]; then
-    log "working tree has uncommitted changes, not releasing (never auto-committing WIP):"
+    log "working tree has uncommitted changes, not building (never auto-committing WIP):"
     printf '%s\n' "$dirty"
     skip "dirty working tree"
   fi
 fi
 
 log "fetching origin…"
-if ! git fetch --tags origin; then
+# --force: the nightly tag is moved on every build, so the local copy must follow the remote.
+if ! git fetch --tags --force origin; then
   [ "$DRY_RUN" -eq 1 ] || die "git fetch failed"
   log "WARN: git fetch failed (offline?); dry-run continues with local refs"
 fi
@@ -87,65 +123,62 @@ if [ "$behind" -gt 0 ]; then
       git rebase --abort >/dev/null 2>&1 || true
       die "git pull --rebase failed (conflict or blocked); aborted, nothing forced — resolve manually"
     fi
+    ahead="$(git rev-list --count "origin/${BRANCH}..HEAD")"
   fi
+fi
+if [ "$ahead" -gt 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  # A nightly must be reproducible from origin/main; pushing main is the developer's call.
+  skip "local ${BRANCH} is ${ahead} commit(s) ahead of origin — push first"
 fi
 
 log "running checks: npm run typecheck"
 [ -d node_modules ] || npm ci --no-audit --no-fund || die "npm ci failed"
 npm run typecheck || die "typecheck failed"
 
-# ---------- 2. Anything to release? ----------
-last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
-resume_tag=""
-if [ -n "$last_tag" ]; then
-  new_commits="$(git rev-list --count "${last_tag}..HEAD")"
-else
-  new_commits="$(git rev-list --count HEAD)"
-fi
-log "latest tag: ${last_tag:-<none>}, commits since: ${new_commits}"
+# ---------- 2. Anything new since the last nightly? ----------
+head_sha="$(git rev-parse HEAD)"
+short_sha="$(git rev-parse --short HEAD)"
+nightly_sha="$(git rev-list -n 1 "refs/tags/${NIGHTLY_TAG}" 2>/dev/null || true)"
+log "HEAD ${short_sha}; ${NIGHTLY_TAG} tag -> ${nightly_sha:-<none>}"
 
-if [ "$DRY_RUN" -eq 0 ] && [ "$new_commits" -eq 0 ] && [ -n "$last_tag" ]; then
-  # Resume a previous run that tagged but did not finish publishing.
-  if ! gh release view "$last_tag" -R "$GH_REPO" >/dev/null 2>&1; then
-    log "tag ${last_tag} is on HEAD but has no GitHub Release yet -> resuming publish"
-    resume_tag="$last_tag"
-  elif [ "$FORCE" -eq 0 ]; then
-    skip "no new commits since ${last_tag}"
+if [ "$DRY_RUN" -eq 0 ] && [ "$FORCE" -eq 0 ] && [ "$nightly_sha" = "$head_sha" ]; then
+  # Resume support: the tag may have moved while the release update failed. The notes carry a
+  # marker with the built commit; only skip when the published release really is for HEAD.
+  body="$(gh release view "$NIGHTLY_TAG" -R "$GH_REPO" --json body -q .body 2>/dev/null || true)"
+  if printf '%s' "$body" | grep -qF "nightly-sha: ${head_sha}"; then
+    skip "no new commits since the last nightly (${short_sha})"
   fi
+  log "nightly tag is on HEAD but the release is incomplete -> resuming"
 fi
 
-# ---------- 3. Version ----------
-current_version="$(node -p "require('./package.json').version")"
-if [ "$DRY_RUN" -eq 1 ]; then
-  version="$current_version"
-  log "dry-run: building current version ${version} (no bump)"
-elif [ -n "$resume_tag" ]; then
-  version="${resume_tag#v}"
-  [ "$version" = "$current_version" ] || die "tag ${resume_tag} does not match package.json ${current_version}"
-else
-  # Version lives in package.json (+ root entries of package-lock.json). mobile/ is versioned separately.
-  npm version patch --no-git-tag-version >/dev/null || die "version bump failed"
-  version="$(node -p "require('./package.json').version")"
-  git rev-parse -q --verify "refs/tags/v${version}" >/dev/null && {
-    git checkout -- package.json package-lock.json
-    die "tag v${version} already exists locally"
-  }
-  log "bumped version ${current_version} -> ${version}"
-fi
-tag="v${version}"
+# ---------- 3. Version (injected into the build only, never committed) ----------
+base_version="$(node -p "require('./package.json').version")"
+next_version="$(node -e '
+  const [maj, min] = process.argv[1].split("-")[0].split(".").map(Number);
+  console.log(`${maj}.${min + 1}.0`);' "$base_version")"
+build_date="$(date +%Y%m%d)"
+display_date="$(date +%Y-%m-%d)"
+version="${next_version}-nightly.${build_date}"
+log "version: package.json ${base_version} -> nightly ${version}"
 
 # ---------- 4. Build ----------
+# Drop older nightly artifacts so dist/ does not grow forever (formal builds are kept).
+find dist -maxdepth 1 -name "*-nightly.*" -exec rm -rf {} + 2>/dev/null || true
+
 dmg="dist/${APP_NAME}-${version}-arm64.dmg"
 build_start=$(date +%s)
-log "building: npm run dist (mac dmg + win nsis + linux AppImage)…"
-if ! npm run dist; then
-  if [ "$DRY_RUN" -eq 0 ] && [ -z "$resume_tag" ]; then
-    git checkout -- package.json package-lock.json
-  fi
-  die "build failed"
-fi
+log "building: electron-vite build + electron-builder -mwl (mac dmg + win nsis + linux AppImage)…"
+./node_modules/.bin/electron-vite build || die "electron-vite build failed"
+# extraMetadata.version -> packaged package.json (app.getVersion()) and artifact names.
+# Numeric-only fields (CFBundleShortVersionString/CFBundleVersion, Windows FileVersion) get the plain next version.
+./node_modules/.bin/electron-builder -mwl \
+  "-c.extraMetadata.version=${version}" \
+  "-c.buildVersion=${next_version}" \
+  "-c.mac.bundleShortVersion=${next_version}" \
+  || die "electron-builder failed"
 log "build finished in $(( $(date +%s) - build_start ))s"
 [ -f "$dmg" ] || die "expected DMG not found: $dmg"
+[ -z "$(git status --porcelain)" ] || [ "$DRY_RUN" -eq 1 ] || die "build left the working tree dirty"
 
 # Sanity check: the DMG must contain the Gatekeeper helper.
 mnt="$(mktemp -d /tmp/linkto-dmg-check.XXXXXX)"
@@ -166,28 +199,25 @@ assets=("$dmg")
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "dry-run artifacts:"; for a in "${assets[@]}"; do log "  $a"; done
-  log "==== dry-run done (nothing committed, pushed, released or installed)"
+  log "==== dry-run done (nothing tagged, pushed, released or installed)"
+  RESULT="skipped dry-run (built ${version} ${short_sha} locally)"
   exit 0
 fi
 
-# ---------- 3b. Commit + tag (after a successful build) ----------
-if [ -z "$resume_tag" ]; then
-  git add package.json package-lock.json
-  git commit -m "chore(release): ${tag}" || die "release commit failed"
-  git tag -a "$tag" -m "${APP_NAME} ${tag}" || die "tag failed"
-  log "committed and tagged ${tag}"
-fi
+# ---------- 5. Move the nightly tag ----------
+git tag -f -a "$NIGHTLY_TAG" -m "${APP_NAME} nightly ${version}" "$head_sha" >/dev/null || die "tag ${NIGHTLY_TAG} failed"
+git push -f origin "refs/tags/${NIGHTLY_TAG}" || die "git push ${NIGHTLY_TAG} tag failed"
+log "tag ${NIGHTLY_TAG} -> ${short_sha} pushed"
 
-# ---------- 5. Push + GitHub Release ----------
-git push origin "$BRANCH" || die "git push failed"
-git push origin "$tag" || die "git push tag failed"
-
-prev_tag="$(git describe --tags --abbrev=0 --match 'v*' "${tag}^" 2>/dev/null || true)"
-notes_file="$(mktemp /tmp/linkto-release-notes.XXXXXX)"
+# ---------- 6. Refresh the single pre-release ----------
+last_formal="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null || true)"
+notes_file="$(mktemp /tmp/linkto-nightly-notes.XXXXXX)"
 {
-  echo "## 变更"
+  echo "每日自动构建，版本 \`${version}\`（提交 \`${short_sha}\`）。未经完整测试，可能不稳定；正式版本见 Releases 中的 Latest。"
   echo
-  git log --no-merges --format='- %s' ${prev_tag:+"${prev_tag}..${tag}"} | grep -v '^- chore(release):' || echo "- 例行发版"
+  echo "## 自 ${last_formal:-首个版本} 以来的变更"
+  echo
+  git log --no-merges --format='- %s' ${last_formal:+"${last_formal}..HEAD"} | grep -v '^- chore(release):' || echo "- 无代码变更"
   echo
   echo "## macOS 安装提示"
   echo
@@ -196,28 +226,34 @@ notes_file="$(mktemp /tmp/linkto-release-notes.XXXXXX)"
   echo '```'
   echo "xattr -dr com.apple.quarantine /Applications/${APP_NAME}.app && open /Applications/${APP_NAME}.app"
   echo '```'
+  echo
+  echo "<!-- nightly-sha: ${head_sha} -->"
 } > "$notes_file"
 
-if gh release view "$tag" -R "$GH_REPO" >/dev/null 2>&1; then
-  # Release already exists (e.g. created elsewhere): only add assets that are missing, never clobber.
-  existing="$(gh release view "$tag" -R "$GH_REPO" --json assets -q '.assets[].name')"
-  for a in "${assets[@]}"; do
-    name="$(basename "$a" | tr ' ' '.')"
-    if printf '%s\n' "$existing" | grep -qxF "$name"; then
-      log "asset already on release, keeping: $name"
-    else
-      gh release upload "$tag" "$a" -R "$GH_REPO" || die "upload failed: $a"
-    fi
-  done
+title="Nightly · ${display_date}"
+if gh release view "$NIGHTLY_TAG" -R "$GH_REPO" >/dev/null 2>&1; then
+  gh release edit "$NIGHTLY_TAG" -R "$GH_REPO" --title "$title" --notes-file "$notes_file" \
+    --prerelease --latest=false || die "gh release edit failed"
 else
-  gh release create "$tag" "${assets[@]}" -R "$GH_REPO" --title "${APP_NAME} ${tag}" --notes-file "$notes_file" \
-    || die "gh release create failed"
+  gh release create "$NIGHTLY_TAG" -R "$GH_REPO" --verify-tag --title "$title" --notes-file "$notes_file" \
+    --prerelease --latest=false || die "gh release create failed"
 fi
 rm -f "$notes_file"
-release_url="$(gh release view "$tag" -R "$GH_REPO" --json url -q .url)"
+
+gh release upload "$NIGHTLY_TAG" "${assets[@]}" -R "$GH_REPO" --clobber || die "asset upload failed"
+# GitHub stores spaces in asset names as dots; drop assets from older nightlies.
+keep="$(for a in "${assets[@]}"; do basename "$a" | tr ' ' '.'; done)"
+gh release view "$NIGHTLY_TAG" -R "$GH_REPO" --json assets -q '.assets[].name' | while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  if ! printf '%s\n' "$keep" | grep -qxF "$name"; then
+    log "removing stale asset: $name"
+    gh release delete-asset "$NIGHTLY_TAG" "$name" -R "$GH_REPO" -y || log "WARN: could not delete $name"
+  fi
+done
+release_url="$(gh release view "$NIGHTLY_TAG" -R "$GH_REPO" --json url -q .url)"
 log "release: $release_url"
 
-# ---------- 6. Update the local app ----------
+# ---------- 7. Update the local app ----------
 installed="(skipped)"
 if [ "$NO_INSTALL" -eq 0 ]; then
   built_app="dist/mac-arm64/${APP_NAME}.app"
@@ -230,19 +266,20 @@ if [ "$NO_INSTALL" -eq 0 ]; then
     for _ in $(seq 1 30); do pgrep -xq "$APP_NAME" || break; sleep 1; done
   fi
   if pgrep -xq "$APP_NAME"; then
-    log "WARN: ${APP_NAME} did not quit within 30s; not replacing ${INSTALL_PATH} (release is published)"
+    log "WARN: ${APP_NAME} did not quit within 30s; not replacing ${INSTALL_PATH} (nightly is published)"
     installed="(not replaced: app still running)"
   else
     staging="${INSTALL_PATH%.app}.new.app"
     rm -rf "$staging"
     ditto "$built_app" "$staging" || die "ditto failed"
     xattr -dr com.apple.quarantine "$staging" 2>/dev/null || true
+    old=""
     if [ -d "$INSTALL_PATH" ]; then
       old="$(mktemp -d /tmp/linkto-old-app.XXXXXX)"
       mv "$INSTALL_PATH" "$old/" || die "cannot move old app aside"
     fi
     mv "$staging" "$INSTALL_PATH" || die "cannot move new app into place"
-    [ -n "${old:-}" ] && rm -rf "$old"
+    [ -n "$old" ] && rm -rf "$old"
     installed="$INSTALL_PATH"
     log "installed ${INSTALL_PATH}"
     if [ "$was_running" -eq 1 ]; then
@@ -251,9 +288,10 @@ if [ "$NO_INSTALL" -eq 0 ]; then
   fi
 fi
 
-# ---------- 7. Summary ----------
-log "==== done: ${APP_NAME} ${tag}"
+# ---------- 8. Summary ----------
+log "==== done: ${APP_NAME} nightly ${version}"
 log "  release:   ${release_url}"
 log "  dmg:       ${REPO_ROOT}/${dmg}"
 log "  installed: ${installed}"
 log "  log:       ${LOG_FILE}"
+RESULT="built nightly ${version} ${short_sha}"

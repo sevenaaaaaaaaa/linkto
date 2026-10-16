@@ -25,24 +25,13 @@ export interface OutboxDeps {
   event(payload: unknown): void
 }
 
-function buildSentRaw(account: AccountConfig, draft: ComposeDraft, messageId?: string): string {
-  const addr = (a: { name?: string; address: string }) => (a.name ? `${a.name} <${a.address}>` : a.address)
-  const date = new Date().toUTCString()
-  return [
-    `From: ${addr({ name: account.name, address: account.email })}`,
-    `To: ${draft.to.map(addr).join(', ')}`,
-    draft.cc.length ? `Cc: ${draft.cc.map(addr).join(', ')}` : '',
-    `Subject: ${draft.subject}`,
-    `Date: ${date}`,
-    messageId ? `Message-ID: ${messageId}` : `Message-ID: <${Math.random().toString(36).slice(2)}@linkto.local>`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=utf-8',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    draft.html || '<p></p>'
-  ]
-    .filter(Boolean)
-    .join('\r\n')
+/**
+ * SMTP 服务器会自动把发出的邮件存入「已发送」的服务商：再 APPEND 会出现两封。
+ * Proton Bridge（本机回环地址）同样由 Proton 服务端保存。
+ */
+function smtpAutoSavesSent(account: AccountConfig): boolean {
+  if (['gmail', 'outlook', 'office365', 'hotmail'].includes(account.provider)) return true
+  return /^(127\.0\.0\.1|localhost|::1)$/i.test(account.smtp.host)
 }
 
 /**
@@ -84,9 +73,9 @@ export class Outbox {
       // 尝试存入已发送
       try {
         const worker = engine.getWorker(account.id)
-        if (worker) {
+        if (worker && info.raw && !smtpAutoSavesSent(account)) {
           const sentPath = await worker.specialFolderPath('sent')
-          if (sentPath) await worker.appendRaw(sentPath, buildSentRaw(account, draft, info.messageId))
+          if (sentPath) await worker.appendRaw(sentPath, info.raw, info.messageId)
         }
       } catch { /* 存已发送失败不影响发送结果 */ }
       return { ok: true, messageId: info.messageId }

@@ -2,6 +2,10 @@
 
 React Native 0.87 · 一套代码三平台：**Android / iOS / 鸿蒙（RNOH）**
 
+> 版本：移动版独立编号，与桌面版（仓库根 `package.json`）不同步，也不随桌面版的 Nightly / 正式 Release 发包。当前 0.3.0，
+> 以下三处须保持一致：`mobile/package.json`、Android `android/app/build.gradle` 的 `versionName`（`versionCode` 递增）、
+> iOS 工程的 `MARKETING_VERSION`。
+
 ```
 mobile/
 ├── src/

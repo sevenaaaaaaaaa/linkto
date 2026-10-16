@@ -59,7 +59,7 @@
 
 /* ================================================================
  * Design Tokens v2 · 「石墨纸 + 铜绿」（Phase C，2026-10）
- * 规范来源：docs/DESIGN-AUDIT.md §3 · docs/design/tokens-v2.css
+ * 规范来源：docs/design/tokens-v2.css（审计原文仅本地 ops/design/DESIGN-AUDIT.md §3）
  * 组件层只引用 token / @theme 映射类，禁止散写颜色、字号、圆角、阴影。
  * 派生色（*-ink / *-soft / --selected / blue-*）全部由 relative color 从
  * 基色计算 —— 主题预设只需覆盖 --accent 等基色，派生色自动跟随。

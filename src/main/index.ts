@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, Menu, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { AppStore, DEFAULT_GENERAL, DEFAULT_NOTIFICATIONS } from './store'
@@ -527,6 +527,8 @@ async function bootstrap() {
     }
     engine.startAccount(account)
   }
+  // 睡眠唤醒后旧 IMAP socket 多半已失效：立即重连，而不是等 socket 超时才发现
+  powerMonitor.on('resume', () => engine.reconnectAll())
   outbox.start()
   // 定期学习：每 30 分钟检查一次是否该生成当日商情
   setInterval(() => void insights.maybeAutoDaily().catch(() => {}), 30 * 60_000)

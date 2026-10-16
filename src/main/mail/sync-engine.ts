@@ -1,4 +1,5 @@
 import { ImapFlow, ListResponse } from 'imapflow'
+import { app } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import type { AccountConfig, Address, Folder, MessageCategory, SpecialFolder } from '@shared/types'
@@ -30,8 +31,22 @@ const NAME_HEURISTICS: [RegExp, SpecialFolder][] = [
   [/^(drafts?|草稿箱?|草稿)$/i, 'drafts'],
   [/^(trash|deleted( items| messages)?|废纸篓|已删除)$/i, 'trash'],
   [/^(junk|spam|垃圾邮件|垃圾)$/i, 'junk'],
-  [/^(archive|归档|所有邮件|all mail)$/i, 'archive']
+  [/^(all mail|所有邮件)$/i, 'all'],
+  [/^(archive|归档)$/i, 'archive']
 ]
+
+/** 轻量轮询间隔（仅收件箱；IDLE 推送失效时的兜底） */
+const POLL_MS = 30_000
+/** 完整同步间隔（LIST + 全部文件夹 + 删除对账 + 历史回填） */
+const FULL_SYNC_MS = 5 * 60_000
+/** 单次 FETCH 的 UID 数：分片落库，断线只丢当前片 */
+const FETCH_CHUNK = 100
+/** 每轮完整同步回填的历史邮件数 */
+const BACKFILL_CHUNK = 200
+/** 本地保留的历史上限（收件箱 / 其他文件夹） */
+const backfillLimit = (special: SpecialFolder) => (special === 'inbox' ? 5000 : 1000)
+/** 看门狗：同步活动超过此时长无进展即强制重连 */
+const STALL_MS = 3 * 60_000
 
 function specialFor(f: { path: string; specialUse?: string | boolean }): SpecialFolder {
   if (f.path.toUpperCase() === 'INBOX') return 'inbox'
@@ -111,6 +126,14 @@ export class AccountWorker {
   private processingBody = false
   private cycle = 0
   private rules: Rule[] = []
+  /** 上次完整同步时间；0 表示下一轮必须完整同步 */
+  private lastFullSync = 0
+  /** IDLE 收到 EXPUNGE：下一轮收件箱同步需要做删除对账 */
+  private expungeSeen = false
+  /** 主动断线重连（唤醒/手动刷新）：本次断开不算错误，不退避 */
+  private reconnecting = false
+  /** 历史已回填完毕的文件夹（进程内缓存，重启后重新判断） */
+  private backfillDone = new Set<string>()
 
   constructor(
     public readonly account: { id: string; name: string; email: string; user: string },
@@ -136,6 +159,24 @@ export class AccountWorker {
     this.client?.close()
   }
 
+  /** 立即完整同步（手动刷新）：已连接则直接跑一轮，退避等待中则马上重连 */
+  syncNow() {
+    this.lastFullSync = 0
+    this.kickSync()
+  }
+
+  /** 丢弃当前连接并立刻重连（系统唤醒/网络切换后旧 socket 多半已半死，等超时太久） */
+  reconnect() {
+    if (!this.running) return
+    const client = this.client
+    this.lastFullSync = 0
+    this.kickSync()
+    if (!client) return
+    this.reconnecting = true
+    this.client = null
+    try { client.close() } catch { /* ignore */ }
+  }
+
   private async loop() {
     let backoff = 3000
     let forceRefresh = false
@@ -144,36 +185,69 @@ export class AccountWorker {
         this.events.status(this.account.id, 'syncing', '连接中…')
         await this.connect(forceRefresh)
         forceRefresh = false
+        this.reconnecting = false
         this.startWatchdog()
         this.events.status(this.account.id, 'syncing', '同步中…')
-        await this.syncAllFolders()
-        await this.replayPendingOps()
-        this.events.status(this.account.id, 'connected', '已连接')
+        await this.runCycle(true)
         backoff = 3000
         while (this.running && this.client?.usable) {
-          await this.sleepInterruptible(this.cycle % 4 === 0 ? 30_000 : 60_000)
+          await this.sleepInterruptible(POLL_MS)
           if (!this.running || !this.client?.usable) break
           this.kickRequested = false
-          await this.syncAllFolders(true)
-          await this.replayPendingOps()
-          this.events.status(this.account.id, 'connected', '已连接')
+          await this.runCycle(Date.now() - this.lastFullSync >= FULL_SYNC_MS)
         }
+        // 服务器主动断开：稍等再连，避免「连上即被踢」时空转
+        if (this.running && !this.reconnecting) await this.sleepInterruptible(2000)
       } catch (err) {
         if (!this.running) return
         this.stopWatchdog()
+        const old = this.client
+        this.client = null
+        try { old?.close() } catch { /* ignore */ }
+        if (this.reconnecting) {
+          // 主动重连：不报错、不退避
+          this.reconnecting = false
+          this.kickRequested = false
+          continue
+        }
         const msg = err instanceof Error ? err.message : String(err)
         // OAuth 认证失败 → 下次强制刷新 token 重试；密码错误则原样提示
         if (this.getToken && /auth|login|credentials|invalid|AUTHENTICATE/i.test(msg)) forceRefresh = true
-        this.events.status(this.account.id, 'error', friendlyError(err))
-        try {
-          this.client?.close()
-        } catch { /* ignore */ }
-        this.client = null
+        this.events.status(this.account.id, 'error', this.describeError(err))
+        // 服务器限流（Gmail 常见）：退避拉长，避免越重试越被限
+        if (/THROTTLED|bandwidth|too many|rate limit|OVERQUOTA/i.test(msg)) backoff = Math.max(backoff, 5 * 60_000)
+        this.kickRequested = false
         await this.sleepInterruptible(backoff)
         this.kickRequested = false
-        backoff = Math.min(backoff * 2, 60_000)
+        backoff = Math.min(backoff * 2, 5 * 60_000)
       }
     }
+    this.stopWatchdog()
+  }
+
+  /** 一轮同步：完整轮次刷新全部文件夹，否则只看收件箱；结束后回到 INBOX 让 IDLE 盯住新邮件 */
+  private async runCycle(full: boolean) {
+    this.touchActivity()
+    if (full) {
+      await this.syncAllFolders()
+      this.lastFullSync = Date.now()
+    } else {
+      const reconcile = this.expungeSeen
+      this.expungeSeen = false
+      await this.syncInbox(reconcile)
+    }
+    await this.replayPendingOps()
+    this.requeueMissingBodies()
+    await this.watchInbox()
+    this.events.status(this.account.id, 'connected', '已连接')
+  }
+
+  private describeError(err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err)
+    const local = /^(127\.0\.0\.1|localhost|::1)$/i.test(this.imap.host)
+    if (local && /ECONNREFUSED|ECONNRESET|closed/i.test(msg))
+      return '本地 IMAP 桥未运行（如 Proton Mail Bridge）：请先启动 Bridge，林可兔会自动重连'
+    return friendlyError(err)
   }
 
   private async connect(tryForceRefresh = false) {
@@ -198,12 +272,28 @@ export class AccountWorker {
       tls: { rejectUnauthorized: false },
       connectionTimeout: 20_000,
       greetingTimeout: 20_000,
-      socketTimeout: 30 * 60_000
+      // IDLE 每 4 分钟重发一次（保活 NAT/防服务器踢 IDLE），所以 10 分钟无数据即可判定 socket 已死
+      socketTimeout: 10 * 60_000,
+      maxIdleTime: 4 * 60_000,
+      // RFC 2971 ID：163/126 等 Coremail 不识别客户端会拒绝 SELECT（Unsafe Login）
+      clientInfo: { name: 'LinkTo', vendor: 'LinkTo', version: app.getVersion() }
     })
-    client.on('exists', (e: { path?: string; count: number }) => {
-      if (e.path?.toUpperCase() === 'INBOX' && this.running) {
+    const isInbox = (path?: string) => path?.toUpperCase() === 'INBOX'
+    client.on('exists', (e: { path?: string }) => {
+      if (isInbox(e.path) && this.running) this.kickSync()
+    })
+    client.on('expunge', (e: { path?: string }) => {
+      if (isInbox(e.path) && this.running) {
+        this.expungeSeen = true
         this.kickSync()
       }
+    })
+    client.on('flags', (e: { path?: string }) => {
+      if (isInbox(e.path) && this.running) this.kickSync()
+    })
+    // 连接意外关闭：唤醒主循环立即重连，而不是睡满轮询间隔
+    client.on('close', () => {
+      if (this.client === client && this.running) this.kickSync()
     })
     // ImapFlow 的套接字错误（含超时）是异步 emit 的 error 事件，不走任何被 await 的 promise，
     // 不挂监听会以 uncaughtException 击穿主进程；这里兜住事件并断开，重连交给主循环的 backoff
@@ -220,17 +310,19 @@ export class AccountWorker {
     this.kickRequested = true
   }
 
-  /** 看门狗：同步活动超过 5 分钟无进展 → 强制断线重连（兜底任何未知挂起，绝不永久卡死） */
+  /** 看门狗：同步活动超过 STALL_MS 无进展 → 强制断线重连（兜底任何未知挂起，绝不永久卡死） */
   private watchdogTimer: NodeJS.Timeout | null = null
   private lastActivity = 0
+  private busy = false
   private touchActivity() {
     this.lastActivity = Date.now()
   }
   private startWatchdog() {
     this.stopWatchdog()
     this.lastActivity = Date.now()
+    this.busy = true
     this.watchdogTimer = setInterval(() => {
-      if (Date.now() - this.lastActivity > 5 * 60_000) {
+      if (this.busy && Date.now() - this.lastActivity > STALL_MS) {
         try { this.client?.close() } catch { /* ignore */ }
       }
     }, 30_000)
@@ -244,12 +336,15 @@ export class AccountWorker {
 
   /** 分片 sleep：running=false 或 kick 立即返回 */
   private async sleepInterruptible(ms: number) {
+    this.busy = false
     const step = 500
     let waited = 0
     while (waited < ms && this.running && !this.kickRequested) {
       await sleep(Math.min(step, ms - waited))
       waited += step
     }
+    this.busy = true
+    this.touchActivity()
   }
 
   /** 所有操作经此串行化，避免与同步循环争用 */
@@ -261,30 +356,54 @@ export class AccountWorker {
 
   // ---------- 文件夹与同步 ----------
 
-  private async syncAllFolders(light = false) {
+  private async searchUids(query: Record<string, unknown>): Promise<number[]> {
+    const client = this.client
+    if (!client) throw new Error('not connected')
+    const res = await client.search(query, { uid: true })
+    return ((res || []) as number[]).map(Number).sort((a, b) => a - b)
+  }
+
+  /** 选中 INBOX 并留在那里：ImapFlow 自动 IDLE 只监听当前选中的文件夹 */
+  private async watchInbox() {
+    const client = this.client
+    if (!client?.usable) return
+    const lock = await client.getMailboxLock('INBOX')
+    lock.release()
+  }
+
+  private async syncInbox(reconcile: boolean) {
+    await this.syncFolder('INBOX', 'inbox', reconcile)
+    this.cycle++
+    this.events.changed(this.account.id)
+  }
+
+  private async syncAllFolders() {
     const client = this.client
     if (!client) throw new Error('not connected')
     const folders = await client.list()
+    this.touchActivity()
     let order = 0
     const priority: Record<string, number> = { inbox: 0, sent: 1, archive: 2, all: 3, junk: 4, trash: 5, drafts: 6, null: 7 }
     const sorted = [...folders].sort(
       (a, b) => (priority[String(specialFor(a))] ?? 9) - (priority[String(specialFor(b))] ?? 9)
     )
+    const seen = new Set<string>()
+    const failed: string[] = []
     for (const f of sorted) {
       if (!this.running) return
       this.touchActivity()
       const special = specialFor(f)
-      if (special === 'drafts' || special === 'all') {
-        // 本地管理草稿；All Mail 与 INBOX 重复，跳过同步
+      const id = folderIdOf(this.account.id, f.path)
+      seen.add(id)
+      // Gmail 的 Starred(\\Flagged) / Important 只是标签视图，同步会让邮件重复出现
+      const virtual = f.specialUse === '\\Flagged' || f.flags?.has('\\Important')
+      if (special === 'drafts' || special === 'all' || virtual) {
+        // 本地管理草稿；All Mail 与其他文件夹重复，不同步（顺带清掉旧版本误同步的副本）
+        this.store.deleteFolder(id)
         continue
       }
-      const id = folderIdOf(this.account.id, f.path)
       const name = f.path.toUpperCase() === 'INBOX' ? '收件箱' : f.path.split(/[/.]/).pop() || f.path
-      let uidValidity = 0
-      try {
-        const st = await client.status(f.path, { uidNext: true, uidValidity: true })
-        if (st) uidValidity = Number((st as { uidValidity?: bigint | number }).uidValidity ?? 0)
-      } catch { /* 部分服务器不支持 */ }
+      // UIDVALIDITY 以 SELECT 返回为准（syncFolder 内处理），这里沿用已存值，避免 STATUS 偶发失败把游标清零
       this.store.upsertFolder({
         id,
         accountId: this.account.id,
@@ -293,63 +412,140 @@ export class AccountWorker {
         special,
         sortOrder: order++,
         hidden: false,
-        uidValidity
+        uidValidity: this.store.getFolderLastSync(id).uidValidity
       })
-      if (light && this.cycle % 4 !== 0 && special !== 'inbox') continue
-      await this.syncFolder(f.path, special, light)
+      // Gmail 的 [Gmail]、Proton 的 Folders/Labels 等容器不可 SELECT，强行进入会让整轮同步失败
+      if (f.flags?.has('\\Noselect') || f.flags?.has('\\NonExistent')) continue
+      try {
+        await this.syncFolder(f.path, special, true)
+      } catch (err) {
+        // 单个文件夹出错不拖垮整轮；连接已坏或收件箱失败才交给主循环重连
+        if (!client.usable || special === 'inbox') throw err
+        failed.push(f.path)
+      }
     }
+    // 服务器上已删除/改名的文件夹：本地同步移除（列表异常为空时不动，防误删）
+    if (seen.has(folderIdOf(this.account.id, 'INBOX')) || folders.some(f => f.path.toUpperCase() === 'INBOX')) {
+      for (const row of this.store.listFolders()) {
+        if (row.accountId === this.account.id && !seen.has(row.id)) this.store.deleteFolder(row.id)
+      }
+    }
+    if (failed.length) this.events.progress(this.account.id, `${failed.length} 个文件夹暂时同步失败，稍后自动重试`)
     this.cycle++
     this.events.changed(this.account.id)
   }
 
-  private async syncFolder(path: string, special: SpecialFolder, light = false) {
+  /**
+   * 同步单个文件夹。不依赖 SELECT 时的 UIDNEXT（INBOX 常驻选中时它不会刷新），
+   * 一律用 UID SEARCH 取新邮件；full=true 时额外做删除对账与历史回填。
+   */
+  private async syncFolder(path: string, special: SpecialFolder, full: boolean) {
     const client = this.client
     if (!client) return
     const fid = folderIdOf(this.account.id, path)
-    const last = this.store.getFolderLastSync(fid)
     const lock = await client.getMailboxLock(path)
     try {
       const mailbox = client.mailbox
       if (!mailbox || typeof mailbox === 'boolean') return
-      const uidNext = Number(mailbox.uidNext ?? 1)
-      if (uidNext - 1 > last.lastSyncUid) {
-        let uids: number[] = []
-        if (last.lastSyncUid === 0) {
-          const cap = special === 'inbox' ? 300 : 150
-          const from = Math.max(1, uidNext - cap)
-          uids = ((await client.search({ uid: `${from}:*` }, { uid: true })) || []) as number[]
-          uids = uids.filter(u => u >= from)
-        } else {
-          uids = ((await client.search({ uid: `${last.lastSyncUid + 1}:*` }, { uid: true })) || []) as number[]
-          uids = uids.filter(u => u > last.lastSyncUid)
+      this.touchActivity()
+      const prev = this.store.getFolderLastSync(fid)
+      let last = prev.lastSyncUid
+      const validity = Number(mailbox.uidValidity ?? 0)
+      if (validity && validity !== prev.uidValidity) {
+        if (prev.uidValidity) {
+          // UID 被服务器整体重编号（Proton Bridge 重建缓存时常见）：本地按旧 UID 存的邮件全部作废，重新拉
+          this.store.clearFolderMessages(fid)
+          this.backfillDone.delete(fid)
+          last = 0
+          this.store.setFolderLastSync(fid, 0)
         }
-        if (uids.length) {
-          this.events.progress(this.account.id, `${path} +${uids.length}`)
-          await this.fetchEnvelopes(path, special, uids.sort((a, b) => a - b))
-        }
-        this.store.setFolderLastSync(fid, uidNext - 1)
+        this.store.setFolderUidValidity(fid, validity)
       }
-      // 性能：旗标刷新开销大（全量 FETCH FLAGS），非收件箱文件夹仅在完整轮次执行
-      if (!light || this.cycle % 4 === 0 || special === 'inbox') {
-        await this.refreshFlags(path)
+
+      let serverUids: number[] | null = null
+      let newUids: number[]
+      if (last === 0) {
+        serverUids = await this.searchUids({ all: true })
+        newUids = serverUids.slice(-(special === 'inbox' ? 300 : 150))
+      } else {
+        newUids = (await this.searchUids({ uid: `${last + 1}:*` })).filter(u => u > last)
       }
+      if (newUids.length) {
+        this.events.progress(this.account.id, `${path} +${newUids.length}`)
+        await this.fetchEnvelopes(path, special, newUids, true)
+      }
+
+      if (full) {
+        serverUids ??= await this.searchUids({ all: true })
+        this.reconcileExpunged(path, fid, serverUids, Number(mailbox.exists ?? 0))
+        await this.backfill(path, special, fid, serverUids)
+      }
+      // 性能：旗标刷新开销大，非收件箱文件夹仅在完整轮次执行
+      if (full || special === 'inbox') await this.refreshFlags(path)
       const total = Number(mailbox.exists ?? 0)
-      const unseen = ((await client.search({ seen: false }, { uid: true })) || []) as number[]
+      const unseen = await this.searchUids({ seen: false })
       this.store.updateFolderCounters(fid, total, unseen.length)
     } finally {
       lock.release()
     }
   }
 
-  /** 仅在 syncFolder 已持有 mailbox lock 时调用（imapflow 锁不可重入，嵌套获取会破坏 currentLock） */
-  private async fetchEnvelopes(folderPath: string, special: SpecialFolder, uids: number[]) {
+  /** 服务器上已不存在的邮件（在别的客户端/网页端删除或移走）从本地移除 */
+  private reconcileExpunged(path: string, fid: string, serverUids: number[], exists: number) {
+    if (!serverUids.length && exists > 0) return // 结果与计数矛盾：宁可不删
+    const server = new Set(serverUids)
+    const pending = this.store.pendingOpMessageIds(this.account.id)
+    let removed = 0
+    for (const uid of this.store.listFolderUids(fid)) {
+      if (server.has(uid)) continue
+      const id = messageIdOf(this.account.id, path, uid)
+      if (pending.has(id)) continue
+      this.store.deleteMessageCascade(id)
+      removed++
+    }
+    if (removed) this.events.changed(this.account.id)
+  }
+
+  /**
+   * 历史回填：首次同步只拉最近一批，之后每轮完整同步再往前补 BACKFILL_CHUNK 封，
+   * 同时补上历史上因断线遗漏的缺口，直到达到本地保留上限。
+   */
+  private async backfill(path: string, special: SpecialFolder, fid: string, serverUids: number[]) {
+    if (this.backfillDone.has(fid)) return
+    const localUids = this.store.listFolderUids(fid)
+    const local = new Set(localUids)
+    const limit = backfillLimit(special)
+    const last = this.store.getFolderLastSync(fid).lastSyncUid
+    const pending = this.store.pendingOpMessageIds(this.account.id)
+    let missing = serverUids.filter(
+      u => u <= last && !local.has(u) && !pending.has(messageIdOf(this.account.id, path, u))
+    )
+    // 已到上限：只补本地范围内的缺口，不再向更早扩展
+    if (localUids.length >= limit) missing = missing.filter(u => u > localUids[0])
+    if (!missing.length) {
+      this.backfillDone.add(fid)
+      return
+    }
+    const size = localUids.length >= limit ? BACKFILL_CHUNK : Math.min(BACKFILL_CHUNK, limit - localUids.length)
+    const chunk = missing.slice(-size)
+    this.events.progress(this.account.id, `${path} 补齐历史邮件 ${chunk.length} 封`)
+    await this.fetchEnvelopes(path, special, chunk, false)
+  }
+
+  /**
+   * 仅在 syncFolder 已持有 mailbox lock 时调用（imapflow 锁不可重入，嵌套获取会破坏 currentLock）。
+   * 分片抓取、逐片落库；advanceCursor 时每片成功后推进 last_sync_uid——断线只会重抓当前片，绝不跳过邮件。
+   */
+  private async fetchEnvelopes(folderPath: string, special: SpecialFolder, uids: number[], advanceCursor: boolean) {
     const client = this.client
     if (!client) return
-    const fetchRange = uids.join(',')
-    const batch: EnvelopeData[] = []
-    try {
+    const fid = folderIdOf(this.account.id, folderPath)
+    for (let i = 0; i < uids.length; i += FETCH_CHUNK) {
+      if (!this.running) return
+      const part = uids.slice(i, i + FETCH_CHUNK)
+      const batch: EnvelopeData[] = []
       for await (const msg of client.fetch(
-        fetchRange,
+        part.join(','),
         { uid: true, flags: true, size: true, internalDate: true, envelope: true, headers: true, bodyStructure: true },
         { uid: true }
       )) {
@@ -374,13 +570,13 @@ export class AccountWorker {
           attachmentCount
         })
       }
-    } catch {
-      // 网络中断等：由外层 loop 统一进入重试
-    }
-
-    for (const env of batch) {
-      if (!this.running) return
-      this.persistEnvelope(folderPath, special, env)
+      this.touchActivity()
+      for (const env of batch) {
+        if (!this.running) return
+        this.persistEnvelope(folderPath, special, env)
+      }
+      if (advanceCursor) this.store.setFolderLastSync(fid, part[part.length - 1])
+      if (uids.length > FETCH_CHUNK) this.events.changed(this.account.id)
     }
   }
 
@@ -482,6 +678,14 @@ export class AccountWorker {
     void this.pumpBodyQueue()
   }
 
+  /** 近 7 天收件箱里仍缺正文的邮件重新入队（预取被断线/锁超时打断后自愈） */
+  private requeueMissingBodies() {
+    const fid = folderIdOf(this.account.id, 'INBOX')
+    for (const m of this.store.listRecentWithoutBody(fid, Date.now() - 7 * 864e5, 40)) {
+      this.enqueueBody('INBOX', m.uid, m.date)
+    }
+  }
+
   private async pumpBodyQueue() {
     if (this.processingBody || !this.running) return
     this.processingBody = true
@@ -494,6 +698,8 @@ export class AccountWorker {
           // 单条失败重试（最多 2 次，放回队尾），避免同步高峰期一次性失败全部沦为空正文
           const attempt = (item.attempt ?? 0) + 1
           if (attempt < 3) this.bodyQueue.push({ ...item, attempt })
+          // 放弃后解除占位，下一轮同步的 requeueMissingBodies 会再补
+          else this.bodyQueued.delete(`${item.folderPath}${SEP}${item.uid}`)
         }
         await sleep(20)
       }
@@ -715,23 +921,31 @@ export class AccountWorker {
   }
 
   /** 发送后存入已发送文件夹 */
-  async appendRaw(folderPath: string, raw: string) {
+  async appendRaw(folderPath: string, raw: Buffer, messageId?: string) {
+    // 给服务端自动保存留出时间，再按 Message-ID 查重，避免「已发送」出现两封
+    if (messageId) await sleep(4000)
     await this.serialized(async () => {
       const client = this.client
       if (!client?.usable) return
-      await client.append(folderPath, Buffer.from(raw, 'utf8'), ['\\Seen'])
+      if (messageId) {
+        const lock = await client.getMailboxLock(folderPath)
+        try {
+          const hit = await client.search({ header: { 'message-id': messageId } }, { uid: true })
+          if (hit && hit.length) return
+        } catch { /* 不支持 HEADER 搜索则照常追加 */ } finally {
+          lock.release()
+        }
+      }
+      await client.append(folderPath, raw, ['\\Seen'])
+      this.lastFullSync = 0
     })
   }
 
-  /** 仅在 syncFolder 已持有 mailbox lock 时调用 */
+  /** 仅在 syncFolder 已持有 mailbox lock 时调用：刷新本地最近 500 封的旗标（已读/星标在别处改动后收敛） */
   private async refreshFlags(folderPath: string) {
     const client = this.client
     if (!client) return
-    const fid = folderIdOf(this.account.id, folderPath)
-    const mailbox = client.mailbox
-    if (!mailbox || typeof mailbox === 'boolean') return
-    const from = Math.max(1, Number(mailbox.uidNext ?? 1) - 500)
-    const uids = ((await client.search({ uid: `${from}:*` }, { uid: true })) || []) as number[]
+    const uids = this.store.listFolderUids(folderIdOf(this.account.id, folderPath)).slice(-500)
     if (!uids.length) return
     // 断网期间乐观更新的消息：重放完成前不让服务器旧 flags 覆盖本地
     const pending = this.store.pendingOpMessageIds(this.account.id)
@@ -740,6 +954,7 @@ export class AccountWorker {
       if (pending.has(id)) continue
       this.store.updateMessageFlags(id, [...(msg.flags ?? [])].map(String))
     }
+    this.touchActivity()
   }
 }
 
@@ -771,6 +986,7 @@ export function friendlyError(err: unknown): string {
   if (/oauth|refresh token|grant|授权|重新授权/i.test(msg))
     return '授权不可用：请在账户页重新授权（跨设备恢复后需在 设置→OAuth 应用 配置客户端）'
   if (/auth|login|credentials|invalid/i.test(msg)) return '登录失败：请检查用户名与授权码/应用专用密码'
+  if (/THROTTLED|bandwidth|too many|rate limit|OVERQUOTA/i.test(msg)) return '服务器限流：连接或请求过于频繁，稍后自动重试'
   if (/timeout|ETIMEDOUT/i.test(msg)) return '连接超时，请检查网络或服务器地址'
   if (/ENOTFOUND|EAI_AGAIN/i.test(msg)) return '无法解析服务器地址'
   if (/ECONNREFUSED/i.test(msg)) return '连接被拒绝，请检查端口与加密方式'
@@ -828,6 +1044,11 @@ export class SyncEngine {
   stopAll() {
     for (const w of this.workers.values()) w.stop()
     this.workers.clear()
+  }
+
+  /** 系统唤醒/解锁后：所有账户丢弃旧连接立即重连 */
+  reconnectAll() {
+    for (const w of this.workers.values()) w.reconnect()
   }
 
   getWorker(id: string): AccountWorker | undefined {
