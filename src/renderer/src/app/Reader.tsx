@@ -415,7 +415,7 @@ export function Reader() {
   if (!selectedId) {
     return (
       <div className="flex-1 min-w-0 h-full flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center px-6 text-balance">
           <div className="text-md font-medium" style={{ color: 'var(--faint)' }}>选择一封邮件开始阅读</div>
           <div className="mt-1.5 text-xs" style={{ color: 'var(--faint)', opacity: 0.75 }}>
             ⌘K 命令面板 · J/K 切换 · R 回复 · ⌘T 明暗
@@ -542,8 +542,9 @@ export function Reader() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium selectable truncate" style={{ color: 'var(--fg)' }}>{displayName(msg.from)}</span>
-              <span className="text-xs truncate" style={{ color: 'var(--faint)' }}>{msg.from?.address}</span>
+              {/* 窄阅读区（放大显示 / 小窗）只留姓名，地址进 tooltip，避免姓名被挤成单字 */}
+              <span className="text-sm font-medium selectable truncate" title={msg.from?.address} style={{ color: 'var(--fg)' }}>{displayName(msg.from)}</span>
+              {!compact && <span className="text-xs truncate min-w-0 shrink-[2]" style={{ color: 'var(--faint)' }}>{msg.from?.address}</span>}
               <span className="ml-auto text-xs shrink-0" style={{ color: 'var(--faint)' }}>{fmtFullDate(msg.date)}</span>
             </div>
             <div className="text-xs selectable truncate" style={{ color: 'var(--faint)' }}>
@@ -624,11 +625,14 @@ export function Reader() {
             </span>
             <span className="text-sm font-medium whitespace-nowrap" style={{ color: 'var(--fg)' }}>AI 助手</span>
             <div className="flex-1 min-w-2" />
-            <AIChip label="摘要" onClick={() => runAI('summary')} active={aiMode === 'summary'} />
-            <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
-            <AIChip label="提取待办" onClick={() => runAI('tasks')} active={aiMode === 'tasks'} />
-            <AIChip label={extracting ? '提炼中…' : '提炼'} onClick={runExtract} active={false} />
-            <AIChip label={learning ? '学习中…' : '学习'} onClick={runAgentLearn} active={false} />
+            {/* 动作作为一组整体换行，窄宽度下不会拆成错位的两截 */}
+            <div className="flex flex-wrap items-center gap-1">
+              <AIChip label="摘要" onClick={() => runAI('summary')} active={aiMode === 'summary'} />
+              <AIChip label="起草回复" onClick={() => runAI('draft')} active={aiMode === 'draft'} />
+              <AIChip label="提取待办" onClick={() => runAI('tasks')} active={aiMode === 'tasks'} />
+              <AIChip label={extracting ? '提炼中…' : '提炼'} onClick={runExtract} active={false} />
+              <AIChip label={learning ? '学习中…' : '学习'} onClick={runAgentLearn} active={false} />
+            </div>
           </div>
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">

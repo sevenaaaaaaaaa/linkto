@@ -58,7 +58,13 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
   try {
     const icon = nativeImage.createFromPath(joinAppRenderer('logo.png'))
     if (!icon.isEmpty()) {
-      tray = new Tray(icon.resize({ width: 18, height: 18 }))
+      // 1x + 2x 两档表示：只给 18px 单倍图时 Retina 菜单栏会按 2 倍拉伸发糊
+      const trayIcon = nativeImage.createEmpty()
+      for (const scaleFactor of [1, 2]) {
+        const size = 18 * scaleFactor
+        trayIcon.addRepresentation({ scaleFactor, buffer: icon.resize({ width: size, height: size, quality: 'best' }).toPNG() })
+      }
+      tray = new Tray(trayIcon)
       tray.setToolTip('LinkTo 林可兔')
       tray.setContextMenu(
         Menu.buildFromTemplate([
