@@ -19,6 +19,7 @@ import { GhostService } from './ghost/service'
 import { Notifier, focusMainWindow } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
+import { McpService } from './mcp/server'
 import { DEFAULT_AI } from './store'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
@@ -115,6 +116,7 @@ let agent: AgentService
 let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
+let mcp: McpService | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -546,6 +548,8 @@ async function bootstrap() {
     }
   )
 
+  mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload) })
+
   const ctx: AppContext = {
     store: mailStore,
     appStore,
@@ -560,6 +564,7 @@ async function bootstrap() {
     oauth,
     backup: backupService,
     ghost,
+    mcp,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
@@ -622,6 +627,8 @@ async function bootstrap() {
     } catch { /* 下一轮兜底 */ }
   }, 30_000)
   updateDockBadge()
+  // 本地 MCP 服务：默认关闭，按设置启动（失败只记录状态，不影响主流程）
+  void mcp.apply().catch(err => console.error('[mcp] start failed:', err))
 }
 
 app.whenReady().then(() => {
@@ -641,6 +648,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   engine?.stopAll()
+  void mcp?.stop()
 })
 
 export { createSettingsWindow, createComposeWindow }

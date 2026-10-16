@@ -36,6 +36,7 @@ const METHOD_NAMES = [
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
+  'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
   'openSettings', 'openCompose', 'getVersions', 'quit'
 ] as const
 

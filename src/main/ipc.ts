@@ -39,6 +39,7 @@ import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
 import type { OAuthService } from './oauth'
+import type { McpService } from './mcp/server'
 import type { Notifier } from './notify'
 import { applyLoginItem } from './native-integration'
 import { LocalEngine, type DownloadProgress } from './ai/local-engine'
@@ -61,6 +62,7 @@ export interface AppContext {
   oauth: OAuthService
   backup: BackupService
   ghost: GhostService
+  mcp: McpService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openGhost(): void
@@ -1313,6 +1315,12 @@ export function registerIpc(ctx: AppContext) {
 
     setNewsletterSender: ([snd, subscribed]: [string, boolean]) => store.setNewsletterSubscribed(snd, subscribed),
     listNewsletterSenders: () => store.listNewsletterSenders(),
+
+    // ================= MCP 服务 =================
+
+    getMcpStatus: () => ctx.mcp.status(),
+    setMcpEnabled: ([enabled, port]: [boolean, number | undefined]) => ctx.mcp.setEnabled(!!enabled, port),
+    regenerateMcpToken: () => ctx.mcp.regenerateToken(),
 
     // ================= 窗口 / 应用 =================
 

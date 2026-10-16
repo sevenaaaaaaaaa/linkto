@@ -166,8 +166,7 @@ export class AppStore {
     if (existsSync(file)) unlinkSync(file)
   }
 
-  /** 清理已不存在账户的残留密钥 */
-  /** 清理已删除账户的密钥；非账户类密钥（如 AI Key）一律保留 */
+  /** 清理已删除账户的密钥；非账户类密钥（AI Key、mcp:token、幽灵信身份等）一律保留 */
   pruneSecrets(validIds: Set<string>) {
     try {
       for (const f of readdirSync(this.secretDir)) {

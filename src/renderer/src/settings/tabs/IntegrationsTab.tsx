@@ -1,7 +1,7 @@
 import { IconCloud } from '../../components/icons'
 import { useEffect, useState } from 'react'
 import { api, useMailEvent } from '../../lib/api'
-import { SectionTitle } from './GeneralTab'
+import { SectionTitle, Toggle } from './GeneralTab'
 import type { CloudDriveConfig, CloudDriveKind, ConnectorInstance, ConnectorManifest } from '@shared/types'
 
 /** 集成页：连接器卡片式管理（对齐 Canary 集成交互），OpenFlow 家族产品将从这里接入 */
@@ -162,6 +162,8 @@ export function IntegrationsTab() {
       )}
 
       <CloudDrivesSection />
+
+      <McpSection onToast={showToast} />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-ink/90 text-app text-sm shadow-[var(--shadow-float)] fade-in">
@@ -438,5 +440,113 @@ function CloudDrivesSection() {
         )}
       </div>
     </>
+  )
+}
+
+/** 本地 MCP 服务：让 Claude Code / Claude Desktop / Cursor 等外部 Agent 读取邮件、管理待办、存草稿 */
+type McpStatus = Awaited<ReturnType<typeof api.getMcpStatus>>
+
+function McpSection(props: { onToast(t: string): void }) {
+  const [status, setStatus] = useState<McpStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => void api.getMcpStatus().then(setStatus), [])
+
+  const toggle = async (enabled: boolean) => {
+    setBusy(true)
+    setError('')
+    try {
+      setStatus(await api.setMcpEnabled(enabled))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+    setBusy(false)
+  }
+
+  const copy = (text: string, label: string) => {
+    void navigator.clipboard.writeText(text)
+    props.onToast(`已复制${label}`)
+  }
+
+  const token = status?.token ?? ''
+  const url = status?.url ?? ''
+  const masked = token ? `${token.slice(0, 4)}${'•'.repeat(16)}${token.slice(-4)}` : '—'
+  const cliSnippet = `claude mcp add --transport http linkto ${url} --header "Authorization: Bearer ${token}"`
+  const jsonSnippet = JSON.stringify({ mcpServers: { linkto: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)
+  const statusText = !status?.enabled
+    ? '未开启'
+    : status.running
+      ? `运行中 · 127.0.0.1:${status.port}`
+      : `未运行${status.error ? `：${status.error}` : ''}`
+
+  return (
+    <>
+      <SectionTitle>MCP 服务（让外部 AI Agent 使用你的邮件）</SectionTitle>
+      <div className="text-xs text-zinc-500 mb-2">
+        开启后，Claude Code、Claude Desktop、Cursor 等支持 MCP 的 Agent 可以搜索和阅读邮件、查看与新建待办、检索知识库，并保存本地草稿。
+      </div>
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-5 py-4">
+        <div className="flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-zinc-800">启用本地 MCP 服务</div>
+            <div className={`text-xs mt-0.5 ${status?.enabled && !status.running ? 'text-red-500' : 'text-zinc-400'}`}>{statusText}</div>
+          </div>
+          <Toggle checked={!!status?.enabled} onChange={v => !busy && void toggle(v)} />
+        </div>
+        {error && <div className="text-xs text-red-500 mt-2">{error}</div>}
+
+        {status?.enabled && (
+          <div className="mt-3 pt-3 border-t border-ink/[0.04] space-y-2.5">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500 w-12 shrink-0">地址</span>
+              <span className="text-xs font-mono text-zinc-700 flex-1 truncate">{url}</span>
+              <button onClick={() => copy(url, '地址')} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0">
+                复制
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500 w-12 shrink-0">Token</span>
+              <span className="text-xs font-mono text-zinc-700 flex-1 truncate">{masked}</span>
+              <button onClick={() => copy(token, ' Token')} disabled={!token} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0 disabled:opacity-40">
+                复制
+              </button>
+              <button
+                onClick={async () => {
+                  setStatus(await api.regenerateMcpToken())
+                  props.onToast('已重新生成 Token，旧 Token 立即失效')
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0"
+              >
+                重新生成
+              </button>
+            </div>
+
+            <McpSnippet label="Claude Code" text={cliSnippet.replace(token, masked)} onCopy={() => copy(cliSnippet, ' Claude Code 命令')} />
+            <McpSnippet label="JSON 配置（Claude Desktop / Cursor 等）" text={jsonSnippet.replace(token, masked)} onCopy={() => copy(jsonSnippet, ' JSON 配置')} />
+          </div>
+        )}
+      </div>
+      <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3 mt-2">
+        仅监听本机，外部 Agent 能读取邮件内容；只能存草稿、不能发信。Token 等同于邮件访问权限，请勿外传；怀疑泄露时点「重新生成」。
+      </div>
+    </>
+  )
+}
+
+/** 配置片段：界面展示时 token 已打码，复制得到完整内容 */
+function McpSnippet(props: { label: string; text: string; onCopy(): void }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs text-zinc-500">{props.label}</span>
+        <button onClick={props.onCopy} className="text-xs px-3 py-1 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200">
+          复制
+        </button>
+      </div>
+      <pre className="text-xs bg-zinc-50 rounded-lg px-3 py-2 border border-ink/[0.06] font-mono leading-relaxed whitespace-pre-wrap break-all text-zinc-700 select-text">
+        {props.text}
+      </pre>
+    </div>
   )
 }

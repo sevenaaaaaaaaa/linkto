@@ -255,4 +255,11 @@ export interface LinkToApi {
   openGhost(): Promise<void>
   /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */
   openGhostReader(id: string): Promise<void>
+
+  // ---------- MCP 服务（外部 AI Agent 访问本地邮件） ----------
+  getMcpStatus(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  /** 开关本地 MCP 服务；首次开启自动生成 token */
+  setMcpEnabled(enabled: boolean, port?: number): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  /** 重新生成 token（旧 token 立即失效） */
+  regenerateMcpToken(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
 }
