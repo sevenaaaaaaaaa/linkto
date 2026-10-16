@@ -10,7 +10,8 @@ const FIELDS: { value: RuleField; label: string }[] = [
   { value: 'subject', label: '主题' },
   { value: 'listId', label: '邮件列表 ID' },
   { value: 'hasAttachment', label: '带附件' },
-  { value: 'isNewsletter', label: '是订阅邮件' }
+  { value: 'isNewsletter', label: '是订阅邮件' },
+  { value: 'ai', label: 'AI 判断' }
 ]
 
 const OPS: { value: RuleOp; label: string }[] = [
@@ -29,7 +30,9 @@ const ACTIONS: { value: RuleActionType; label: string }[] = [
   { value: 'unflag', label: '去旗标' },
   { value: 'markNewsletter', label: '标记为 Newsletter' },
   { value: 'moveTrash', label: '移到废纸篓' },
-  { value: 'saveToKb', label: '存入知识库' }
+  { value: 'saveToKb', label: '存入知识库' },
+  { value: 'notify', label: '发系统通知' },
+  { value: 'runConnector', label: '发送到连接器' }
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -117,9 +120,11 @@ export function RulesTab() {
           />
         ) : (
           <div className="text-sm text-zinc-400 mt-16 text-center">
-            规则在邮件同步入库时自动执行（条件全部满足才触发）。
+            规则对新到达的邮件自动执行（条件全部满足才触发）。
             <br />
             例如：发件人包含「boss」→ 标记类别为「个人」。
+            <br />
+            条件选「AI 判断」可以用一句话描述，如「需要我本周内回复的合作邀约」→ 发送到连接器。
           </div>
         )}
       </div>
@@ -130,6 +135,18 @@ export function RulesTab() {
 function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void }) {
   const { rule: r } = props
   const isBool = (f: RuleField) => f === 'hasAttachment' || f === 'isNewsletter'
+  // 「发送到连接器」的可选项：已连接实例 × 其动作
+  const [connectorOptions, setConnectorOptions] = useState<{ value: string; label: string }[]>([])
+  useEffect(() => {
+    void Promise.all([api.listConnectorInstances(), api.listConnectorManifests()]).then(([instances, manifests]) => {
+      setConnectorOptions(
+        instances.filter(i => i.enabled).flatMap(i => {
+          const m = manifests.find(x => x.id === i.manifestId)
+          return (m?.actions ?? []).filter(a => !a.params?.some(p => p.required)).map(a => ({ value: `${i.id}:${a.id}`, label: `${m!.name} · ${a.name}` }))
+        })
+      )
+    })
+  }, [])
 
   return (
     <div className="max-w-[560px] space-y-3">
@@ -151,20 +168,22 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
               value={c.field}
               onChange={v => {
                 const conditions = [...r.conditions]
-                conditions[i] = { ...c, field: v as RuleField }
+                conditions[i] = { ...c, field: v as RuleField, op: v === 'ai' ? 'contains' : c.op }
                 props.onChange({ ...r, conditions })
               }}
               options={FIELDS}
             />
-            <Select
-              value={c.op}
-              onChange={v => {
-                const conditions = [...r.conditions]
-                conditions[i] = { ...c, op: v as RuleOp }
-                props.onChange({ ...r, conditions })
-              }}
-              options={isBool(c.field) ? OPS.filter(o => o.value === 'is') : OPS.filter(o => o.value !== 'is')}
-            />
+            {c.field !== 'ai' && (
+              <Select
+                value={c.op}
+                onChange={v => {
+                  const conditions = [...r.conditions]
+                  conditions[i] = { ...c, op: v as RuleOp }
+                  props.onChange({ ...r, conditions })
+                }}
+                options={isBool(c.field) ? OPS.filter(o => o.value === 'is') : OPS.filter(o => o.value !== 'is')}
+              />
+            )}
             {!isBool(c.field) ? (
               <input
                 value={c.value}
@@ -173,7 +192,7 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                   conditions[i] = { ...c, value: e.target.value }
                   props.onChange({ ...r, conditions })
                 }}
-                placeholder="关键词"
+                placeholder={c.field === 'ai' ? '一句话描述条件，如：需要我本周内回复的合作邀约' : '关键词'}
                 className="flex-1 text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05]"
               />
             ) : (
@@ -216,7 +235,10 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
               value={a.type}
               onChange={v => {
                 const actions = [...r.actions]
-                actions[i] = { type: v as RuleActionType, value: v === 'setCategory' ? 'personal' : undefined }
+                actions[i] = {
+                  type: v as RuleActionType,
+                  value: v === 'setCategory' ? 'personal' : v === 'runConnector' ? connectorOptions[0]?.value : undefined
+                }
                 props.onChange({ ...r, actions })
               }}
               options={ACTIONS}
@@ -232,6 +254,20 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                 options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
               />
             )}
+            {a.type === 'runConnector' &&
+              (connectorOptions.length ? (
+                <Select
+                  value={a.value ?? connectorOptions[0].value}
+                  onChange={v => {
+                    const actions = [...r.actions]
+                    actions[i] = { ...a, value: v }
+                    props.onChange({ ...r, actions })
+                  }}
+                  options={connectorOptions}
+                />
+              ) : (
+                <span className="text-xs text-zinc-400">先在「集成」里连接一个连接器</span>
+              ))}
             <div className="flex-1" />
             <button
               onClick={() => props.onChange({ ...r, actions: r.actions.filter((_, j) => j !== i) })}

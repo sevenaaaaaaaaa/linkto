@@ -629,6 +629,29 @@ export class MailStore {
     return rows.map(r => r.id)
   }
 
+  /**
+   * 问句检索：每个检索词单独匹配（OR），按命中词数排序、同分取较新。
+   * 供 Agent / 知识问答使用——整句 AND 检索对中文问句几乎永远为空。
+   */
+  searchByTerms(terms: string[], limit: number): MessageSummary[] {
+    if (!terms.length) return []
+    const score = new Map<string, number>()
+    for (const t of terms) {
+      for (const id of this.searchIds(t, 200)) score.set(id, (score.get(id) ?? 0) + 1)
+    }
+    if (!score.size) return []
+    const ids = [...score.keys()]
+    const rows: any[] = []
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500)
+      rows.push(...(this.db.prepare(`SELECT * FROM messages WHERE id IN (${part.map(() => '?').join(',')})`).all(...part) as any[]))
+    }
+    return rows
+      .sort((a, b) => (score.get(b.id)! - score.get(a.id)!) || b.date - a.date)
+      .slice(0, limit)
+      .map(r => this.rowToSummary(r))
+  }
+
   setCategory(ids: string[], category: MessageCategory) {
     const stmt = this.db.prepare('UPDATE messages SET category = ? WHERE id = ?')
     for (const id of ids) stmt.run(category, id)

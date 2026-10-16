@@ -10,6 +10,21 @@ interface SSEPart {
   error?: { message?: string }
 }
 
+/** 本地推理端点（Ollama / LM Studio / llama.cpp）：无需 API Key */
+export function isLocalEndpoint(baseURL: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(baseURL)
+}
+
+/**
+ * AI 是否可用的唯一判断（各功能共用，避免「对话能用、洞察/Agent 却报未启用」）。
+ * allowBuiltin=false：内置小模型不承担该任务（按模型策略，结构化重任务走 API / 本地部署）
+ */
+export function aiReady(s: AISettings, allowBuiltin = true): boolean {
+  if (!s.enabled) return false
+  if (s.baseURL === 'builtin-local') return allowBuiltin
+  return !!s.apiKey || isLocalEndpoint(s.baseURL)
+}
+
 /** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()
@@ -31,7 +46,7 @@ export class AIService {
       return this.local.stream(s.model, messages, onDelta)
     }
     // 本地推理端点（Ollama / LM Studio / llama.cpp）无需 API Key
-    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(s.baseURL)
+    const isLocal = isLocalEndpoint(s.baseURL)
     if (!s.enabled || (!s.apiKey && !isLocal))
       throw new Error(isLocal ? 'AI 未启用（请在 设置 → AI 中开启）' : 'AI 未启用或未配置 API Key（请在 设置 → AI 中配置）')
     // 用户自定义咒语：统一追加到首条系统消息（无系统消息则注入一条）

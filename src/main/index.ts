@@ -6,7 +6,10 @@ import { MailStore } from './db'
 import { SyncEngine, friendlyError } from './mail/sync-engine'
 import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
-import { AIService } from './ai/service'
+import { AIService, aiReady } from './ai/service'
+import { evalAiRules, hasAiCondition } from './rules/engine'
+import { RULE_AI_JUDGE } from './ai/prompts'
+import type { RuleAction } from '@shared/types'
 import { LocalEngine } from './ai/local-engine'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
@@ -16,6 +19,7 @@ import { GhostService } from './ghost/service'
 import { Notifier, focusMainWindow } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
+import { McpService } from './mcp/server'
 import { DEFAULT_AI } from './store'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
@@ -30,6 +34,78 @@ process.on('unhandledRejection', reason => {
 let appStore: AppStore
 let mailStore: MailStore
 let engine: SyncEngine
+let classifyMessages: ((ids: string[]) => Promise<void>) | null = null
+let runRuleActions: ((messageId: string, actions: RuleAction[]) => Promise<void>) | null = null
+
+/** 新邮件到达：执行普通规则的副作用动作，再按需让 AI 判断含自然语言条件的规则 */
+async function handleArrival(accountId: string, messageId: string, ruleActions: RuleAction[]) {
+  await applyArrivalActions(messageId, ruleActions)
+  const rules = mailStore.listRules().filter(r => r.enabled && hasAiCondition(r))
+  const ai = appStore.getAI()
+  if (!rules.length || !aiReady(ai)) return
+  let row = mailStore.getMessageRow(messageId)
+  if (!row) return
+  // AI 判断要看正文：未预取的先拉一次
+  if (!row.body_fetched) {
+    await engine.getWorker(accountId)?.downloadBody(row.folder_path, row.uid).catch(() => {})
+    row = mailStore.getMessageRow(messageId) ?? row
+  }
+  const mail = `发件人：${row.from_name ?? ''} <${row.from_addr ?? ''}>\n主题：${row.subject ?? ''}\n正文：${String(row.text || row.snippet || '').slice(0, 3000)}`
+  const actions = await evalAiRules(
+    rules,
+    {
+      from: row.from_addr ?? '',
+      to: (() => { try { return (JSON.parse(row.to_json || '[]') as { address: string }[]).map(a => a.address).join(',') } catch { return '' } })(),
+      subject: row.subject ?? '',
+      listId: row.list_id ?? null,
+      isNewsletter: !!row.is_newsletter,
+      hasAttachment: !!row.has_attachments,
+      snippet: row.snippet ?? ''
+    },
+    async criteria => {
+      const answer = await aiService.complete([
+        { role: 'system', content: RULE_AI_JUDGE },
+        { role: 'user', content: `条件：${criteria}\n\n邮件：\n${mail}` }
+      ])
+      return /"match"\s*:\s*true/i.test(answer)
+    }
+  )
+  await applyArrivalActions(messageId, actions)
+}
+
+async function applyArrivalActions(messageId: string, actions: RuleAction[]) {
+  if (!actions.length) return
+  if (actions.some(a => a.type === 'notify')) {
+    const row = mailStore.getMessageRow(messageId)
+    if (row) {
+      notifier.notify(
+        { accountId: row.account_id, messageId, subject: row.subject ?? '', from: row.from_name || row.from_addr || '', category: row.category ?? 'personal' },
+        mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0),
+        true
+      )
+    }
+  }
+  await runRuleActions?.(messageId, actions)
+}
+const autoClassifyQueue: string[] = []
+let autoClassifyTimer: NodeJS.Timeout | null = null
+
+function queueAutoClassify(messageId: string) {
+  autoClassifyQueue.push(messageId)
+  scheduleAutoClassify()
+}
+
+function scheduleAutoClassify() {
+  if (autoClassifyTimer || !autoClassifyQueue.length) return
+  autoClassifyTimer = setTimeout(() => {
+    autoClassifyTimer = null
+    const batch = autoClassifyQueue.splice(0, 30)
+    scheduleAutoClassify()
+    void classifyMessages?.(batch)
+      .then(() => broadcast({ type: 'messages-changed' }))
+      .catch(err => console.error('[auto-classify]', err))
+  }, 3000)
+}
 let sender: MailSender
 let localEngine: LocalEngine
 let aiService: AIService
@@ -40,6 +116,7 @@ let agent: AgentService
 let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
+let mcp: McpService | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -333,7 +410,7 @@ async function bootstrap() {
 
   sender = new MailSender()
   localEngine = new LocalEngine(appStore)
-  aiService = new AIService(() => appStore.get('ai', DEFAULT_AI))
+  aiService = new AIService(() => appStore.getAI())
   aiService.attachLocalEngine(localEngine)
 
   outbox = new Outbox({
@@ -363,7 +440,7 @@ async function bootstrap() {
   insights = new InsightsService({
     ai: aiService,
     store: mailStore,
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    getAISettings: () => appStore.getAI(),
     event: payload => broadcast(payload),
     // Agent 长期记忆注入（agent 稍后初始化，闭包延迟求值）
     getMemoryContext: q => agent?.memoryBlock(q) || null,
@@ -373,7 +450,7 @@ async function bootstrap() {
   agent = new AgentService({
     ai: aiService,
     store: mailStore,
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
+    getAISettings: () => appStore.getAI(),
     event: payload => broadcast(payload)
   })
 
@@ -394,11 +471,16 @@ async function bootstrap() {
         broadcast({ type: 'new-mail', accountId, subject, from })
         notifier.notify({ accountId, messageId, subject, from, category }, 0)
         // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
-        const ai = appStore.get('ai', DEFAULT_AI)
+        const ai = appStore.getAI()
         const row = mailStore.getMessageRow(messageId)
         if (ai.enabled && ai.autoInsights && row && InsightsService.worthExtracting(row.subject, row.snippet ?? '', !!row.is_newsletter)) {
           void insights.extractFromMessage(messageId).catch(() => {})
         }
+        // 「自动分类新邮件」：攒 3 秒成一批，一次 AI 调用分完（启发式结果先生效，AI 结果覆盖）
+        if (ai.autoClassify && aiReady(ai)) queueAutoClassify(messageId)
+      },
+      arrived: (accountId, messageId, ruleActions) => {
+        void handleArrival(accountId, messageId, ruleActions).catch(err => console.error('[rules]', err))
       }
     },
     () => mailStore.listRules(),
@@ -450,7 +532,7 @@ async function bootstrap() {
         const row = mailStore.getMessageRow(messageId)
         if (!row) return
         const worker = engine.getWorker(row.account_id)
-        const archivePath = await worker?.specialFolderPath('archive')
+        const archivePath = await worker?.archiveTargetPath()
         if (worker && archivePath) await worker.moveToFolder(row.folder_path, row.uid, archivePath).catch(() => {})
       },
       focus: () => focusMainWindow(),
@@ -466,6 +548,8 @@ async function bootstrap() {
     }
   )
 
+  mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload) })
+
   const ctx: AppContext = {
     store: mailStore,
     appStore,
@@ -480,6 +564,7 @@ async function bootstrap() {
     oauth,
     backup: backupService,
     ghost,
+    mcp,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
@@ -488,7 +573,9 @@ async function bootstrap() {
     openSettings: tab => createSettingsWindow(tab),
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }
-  registerIpc(ctx)
+  const internal = registerIpc(ctx)
+  classifyMessages = internal.aiClassify
+  runRuleActions = internal.runRuleActions
 
   buildAppMenu()
   initNativeIntegration({
@@ -540,6 +627,8 @@ async function bootstrap() {
     } catch { /* 下一轮兜底 */ }
   }, 30_000)
   updateDockBadge()
+  // 本地 MCP 服务：默认关闭，按设置启动（失败只记录状态，不影响主流程）
+  void mcp.apply().catch(err => console.error('[mcp] start failed:', err))
 }
 
 app.whenReady().then(() => {
@@ -559,6 +648,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   engine?.stopAll()
+  void mcp?.stop()
 })
 
 export { createSettingsWindow, createComposeWindow }

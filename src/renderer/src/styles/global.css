@@ -143,8 +143,9 @@
   --control-h-sm: 24px;
   --control-h: 28px;
   --control-h-lg: 32px;
-  --sidebar-w: 232px;
-  --list-w: 360px;
+  /* 栏宽随视口收缩：放大显示（⌘+ / 系统「更大字体」缩放）后 CSS 视口变窄，固定栏宽会把阅读区挤没 */
+  --sidebar-w: clamp(184px, 18vw, 232px);
+  --list-w: clamp(300px, 30vw, 360px);
   --pad-pane: 16px;
 
   /* ---------- 4 · 圆角与描边 ---------- */

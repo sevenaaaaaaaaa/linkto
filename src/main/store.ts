@@ -41,6 +41,8 @@ export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
   perAccount: {}
 }
 
+const AI_KEY_SECRET = 'ai:apiKey'
+
 export const DEFAULT_AI: AISettings = {
   enabled: false,
   baseURL: 'https://open.bigmodel.cn/api/paas/v4',
@@ -48,8 +50,9 @@ export const DEFAULT_AI: AISettings = {
   model: 'glm-4.7',
   autoClassify: false,
   autoSummary: false,
-  autoInsights: true,
-  autoDigest: true,
+  // 自动化会把新邮件内容发给所配置的 AI 服务：默认关闭，由用户在 设置 → AI 主动开启
+  autoInsights: false,
+  autoDigest: false,
   customPrompts: []
 }
 
@@ -111,6 +114,24 @@ export class AppStore {
     }
   }
 
+  // ---------- AI 设置：API Key 走密钥存储，不落明文 settings 表 ----------
+
+  getAI(): AISettings {
+    const s = this.get('ai', DEFAULT_AI)
+    if (s.apiKey) {
+      // 旧版本把 Key 明文存在 settings 表：迁入密钥存储后抹掉明文
+      this.saveSecret(AI_KEY_SECRET, s.apiKey)
+      this.set('ai', { ...s, apiKey: '' })
+      return s
+    }
+    return { ...s, apiKey: this.loadSecret(AI_KEY_SECRET) }
+  }
+
+  setAI(s: AISettings) {
+    this.saveSecret(AI_KEY_SECRET, s.apiKey ?? '')
+    this.set('ai', { ...s, apiKey: '' })
+  }
+
   // ---------- 密钥（safeStorage → 钥匙串级保护） ----------
 
   saveSecret(id: string, secret: string) {
@@ -145,12 +166,13 @@ export class AppStore {
     if (existsSync(file)) unlinkSync(file)
   }
 
-  /** 清理已不存在账户的残留密钥 */
+  /** 清理已删除账户的密钥；非账户类密钥（AI Key、mcp:token、幽灵信身份等）一律保留 */
   pruneSecrets(validIds: Set<string>) {
     try {
       for (const f of readdirSync(this.secretDir)) {
         const id = decodeURIComponent(f)
-        if (!validIds.has(id)) unlinkSync(join(this.secretDir, f))
+        const accountScoped = id.startsWith('acct:') || id.startsWith('oauth:')
+        if (accountScoped && !validIds.has(id)) unlinkSync(join(this.secretDir, f))
       }
     } catch {
       /* ignore */

@@ -18,7 +18,9 @@ import type {
   SendResult,
   Signature,
   ProviderKey,
-  OAuthTokens
+  OAuthTokens,
+  AgentAction,
+  RuleAction
 } from '@shared/types'
 import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
@@ -31,10 +33,13 @@ import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
+import { searchTerms, rankByTerms } from './search-terms'
+import { aiReady } from './ai/service'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
 import type { OAuthService } from './oauth'
+import type { McpService } from './mcp/server'
 import type { Notifier } from './notify'
 import { applyLoginItem } from './native-integration'
 import { LocalEngine, type DownloadProgress } from './ai/local-engine'
@@ -57,6 +62,7 @@ export interface AppContext {
   oauth: OAuthService
   backup: BackupService
   ghost: GhostService
+  mcp: McpService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openGhost(): void
@@ -105,9 +111,8 @@ export function registerIpc(ctx: AppContext) {
       store.deleteMessageCascade(messageId)
       if (worker) await worker.deletePermanent(row.folder_path, row.uid).catch(() => {})
     } else {
-      const target = mode === 'trash' ? 'trash' : 'archive'
       if (worker) {
-        const targetPath = await worker.specialFolderPath(target)
+        const targetPath = mode === 'trash' ? await worker.specialFolderPath('trash') : await worker.archiveTargetPath()
         if (targetPath) {
           await worker.moveToFolder(row.folder_path, row.uid, targetPath).catch(() => {})
           return
@@ -116,6 +121,126 @@ export function registerIpc(ctx: AppContext) {
       store.deleteMessageCascade(messageId)
     }
     ctx.event(BrowserWindow.getAllWindows()[0], { type: 'messages-changed' })
+  }
+
+  // ---------- Agent 动作 / 规则动作执行 ----------
+
+  function requireRow(messageId: string | undefined) {
+    const row = messageId ? store.getMessageRow(messageId) : null
+    if (!row) throw new Error('找不到这封邮件（可能已被移走）')
+    return row
+  }
+
+  async function runAgentAction(a: AgentAction) {
+    switch (a.type) {
+      case 'archive':
+      case 'trash':
+        requireRow(a.messageId)
+        await moveOrDelete(a.messageId!, a.type)
+        return
+      case 'markRead':
+      case 'markUnread':
+        requireRow(a.messageId)
+        await handlers.markRead([[a.messageId!], a.type === 'markRead'] as never, undefined as never)
+        return
+      case 'flag':
+        requireRow(a.messageId)
+        await handlers.markFlagged([[a.messageId!], true] as never, undefined as never)
+        return
+      case 'snooze': {
+        requireRow(a.messageId)
+        const until = a.until ? Date.parse(a.until.replace(' ', 'T')) : NaN
+        if (!Number.isFinite(until) || until <= Date.now()) throw new Error('稍后处理的时间无效')
+        store.setSnoozed([a.messageId!], until)
+        return
+      }
+      case 'todo': {
+        const title = (a.title ?? '').trim()
+        if (!title) throw new Error('待办缺少标题')
+        store.insertInsight({
+          id: `todo-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: 'todo',
+          messageId: a.messageId && store.getMessageRow(a.messageId) ? a.messageId : null,
+          title,
+          data: { from: 'Agent' },
+          dueAt: a.due ? Date.parse(a.due) || null : null
+        })
+        return
+      }
+      case 'draftReply': {
+        const row = requireRow(a.messageId)
+        const html = (a.body ?? '')
+          .split(/\n{2,}/)
+          .map(p => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`)
+          .join('')
+        // 只打开撰写窗供用户修改，绝不自动发送
+        await ctx.openCompose({
+          accountId: row.account_id,
+          relatedMessageId: row.id,
+          to: row.from_addr ? [row.from_addr] : [],
+          subject: row.subject ? `回复：${row.subject}` : '',
+          html
+        } as never)
+        return
+      }
+      default:
+        throw new Error(`不支持的动作：${(a as { type: string }).type}`)
+    }
+  }
+
+  /** 规则命中后的动作（新邮件到达时由主进程调用；分类类动作已在同步时生效） */
+  async function runRuleActions(messageId: string, actions: RuleAction[]) {
+    const row = store.getMessageRow(messageId)
+    if (!row) return
+    // 移动类动作放最后，避免先移走后其他动作找不到邮件
+    const ordered = [...actions].sort((x, y) => Number(x.type === 'moveTrash') - Number(y.type === 'moveTrash'))
+    for (const action of ordered) {
+      try {
+        switch (action.type) {
+          case 'setCategory':
+            if (action.value) store.setCategory([messageId], action.value as never)
+            break
+          case 'markNewsletter':
+            store.setNewsletterFlag(messageId, true)
+            break
+          case 'markRead':
+            await handlers.markRead([[messageId], true] as never, undefined as never)
+            break
+          case 'flag':
+            await handlers.markFlagged([[messageId], true] as never, undefined as never)
+            break
+          case 'unflag':
+            await handlers.markFlagged([[messageId], false] as never, undefined as never)
+            break
+          case 'saveToKb': {
+            const full = store.getMessageFull(messageId)
+            store.saveKbItem({
+              id: randomUUID(),
+              kind: 'message',
+              title: row.subject || '（无主题）',
+              content: (full?.text || row.snippet || '').slice(0, 20_000),
+              sourceMessageId: messageId,
+              sourceLabel: row.from_name || row.from_addr || null,
+              tags: ['规则'],
+              createdAt: Date.now()
+            })
+            break
+          }
+          case 'runConnector': {
+            const [instanceId, actionId] = (action.value ?? '').split(':')
+            if (instanceId && actionId) await handlers.runConnectorAction([instanceId, actionId, {}, messageId] as never, undefined as never)
+            break
+          }
+          case 'moveTrash':
+            await moveOrDelete(messageId, 'trash')
+            break
+          // notify 由主进程通知模块处理
+        }
+      } catch (err) {
+        console.error('[rules]', action.type, err)
+      }
+    }
+    ctx.event(null as never, { type: 'messages-changed' })
   }
 
   // ---------- AI 任务 ----------
@@ -624,8 +749,8 @@ export function registerIpc(ctx: AppContext) {
       )
       return true
     },
-    getAISettings: () => appStore.get('ai', DEFAULT_AI),
-    setAISettings: ([s]: [AISettings]) => appStore.set('ai', s),
+    getAISettings: () => appStore.getAI(),
+    setAISettings: ([s]: [AISettings]) => appStore.setAI(s),
     // ---- 内置本地引擎 ----
     aiLocalStatus: () => localEngine.localStatus(),
     aiLocalDownload: async ([modelId]: [string]) => {
@@ -666,7 +791,7 @@ export function registerIpc(ctx: AppContext) {
     },
     /** 按当前 baseURL 拉取模型列表（OpenAI 兼容 /models，失败回退 Ollama 原生 /api/tags） */
     aiListModels: async () => {
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       const base = s.baseURL.replace(/\/+$/, '')
       const tryFetch = async (url: string, native: boolean): Promise<string[]> => {
         try {
@@ -736,7 +861,7 @@ export function registerIpc(ctx: AppContext) {
     aiCancel: ([requestId]: [string]) => ai.cancel(requestId),
 
     aiClassify: async ([messageIds]: [string[]]) => {
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       if (!s.enabled) return
       const rows = messageIds.map(id => ({ id, row: store.getMessageRow(id) })).filter(r => r.row)
       if (!rows.length) return
@@ -823,18 +948,7 @@ export function registerIpc(ctx: AppContext) {
     },
 
     aiAskKnowledgeBase: async ([question, requestId]: [string, string]) => {
-      const items = store.listKbItems()
-      const q = question.toLowerCase()
-      const scored = items
-        .map(i => {
-          const hay = `${i.title} ${i.content} ${i.tags.join(' ')}`.toLowerCase()
-          const terms = q.split(/\s+/).filter(t => t.length > 1)
-          let score = 0
-          for (const t of terms) if (hay.includes(t)) score += 1
-          return { item: i, score }
-        })
-        .filter(s => s.score > 0)
-        .sort((a, b) => b.score - a.score)
+      const scored = rankByTerms(store.listKbItems(), searchTerms(question), i => ({ title: i.title, body: `${i.content} ${i.tags.join(' ')}` }))
         .slice(0, 8)
       const context = scored.length
         ? scored.map((s, i) => `[${i + 1}] ${s.item.title}\n${s.item.content.slice(0, 1500)}`).join('\n\n———\n\n')
@@ -862,7 +976,7 @@ export function registerIpc(ctx: AppContext) {
     aiTagKbItem: async ([kbItemId]: [string]) => {
       const item = store.listKbItems().find(i => i.id === kbItemId)
       if (!item) return
-      const s = appStore.get('ai', DEFAULT_AI)
+      const s = appStore.getAI()
       if (!s.enabled) return
       try {
         const answer = await aiChat([
@@ -1007,18 +1121,41 @@ export function registerIpc(ctx: AppContext) {
     agentChat: async ([question, requestId]: [string, string]) => {
       const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
       try {
-        const { system, user } = await agent.chat(question)
+        const { system, user, mailRefs } = await agent.chat(question)
         await ai.stream(requestId, [
           { role: 'system', content: system },
           { role: 'user', content: user }
         ], delta => {
           if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta, done: false })
         })
-        if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true })
+        // refs：回答里 E1、E2… 对应的邮件 id，渲染进程据此把动作块映射到具体邮件
+        if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true, refs: mailRefs })
       } catch (err) {
         if (win && !win.isDestroyed())
           win.webContents.send('event', { type: 'ai-stream', requestId, delta: '', done: true, error: err instanceof Error ? err.message : String(err) })
       }
+    },
+
+    agentExecuteActions: async ([actions]: [AgentAction[]]) => {
+      let ok = 0
+      const failed: { index: number; error: string }[] = []
+      for (const [index, a] of (actions ?? []).slice(0, 20).entries()) {
+        try {
+          await runAgentAction(a)
+          ok++
+        } catch (err) {
+          failed.push({ index, error: err instanceof Error ? err.message : String(err) })
+        }
+      }
+      ctx.event(null as never, { type: 'messages-changed' })
+      return { ok, failed }
+    },
+
+    aiStatus: () => {
+      const s = appStore.getAI()
+      if (aiReady(s)) return { ready: true }
+      if (!s.enabled) return { ready: false, reason: 'AI 未开启' }
+      return { ready: false, reason: '未配置 API Key' }
     },
 
     saveTodoSet: ([title, todos, messageId]: [string, { title: string; due?: string | null }[], string | null | undefined]) => {
@@ -1179,6 +1316,12 @@ export function registerIpc(ctx: AppContext) {
     setNewsletterSender: ([snd, subscribed]: [string, boolean]) => store.setNewsletterSubscribed(snd, subscribed),
     listNewsletterSenders: () => store.listNewsletterSenders(),
 
+    // ================= MCP 服务 =================
+
+    getMcpStatus: () => ctx.mcp.status(),
+    setMcpEnabled: ([enabled, port]: [boolean, number | undefined]) => ctx.mcp.setEnabled(!!enabled, port),
+    regenerateMcpToken: () => ctx.mcp.regenerateToken(),
+
     // ================= 窗口 / 应用 =================
 
     openSettings: ([tab]: [string | undefined]) => ctx.openSettings(tab),
@@ -1197,6 +1340,14 @@ export function registerIpc(ctx: AppContext) {
         throw err
       }
     })
+  }
+
+  // 主进程内部复用的能力（与渲染进程调用走同一实现）
+  return {
+    runRuleActions,
+    aiClassify: async (messageIds: string[]): Promise<void> => {
+      await handlers.aiClassify([messageIds], undefined as never)
+    }
   }
 }
 

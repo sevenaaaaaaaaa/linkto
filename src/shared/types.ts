@@ -18,6 +18,10 @@ export type ProviderKey =
   | 'aliyun'
   | 'yahoo'
   | 'zoho'
+  | 'aliyun-ent'
+  | 'feishu'
+  | 'lark'
+  | 'proton'
   | 'custom'
 
 export interface ImapConfig {
@@ -290,7 +294,8 @@ export interface MailTemplate {
 
 // ---------- 规则 ----------
 
-export type RuleField = 'from' | 'to' | 'subject' | 'listId' | 'hasAttachment' | 'isNewsletter'
+/** ai：用自然语言描述的条件，由 AI 在新邮件到达后判断（value 即条件描述） */
+export type RuleField = 'from' | 'to' | 'subject' | 'listId' | 'hasAttachment' | 'isNewsletter' | 'ai'
 export type RuleOp = 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'regex' | 'is'
 
 export interface RuleCondition {
@@ -308,6 +313,8 @@ export type RuleActionType =
   | 'markNewsletter'
   | 'saveToKb'
   | 'notify'
+  /** 执行连接器动作，value = `${instanceId}:${actionId}` */
+  | 'runConnector'
 
 export interface RuleAction {
   type: RuleActionType
@@ -321,6 +328,25 @@ export interface Rule {
   order: number
   conditions: RuleCondition[]
   actions: RuleAction[]
+}
+
+// ---------- Agent 动作（用户确认后执行） ----------
+
+export type AgentActionType = 'archive' | 'trash' | 'markRead' | 'markUnread' | 'flag' | 'snooze' | 'todo' | 'draftReply'
+
+export interface AgentAction {
+  type: AgentActionType
+  /** 目标邮件（todo 可省略） */
+  messageId?: string
+  /** snooze 截止：YYYY-MM-DD HH:mm */
+  until?: string
+  /** todo 标题 */
+  title?: string
+  /** todo 截止：YYYY-MM-DD */
+  due?: string
+  /** draftReply 回复正文（纯文本） */
+  body?: string
+  reason?: string
 }
 
 // ---------- AI ----------

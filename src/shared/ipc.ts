@@ -36,7 +36,8 @@ import type {
   ProviderKey,
   SmartView,
   NLQuery,
-  FollowupJudgement
+  FollowupJudgement,
+  AgentAction
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -230,6 +231,10 @@ export interface LinkToApi {
   agentProfile(addr: string): Promise<{ ok: boolean; error?: string; profile?: ContactProfile }>
   /** Agent 对话：基于长期记忆 + 知识库 + 近期邮件检索回答 */
   agentChat(question: string, requestId: string): Promise<void>
+  /** 执行 Agent 建议并经用户确认的动作；返回成功数与失败明细 */
+  agentExecuteActions(actions: AgentAction[]): Promise<{ ok: number; failed: { index: number; error: string }[] }>
+  /** AI 是否可用（未配置时 UI 置灰并引导去设置） */
+  aiStatus(): Promise<{ ready: boolean; reason?: string }>
 
   // ---------- 幽灵信（端到端加密 · 阅后即焚） ----------
   /** 本机幽灵身份（公钥即幽灵 ID + 短指纹），首次调用自动生成并入钥匙串 */
@@ -250,4 +255,11 @@ export interface LinkToApi {
   openGhost(): Promise<void>
   /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */
   openGhostReader(id: string): Promise<void>
+
+  // ---------- MCP 服务（外部 AI Agent 访问本地邮件） ----------
+  getMcpStatus(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  /** 开关本地 MCP 服务；首次开启自动生成 token */
+  setMcpEnabled(enabled: boolean, port?: number): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  /** 重新生成 token（旧 token 立即失效） */
+  regenerateMcpToken(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
 }
