@@ -450,7 +450,7 @@ async function bootstrap() {
         const row = mailStore.getMessageRow(messageId)
         if (!row) return
         const worker = engine.getWorker(row.account_id)
-        const archivePath = await worker?.specialFolderPath('archive')
+        const archivePath = await worker?.archiveTargetPath()
         if (worker && archivePath) await worker.moveToFolder(row.folder_path, row.uid, archivePath).catch(() => {})
       },
       focus: () => focusMainWindow(),

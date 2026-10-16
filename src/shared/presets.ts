@@ -74,7 +74,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     hint: '支持微软一键授权（设备码），无需密码。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
-    domains: ['outlook.com', 'hotmail.com', 'live.com', 'live.cn'],
+    domains: ['outlook.com', 'live.com', 'live.cn'],
     color: '#0ea5e9',
     auth: 'oauth-ms'
   },
@@ -220,15 +220,92 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     key: 'aliyun',
-    label: '阿里云邮箱',
-    hint: '使用邮箱登录密码；服务器与端口已按官方推荐预填。',
-    imap: { host: 'imap.mxhichina.com', port: 993, secure: true },
-    smtp: { host: 'smtp.mxhichina.com', port: 465, secure: true },
-    domains: ['aliyun.com', 'mxhichina.com'],
+    label: '阿里邮箱',
+    hint: '个人版 @aliyun.com：网页版开启 IMAP/SMTP 后，用邮箱密码登录。',
+    imap: { host: 'imap.aliyun.com', port: 993, secure: true },
+    smtp: { host: 'smtp.aliyun.com', port: 465, secure: true },
+    domains: ['aliyun.com'],
     color: '#f97316',
-    guideUrl: 'https://www.aliyun.com',
+    guideUrl: 'https://mail.aliyun.com',
+    steps: [
+      '登录阿里邮箱网页版（mail.aliyun.com）',
+      '「设置」→「POP3/SMTP/IMAP」→ 开启 IMAP/SMTP 服务并保存',
+      '在下方填写邮箱登录密码'
+    ],
     passwordLabel: '邮箱密码',
-    passwordPlaceholder: '邮箱登录密码'
+    passwordPlaceholder: '邮箱登录密码',
+    guideLinks: [{ label: '阿里邮箱网页版', url: 'https://mail.aliyun.com' }]
+  },
+  {
+    key: 'aliyun-ent',
+    label: '阿里企业邮',
+    hint: '企业自有域名邮箱：管理员开启 IMAP/SMTP 后，用邮箱密码或三方客户端安全密码登录。',
+    imap: { host: 'imap.qiye.aliyun.com', port: 993, secure: true },
+    smtp: { host: 'smtp.qiye.aliyun.com', port: 465, secure: true },
+    domains: [],
+    color: '#ea580c',
+    guideUrl: 'https://qiye.aliyun.com',
+    steps: [
+      '登录阿里企业邮箱网页版（qiye.aliyun.com）',
+      '「设置」→「账户与安全」→ 若开启了三方客户端安全密码，先生成一个',
+      '在下方填写邮箱密码（或三方客户端安全密码）'
+    ],
+    passwordLabel: '密码 / 安全密码',
+    passwordPlaceholder: '邮箱密码或三方客户端安全密码',
+    guideLinks: [{ label: '阿里企业邮网页版', url: 'https://qiye.aliyun.com' }]
+  },
+  {
+    key: 'feishu',
+    label: '飞书邮箱',
+    hint: '在飞书邮箱设置中开启 IMAP/SMTP 并生成「专用密码」。',
+    imap: { host: 'imap.feishu.cn', port: 993, secure: true },
+    smtp: { host: 'smtp.feishu.cn', port: 465, secure: true },
+    domains: [],
+    color: '#3370ff',
+    guideUrl: 'https://www.feishu.cn',
+    steps: [
+      '打开飞书 →「邮箱」→ 右上角「设置」',
+      '「第三方邮件客户端」→ 开启 IMAP/SMTP，生成专用密码',
+      '复制专用密码，粘贴到下方密码框'
+    ],
+    passwordLabel: '专用密码',
+    passwordPlaceholder: '飞书生成的专用密码（不是飞书登录密码）'
+  },
+  {
+    key: 'lark',
+    label: 'Lark Mail',
+    hint: 'Lark 国际版：在邮箱设置中开启 IMAP/SMTP 并生成专用密码。',
+    imap: { host: 'imap.larksuite.com', port: 993, secure: true },
+    smtp: { host: 'smtp.larksuite.com', port: 465, secure: true },
+    domains: [],
+    color: '#1456f0',
+    guideUrl: 'https://www.larksuite.com',
+    steps: [
+      '打开 Lark →「Mail」→ Settings',
+      '「Third-party email clients」→ 开启 IMAP/SMTP，生成专用密码',
+      '复制专用密码，粘贴到下方密码框'
+    ],
+    passwordLabel: '专用密码',
+    passwordPlaceholder: 'Lark 生成的专用密码'
+  },
+  {
+    key: 'proton',
+    label: 'Proton Mail',
+    hint: '通过本机 Proton Mail Bridge 收发（需付费套餐）；使用 Bridge 显示的密码，不是 Proton 登录密码。',
+    imap: { host: '127.0.0.1', port: 1143, secure: false },
+    smtp: { host: '127.0.0.1', port: 1025, secure: false },
+    domains: ['proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
+    color: '#6d4aff',
+    guideUrl: 'https://proton.me/mail/bridge',
+    steps: [
+      '下载安装 Proton Mail Bridge 并登录你的 Proton 账户',
+      '在 Bridge 中点击该账户 →「Mailbox details」',
+      '复制 Bridge 显示的用户名与密码（端口默认 IMAP 1143 / SMTP 1025），粘贴到下方',
+      '使用期间保持 Bridge 运行（可设为开机启动）'
+    ],
+    passwordLabel: 'Bridge 密码',
+    passwordPlaceholder: 'Bridge「Mailbox details」中显示的密码',
+    guideLinks: [{ label: '下载 Proton Mail Bridge', url: 'https://proton.me/mail/bridge' }]
   },
   {
     key: 'yahoo',

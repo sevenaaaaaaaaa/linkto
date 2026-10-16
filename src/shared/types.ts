@@ -18,6 +18,10 @@ export type ProviderKey =
   | 'aliyun'
   | 'yahoo'
   | 'zoho'
+  | 'aliyun-ent'
+  | 'feishu'
+  | 'lark'
+  | 'proton'
   | 'custom'
 
 export interface ImapConfig {

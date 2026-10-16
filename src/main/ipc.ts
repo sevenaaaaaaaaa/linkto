@@ -105,9 +105,8 @@ export function registerIpc(ctx: AppContext) {
       store.deleteMessageCascade(messageId)
       if (worker) await worker.deletePermanent(row.folder_path, row.uid).catch(() => {})
     } else {
-      const target = mode === 'trash' ? 'trash' : 'archive'
       if (worker) {
-        const targetPath = await worker.specialFolderPath(target)
+        const targetPath = mode === 'trash' ? await worker.specialFolderPath('trash') : await worker.archiveTargetPath()
         if (targetPath) {
           await worker.moveToFolder(row.folder_path, row.uid, targetPath).catch(() => {})
           return
