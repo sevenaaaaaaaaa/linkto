@@ -33,7 +33,7 @@ const METHOD_NAMES = [
   'aiComposeQuery', 'aiSnoozeSuggest', 'aiJudgeFollowups', 'aiFollowupDraft', 'aiScreenBatch', 'nlSearch',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
   'listCloudDrives', 'saveCloudDrive', 'removeCloudDrive', 'testCloudDrive', 'cloudUpload', 'cloudSyncEml', 'pickDirectory', 'detectProtonDrive',
-  'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus', 'createTodo', 'updateTodo', 'aiPlanTodos',
+  'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus', 'createTodo', 'updateTodo', 'aiPlanTodos', 'todoFromMessage',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',

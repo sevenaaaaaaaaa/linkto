@@ -9,7 +9,8 @@ import { Outbox } from './mail/outbox'
 import { AIService, aiReady } from './ai/service'
 import { evalAiRules, hasAiCondition } from './rules/engine'
 import { startCleanup } from './mail/cleanup'
-import { collectTodoFromInsight } from './todo-collect'
+import { startTodoReminders } from './todo-reminders'
+import { collectTodoFromInsight, collectMeetingTodo } from './todo-collect'
 import { RULE_AI_JUDGE } from './ai/prompts'
 import type { MailBundle, MailSection, RuleAction } from '@shared/types'
 import { LocalEngine } from './ai/local-engine'
@@ -514,7 +515,9 @@ async function bootstrap() {
     getWorker: accountId => engine?.getWorker(accountId),
     // 自动收集待办：「需要你处理」且有明确事项的邮件进待办（幂等）
     onInsight: ins => {
-      if (collectTodoFromInsight(mailStore, ins)) broadcast({ type: 'todos-changed' })
+      const a = collectTodoFromInsight(mailStore, ins)
+      const b = collectMeetingTodo(mailStore, ins)
+      if (a || b) broadcast({ type: 'todos-changed' })
     }
   })
 
@@ -673,6 +676,14 @@ async function bootstrap() {
   startCleanup({ appStore, store: mailStore, archive: internal.archive, onChanged: () => broadcast({ type: 'messages-changed' }) })
 
   buildAppMenu()
+  const showMainWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createMainWindow()
+    else {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  }
   initNativeIntegration({
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown> | undefined),
     showMain: () => {
@@ -683,7 +694,20 @@ async function bootstrap() {
         mainWindow.focus()
       } else createMainWindow()
     },
-    unreadTotal: () => mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
+    unreadTotal: () => mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0),
+    quickAddTodo: () => {
+      showMainWindow()
+      mainWindow?.webContents.send('event', { type: 'quick-add-todo' })
+    }
+  })
+  // 待办提醒：会议 / 固定时间开始前 5 分钟、带时刻的截止前 15 分钟（跟随通知总开关）
+  startTodoReminders({
+    store: mailStore,
+    enabled: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS).enabled,
+    openTodo: id => {
+      showMainWindow()
+      mainWindow?.webContents.send('event', { type: 'open-todo', id })
+    }
   })
   // 开机自启（跟随设置；hidden 避免抢占前台）
   applyLoginItem(appStore.get('general', DEFAULT_GENERAL).launchAtLogin)

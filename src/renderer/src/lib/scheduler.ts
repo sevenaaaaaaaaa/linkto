@@ -240,7 +240,18 @@ export function schedule(todos: InsightRecord[], now = Date.now(), cfg = DEFAULT
  * 快速添加的自然语言解析：「明天下午3点 给王小明回电话 30分钟 !」
  * 识别 今天/明天/后天/周X、上午/下午 N 点(半)、HH:MM、N 分钟/小时、! 或「重要」= 高优先级
  */
-export function parseQuickAdd(input: string, now = Date.now()): { title: string; dueAt: number | null; minutes?: number; priority?: 1 | 2 | 3; fixedAt?: number | null } {
+export function parseQuickAdd(input: string, now = Date.now()): {
+  title: string
+  dueAt: number | null
+  minutes?: number
+  priority?: 1 | 2 | 3
+  fixedAt?: number | null
+  project?: string
+  context?: string
+  tags?: string[]
+  repeat?: TodoData['repeat']
+  energy?: TodoData['energy']
+} {
   let s = ` ${input.trim()} `
   let day: number | null = null
   let hour: number | null = null
@@ -270,6 +281,16 @@ export function parseQuickAdd(input: string, now = Date.now()): { title: string;
   })
   take(/(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)/i, m => (minutes = Math.round(Number(m[1]) * (/小时|h/i.test(m[2]) ? 60 : 1))))
   take(/(!|！|重要|紧急)/, () => (priority = 1))
+  let project: string | undefined
+  let context: string | undefined
+  const tags: string[] = []
+  let repeat: TodoData['repeat'] | undefined
+  let energy: TodoData['energy'] | undefined
+  take(/(?:^|\s)#([^\s#@+]+)/, m => (project = m[1]))
+  take(/(?:^|\s)@([^\s#@+]+)/, m => (context = `@${m[1]}`))
+  for (let i = 0; i < 5; i++) take(/(?:^|\s)\+([^\s#@+]+)/, m => tags.push(m[1]))
+  take(/(每天|每日|工作日|每周|每月)/, m => (repeat = { freq: m[1] === '工作日' ? 'weekdays' : m[1] === '每周' ? 'weekly' : m[1] === '每月' ? 'monthly' : 'daily' }))
+  take(/(低精力|轻松|高精力|费脑)/, m => (energy = /低|轻/.test(m[1]) ? 'low' : 'high'))
   const title = s.replace(/\s+/g, ' ').trim()
   let dueAt: number | null = null
   let fixedAt: number | null = null
@@ -280,5 +301,5 @@ export function parseQuickAdd(input: string, now = Date.now()): { title: string;
     if (hour !== null) fixedAt = d.getTime()
     dueAt = d.getTime()
   }
-  return { title: title || input.trim(), dueAt, minutes, priority, fixedAt }
+  return { title: title || input.trim(), dueAt, minutes, priority, fixedAt, project, context, tags: tags.length ? tags : undefined, repeat, energy }
 }

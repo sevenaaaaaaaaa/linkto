@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave, IconPin, IconHeart, IconUsers, IconBellRing, IconRefresh } from '../components/icons'
 import type { AgentAction, AgentActionType, AgentMemory, ContactProfile, MemoryScope } from '@shared/types'
 import { Markdown } from '../components/Markdown'
+import { takePendingAsk } from '../lib/agent-ask'
 
 const SCOPE_META: Record<MemoryScope, { label: string; icon: React.ReactNode; color: string }> = {
   fact: { label: '事实', icon: <IconPin width={11} height={11} />, color: 'var(--info)' },
@@ -469,6 +470,25 @@ export function AgentChat(props: { onClose(): void; panel?: boolean }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 999999 })
   }, [messages])
+
+  // 其他页面交来的问题（待办页的「会前准备」「会后跟进」等）：挂载时和事件到达时各领取一次
+  const askRef = useRef<(q: string) => void>(() => {})
+  askRef.current = (q: string) => {
+    if (streaming) return
+    setMessages(prev => [...prev, { role: 'user', text: q }])
+    setStreaming(true)
+    requestId.current = `agent-${Date.now()}`
+    void api.agentChat(q, requestId.current)
+  }
+  useEffect(() => {
+    const take = () => {
+      const q = takePendingAsk()
+      if (q) askRef.current(q)
+    }
+    take()
+    window.addEventListener('ms:agent-ask', take)
+    return () => window.removeEventListener('ms:agent-ask', take)
+  }, [])
 
   const patch = (i: number, p: Partial<ChatMessage>) =>
     setMessages(prev => prev.map((m, j) => (j === i ? { ...m, ...p } : m)))

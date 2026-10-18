@@ -377,7 +377,8 @@ export class UnderstandService {
       }
     }
     // 自动收集待办（幂等）：已有邮件里的截止事项也能进待办，不必等新邮件到达
-    if (this.deps.onInsight) for (const ins of Object.values(insights)) if (ins.section === 'act') this.deps.onInsight(ins)
+    // 会议邀请常被归为通知类，所以除订阅外都交给收集器（待办收集器自己只收「需要你处理」）
+    if (this.deps.onInsight) for (const ins of Object.values(insights)) if (ins.bundle !== 'newsletter') this.deps.onInsight(ins)
     return insights
   }
 

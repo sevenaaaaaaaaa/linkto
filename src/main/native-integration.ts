@@ -5,6 +5,8 @@ export interface NativeIntegrationOptions {
   openCompose(prefill?: Record<string, unknown>): void
   showMain(): void
   unreadTotal(): number
+  /** 打开主窗口并聚焦「添加待办」 */
+  quickAddTodo?(): void
 }
 
 /** 解析 mailto:URL → 预填写信（地址/主题/正文） */
@@ -49,6 +51,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
     app.dock.setMenu(
       Menu.buildFromTemplate([
         { label: '写邮件', click: () => opts.openCompose({}) },
+        { label: '新建待办…', click: () => opts.quickAddTodo?.() },
         { label: '打开 LinkTo', click: () => opts.showMain() }
       ])
     )
@@ -80,6 +83,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
         Menu.buildFromTemplate([
           { label: '打开 LinkTo', click: () => opts.showMain() },
           { label: '写邮件', click: () => opts.openCompose({}) },
+          { label: '新建待办…', accelerator: 'Alt+CommandOrControl+T', click: () => opts.quickAddTodo?.() },
           { type: 'separator' },
           {
             id: 'unread',
@@ -98,6 +102,8 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
   // ---- 全局快捷键 ----
   globalShortcut.register('CommandOrControl+Shift+M', () => opts.openCompose({}))
   globalShortcut.register('CommandOrControl+Shift+L', () => opts.showMain())
+  // 随时记一笔：⌥⌘T 打开 LinkTo 的「添加待办」
+  if (opts.quickAddTodo) globalShortcut.register('Alt+CommandOrControl+T', () => opts.quickAddTodo!())
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()

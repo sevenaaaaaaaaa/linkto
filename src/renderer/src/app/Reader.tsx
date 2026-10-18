@@ -17,6 +17,8 @@ import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest
 import { useInsights, splitKey, dedupeEntities } from '../lib/insights'
 import { noteMouseAction } from './Guidance'
 import { getPrefs } from '../lib/prefs'
+import { useTodos } from '../lib/todos'
+import { goView } from '../lib/route'
 import { Markdown, markdownToHtml } from '../components/Markdown'
 
 interface AIState {
@@ -158,6 +160,9 @@ export function Reader() {
   }, [msg?.id])
   const accounts = useMail(st => st.accounts)
   const railMode = useMail(st => st.rail)
+  // 这封邮件关联的待办（自动收集的截止事项 / 会议 / 手动转的）
+  const allTodos = useTodos(st => st.todos)
+  const linkedTodos = msg ? allTodos.filter(t => t.messageId === msg.id && (t.status as string) !== 'dismissed') : []
   const account = msg ? accounts.find(a => a.id === msg.accountId) : undefined
   const [authDismissed, setAuthDismissed] = useState(false)
   useEffect(() => setAuthDismissed(false), [selectedId])
@@ -536,6 +541,14 @@ export function Reader() {
   const atts = msg.attachments.filter(a => !a.inline)
   const canUnsub = !!msg.listUnsubscribe
   const moreItems: MenuItem[] = [
+    {
+      kind: 'action',
+      label: '转为待办',
+      icon: <IconTask width={13} height={13} />,
+      hint: 'T',
+      onSelect: () => void api.todoFromMessage(msg.id).then(id => showToast(id ? '已加入待办' : '没能转成待办'))
+    },
+    { kind: 'sep' },
     { kind: 'action', label: '全部回复', icon: <IconReplyAll width={13} height={13} />, onSelect: () => reply(true) },
     { kind: 'action', label: '转发', icon: <IconForward width={13} height={13} />, onSelect: forward },
     { kind: 'sep' },
@@ -672,6 +685,26 @@ export function Reader() {
           </button>
         )}
       </div>
+
+      {linkedTodos.length > 0 && (
+        <div className="shrink-0 px-6 pt-3 flex flex-wrap items-center gap-1.5 text-xs">
+          <span style={{ color: 'var(--faint)' }}>关联待办</span>
+          {linkedTodos.map(t => (
+            <button
+              key={t.id}
+              onClick={() => {
+                goView('todo')
+                setTimeout(() => window.dispatchEvent(new CustomEvent('ms:todo-open', { detail: t.id })), 250)
+              }}
+              className="h-6 px-2 rounded-[var(--r-xs)] border border-[var(--border)] hover:bg-[var(--hover)] inline-flex items-center gap-1.5"
+              style={{ color: t.status === 'done' ? 'var(--faint)' : 'var(--fg)', textDecoration: t.status === 'done' ? 'line-through' : 'none' }}
+            >
+              {(t.data as { todoKind?: string }).todoKind === 'meeting' ? '会议' : '待办'} · {t.title.slice(0, 24)}
+              {t.dueAt && t.status !== 'done' ? ` · ${new Date(t.dueAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

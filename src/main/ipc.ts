@@ -21,7 +21,8 @@ import type {
   OAuthTokens,
   AgentAction,
   RuleAction,
-  FolderPref
+  FolderPref,
+  TodoData
 } from '@shared/types'
 import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
@@ -36,6 +37,7 @@ import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAtt
 import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-drive/proton'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
+import { todoFromMessage } from './todo-collect'
 import { aiReady } from './ai/service'
 import { TODO_PLAN } from './ai/prompts'
 import { Outbox } from './mail/outbox'
@@ -133,6 +135,23 @@ export function registerIpc(ctx: AppContext) {
       store.deleteMessageCascade(messageId)
     }
     ctx.event(BrowserWindow.getAllWindows()[0], { type: 'messages-changed' })
+  }
+
+  /** 重复规则的下一次时间（保持原时刻） */
+  function nextOccurrence(base: number, rep: NonNullable<TodoData['repeat']>): number {
+    const d = new Date(base)
+    const n = Math.max(1, rep.interval ?? 1)
+    if (rep.freq === 'daily') d.setDate(d.getDate() + n)
+    else if (rep.freq === 'weekly') d.setDate(d.getDate() + 7 * n)
+    else if (rep.freq === 'monthly') d.setMonth(d.getMonth() + n)
+    else {
+      // 工作日：跳过周六日
+      do d.setDate(d.getDate() + 1)
+      while (d.getDay() === 0 || d.getDay() === 6)
+    }
+    // 已经过去很久的（如补完旧任务）：滚动到今天之后
+    while (d.getTime() < Date.now() - 864e5) d.setDate(d.getDate() + (rep.freq === 'monthly' ? 30 : rep.freq === 'weekly' ? 7 : 1))
+    return d.getTime()
   }
 
   // ---------- Agent 动作 / 规则动作执行 ----------
@@ -1198,8 +1217,41 @@ export function registerIpc(ctx: AppContext) {
     },
 
     updateTodo: ([id, patch]: [string, { title?: string; dueAt?: number | null; status?: string; data?: Record<string, unknown> }]) => {
+      const before = store.listInsights('todo').find(t => t.id === id)
       store.updateInsight(id, patch)
+      // 重复任务：完成时按规则生成下一次（复制维度、清空子任务勾选与外部映射）
+      const rep = (before?.data as TodoData | undefined)?.repeat
+      if (before && rep && before.status === 'open' && patch.status === 'done') {
+        const base = before.dueAt ?? Date.now()
+        const next = nextOccurrence(base, rep)
+        const d = before.data as TodoData
+        store.insertInsight({
+          id: `todo-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          kind: 'todo',
+          accountId: before.accountId,
+          messageId: before.messageId,
+          title: before.title,
+          data: {
+            ...d,
+            checklist: d.checklist?.map(c => ({ ...c, done: false })),
+            fixedAt: d.fixedAt ? d.fixedAt + (next - base) : d.fixedAt,
+            external: undefined,
+            doneAt: undefined,
+            doneBy: undefined,
+            inbox: false,
+            updatedAt: Date.now()
+          } as Record<string, unknown>,
+          dueAt: next
+        })
+      }
       ctx.event(null as never, { type: 'todos-changed' })
+    },
+
+    todoFromMessage: ([messageId]: [string]) => {
+      const ins = ctx.understand.getInsights([messageId])[messageId]
+      const id = todoFromMessage(store, ins, messageId)
+      ctx.event(null as never, { type: 'todos-changed' })
+      return id
     },
 
     aiPlanTodos: async ([ids]: [string[]]) => {

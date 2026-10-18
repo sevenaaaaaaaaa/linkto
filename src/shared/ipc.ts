@@ -157,6 +157,8 @@ export interface LinkToApi {
   createTodo(input: { title: string; dueAt?: number | null; data?: Record<string, unknown> }): Promise<string>
   updateTodo(id: string, patch: { title?: string; dueAt?: number | null; status?: 'open' | 'done' | 'dismissed'; data?: Record<string, unknown> }): Promise<void>
   /** AI 估时长 / 定优先级 / 给理由（排布本身在渲染层确定性完成） */
+  /** 邮件转待办（用邮件理解的建议 / 截止）；已存在则返回原 id */
+  todoFromMessage(messageId: string): Promise<string | null>
   aiPlanTodos(ids: string[]): Promise<{ ok: boolean; error?: string; plans: { id: string; minutes: number; priority: 1 | 2 | 3; reason: string }[] }>
   deleteInsight(id: string): Promise<void>
   saveMemo(title: string, content: string): Promise<void>

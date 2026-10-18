@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useView, goView } from '../lib/route'
+import { useView, goView, viewFromHash } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
 import { AccountRail } from './AccountRail'
@@ -59,6 +59,12 @@ export function MailShell() {
     const onEv = (ev: unknown) => {
       const e = ev as { type: string; subject?: string; to?: string; accountId?: string; text?: string }
       if (e.type === 'outbox-changed') loadOutbox()
+      // 托盘 / ⌥⌘T「新建待办」、待办提醒点击：切到待办页再交给 TodoView（等它挂载）
+      if (e.type === 'quick-add-todo' || e.type === 'open-todo') {
+        goView('todo')
+        const id = (e as { id?: string }).id
+        setTimeout(() => window.dispatchEvent(new CustomEvent(e.type === 'open-todo' ? 'ms:todo-open' : 'ms:todo-quick', { detail: id })), 250)
+      }
       if (e.type === 'mail-sent') {
         setToast(`已发送：${e.subject ?? ''}`)
         setTimeout(() => setToast(''), 2600)
@@ -176,6 +182,12 @@ export function MailShell() {
           subject: `回复：${state.messages[idx]?.subject ?? ''}`,
           relatedMessageId: state.selectedId
         } as never)
+      } else if ((e.key === 't' || e.key === 'T') && state.selectedId && viewFromHash() === 'mail') {
+        // 邮件转待办：用邮件理解的建议 / 截止生成，已存在则不重复
+        e.preventDefault()
+        void api.todoFromMessage(state.selectedId).then(id => {
+          window.dispatchEvent(new CustomEvent('ms:toast', { detail: id ? '已加入待办（侧栏「待办」查看）' : '没能转成待办' }))
+        })
       } else if ((e.key === 'v' || e.key === 'V') && state.selectedId) {
         // 移动面板：AI 先猜目标文件夹
         e.preventDefault()
