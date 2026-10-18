@@ -153,9 +153,9 @@ function folderIcon(f: Folder, color?: string) {
 
 /**
  * 侧栏（v3）：账户切换交给左侧账户栏，这里只回答「在这个账户里看什么」。
- * - 核心：收件箱（AI 分区）· 等待对方 · 稍后 · 旗标 · 置顶；待审批只在有人排队时出现
+ * - 核心：收件箱（AI 分区）· 项目 · 等待对方 · 稍后 · 旗标 · 置顶；待审批只在有人排队时出现
  * - 文件夹：只显示「常用」（管理面板里钉选）；选中账户时附带它的已发送 / 归档 / 废纸篓
- * - 智能：今日简报 · Agent · 知识库 · 我的视图
+ * - 智能：今日简报 · 待办 · 财务 · Agent · 知识库 · 附件 · 我的视图（待办 / 财务由 AI 从邮件自动收集，归在这里）
  */
 export function Sidebar() {
   const { accounts, folders, scope, setScope, accountCtx } = useMail()
@@ -234,10 +234,8 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
-        <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
         <Row icon={<IconLayers {...ico} />} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
         <PinnedProjects Row={Row} />
-        <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
         {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
         {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
         {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}
@@ -298,6 +296,8 @@ export function Sidebar() {
         {smartOpen && (
           <>
             {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
+            <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
+            <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
             <Row
               icon={<IconRobot {...ico} />}
               label="Agent"
