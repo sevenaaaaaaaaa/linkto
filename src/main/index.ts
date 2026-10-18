@@ -8,7 +8,7 @@ import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
 import { AIService, aiReady } from './ai/service'
 import { evalAiRules, hasAiCondition } from './rules/engine'
-import { startCleanup } from './mail/cleanup'
+import { createCleanupRunner } from './mail/cleanup'
 import { startTodoReminders } from './todo-reminders'
 import { collectTodoFromInsight, collectMeetingTodo } from './todo-collect'
 import { RULE_AI_JUDGE } from './ai/prompts'
@@ -37,6 +37,8 @@ import { registerFinanceIpc } from './finance/ipc'
 import { startFinanceReminders } from './finance/reminders'
 import { AgentRuntime } from './agent/runtime'
 import { registerAgentIpc } from './agent/ipc'
+import { initJobs } from './jobs'
+import { AiBudget } from './jobs/budget'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -137,6 +139,7 @@ let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
 let projects: ProjectService | null = null
 let finance: FinanceService | null = null
+let jobs: ReturnType<typeof initJobs> | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -549,6 +552,8 @@ async function bootstrap() {
     {
       status: (accountId, status, text) => {
         statuses.set(accountId, { status, text })
+        // 首次整理引导：账户首次完成初始同步时登记
+        jobs?.onAccountStatus(accountId, status)
         broadcast({ type: 'account-status', accountId, status, text, errorKind: status === 'error' ? classifyAccountError(text) : undefined })
       },
       progress: (accountId, text) => broadcast({ type: 'sync-progress', accountId, text }),
@@ -733,8 +738,32 @@ async function bootstrap() {
   mcp.attachExtraTools({ list: () => agentRuntime.readTools(), run: (name, args) => agentRuntime.runReadTool(name, args) })
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
-  // 定期整理：已读的旧订阅 / 通知按设置天数自动归档
-  startCleanup({ appStore, store: mailStore, archive: internal.archive, onChanged: () => broadcast({ type: 'messages-changed' }) })
+  // 后台自动任务（待办补扫 / 财务 / 附件 / 项目 / 知识库学习 / 每日简报 / 定期整理 / 定时技能）+ 活动记录 + 首次整理引导
+  try {
+    jobs = initJobs({
+      db,
+      store: mailStore,
+      appStore,
+      ai: aiService,
+      understand,
+      agent,
+      insights,
+      finance: () => finance,
+      projects: () => projects,
+      attachments: () => attachmentService(),
+      budget: new AiBudget(appStore),
+      event: payload => broadcast(payload),
+      // 定期整理：已读的旧订阅 / 通知按设置天数自动归档（原独立定时器，改由调度器每小时调用）
+      cleanup: createCleanupRunner({ appStore, store: mailStore, archive: internal.archive, onChanged: () => broadcast({ type: 'messages-changed' }) }),
+      showActivity: () => {
+        focusMainForNotification()
+        mainWindow?.webContents.send('event', { type: 'open-agent-activity' })
+      }
+    })
+  } catch (err) {
+    // 自动任务初始化失败不影响收发信主流程
+    console.error('[jobs] init failed:', err)
+  }
 
   buildAppMenu()
   const showMainWindow = () => {
@@ -815,9 +844,6 @@ async function bootstrap() {
       console.error('[understand] startup scan failed:', err)
     }
   }, 20_000)
-  // 定期学习：每 30 分钟检查一次是否该生成当日商情
-  setInterval(() => void insights.maybeAutoDaily().catch(() => {}), 30 * 60_000)
-  void insights.maybeAutoDaily().catch(() => {})
   // Snooze 到期释放：每 30 秒检查，到点邮件自动回到收件箱
   setInterval(() => {
     try {
@@ -848,6 +874,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   todoSync?.stop()
+  jobs?.stop()
   attachmentService()?.stop()
   engine?.stopAll()
   void mcp?.stop()

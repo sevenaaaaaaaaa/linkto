@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { SectionTitle, SettingRow, Toggle } from './GeneralTab'
 import { RulesTab } from './RulesTab'
+import { JobList, JobSettingsBlock } from '../../app/agent/AutomationJobs'
+import { useAgentJobs } from '../../lib/automation'
 import type { AISettings, GeneralSettings, Rule, RuleAction, RuleCondition } from '@shared/types'
 
 interface Recipe {
@@ -170,6 +172,13 @@ export function AutomationTab() {
         你主动点的操作（打开邮件时的要点、摘要、起草、问 Agent）不受这些开关影响。MCP 服务与连接器在「集成」里设置。
       </div>
 
+      <SectionTitle>后台任务</SectionTitle>
+      <div className="text-xs mb-3 leading-relaxed" style={{ color: 'var(--faint)' }}>
+        Agent 在后台按节奏替你收集与学习，结果记在「Agent → 自动任务」的活动记录里。与那里的开关是同一份设置。
+      </div>
+      <JobList compact />
+      <BackgroundAiSettings />
+
       <SectionTitle>一键配方</SectionTitle>
       <div className="text-xs mb-3" style={{ color: 'var(--faint)' }}>点「启用」生成一条规则，只作用于之后新到的邮件；标了「AI」的需要先配置好 AI 模型。</div>
       <div className="grid grid-cols-2 gap-2.5">
@@ -234,6 +243,16 @@ export function AutomationTab() {
       <div className="h-[460px]">
         <RulesTab key={rulesKey} />
       </div>
+    </div>
+  )
+}
+
+/** 后台 AI 用量上限 / 只在接通电源时（与 Agent → 自动任务页同一份设置） */
+function BackgroundAiSettings() {
+  const { settings, saveSettings } = useAgentJobs()
+  return (
+    <div className="mt-4">
+      <JobSettingsBlock settings={settings} onChange={p => void saveSettings(p)} />
     </div>
   )
 }

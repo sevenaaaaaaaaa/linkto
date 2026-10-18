@@ -12,6 +12,19 @@ export function KbView() {
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState<KbItem | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  // 活动记录 / Agent 引用：打开指定条目
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail
+      if (!id) return
+      void api.listKbItems().then(list => {
+        const hit = list.find(i => i.id === id)
+        if (hit) setSelected(hit)
+      })
+    }
+    window.addEventListener('ms:kb-open', onOpen)
+    return () => window.removeEventListener('ms:kb-open', onOpen)
+  }, [])
 
   const filtered = (items ?? []).filter(i =>
     !q.trim() ||

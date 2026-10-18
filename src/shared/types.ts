@@ -1203,3 +1203,47 @@ export interface OnboardingScanStatus {
   startedAt: number | null
   finishedAt: number | null
 }
+
+// ---------- 自动任务 · 活动记录 · 首次整理（追加的可选字段，接口声明合并） ----------
+
+export interface AgentActivity {
+  /** 结构化计数（界面汇总「今天 Agent 替你…」）：todos / finance / overdue / kb / kbMerged / memories / attachments / projects / archived */
+  stats?: Record<string, number>
+}
+
+export interface AgentJobInfo {
+  /** 是否用到 AI：none = 纯规则；optional = AI 可用时更准；required = 没有 AI 不运行 */
+  ai?: 'none' | 'optional' | 'required'
+  /** 当前为什么不会运行 / 只跑规则部分（如「AI 未配置」「未接通电源」「今日 AI 用量已用完」「离线」） */
+  blockedReason?: string | null
+  /** 技能任务对应的技能 id */
+  skillId?: string | null
+}
+
+export interface OnboardingScanStatus {
+  /** 待整理账户的显示信息（与 pendingAccounts 对应） */
+  accounts?: { id: string; email: string; name: string; color?: string | null }[]
+  /** AI 是否可用（不可用时知识库步骤跳过、其余只用规则） */
+  aiReady?: boolean
+  /** 本轮扫描的天数 / 账户（运行中或刚完成） */
+  days?: number | null
+  scannedAccounts?: string[]
+  /** 本次启动里用户点了「稍后」 */
+  hidden?: boolean
+  /** 老用户升级后的一次性提示（不是新加的账户） */
+  legacy?: boolean
+}
+
+/** 自动任务全局设置 */
+export interface AgentJobSettings {
+  /** 后台 AI 每天请求上限（自动任务 + 首次整理发起的请求） */
+  aiDailyLimit: number
+  /** 只在接通电源时跑后台 AI（用电池时只跑规则部分） */
+  aiOnlyOnPower: boolean
+  /** 知识库自主学习每天最多学几封邮件 */
+  kbDailyLimit: number
+  /** 定时技能跑完发系统通知（受通知总开关与免打扰约束） */
+  notifySkills: boolean
+  /** 只读：今天已用的后台 AI 请求数 */
+  aiUsedToday?: number
+}

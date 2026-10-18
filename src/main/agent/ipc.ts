@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import type { LinkToApi } from '@shared/ipc'
 import type { AgentRuntime } from './runtime'
-import { setSkillRunner } from './hooks'
+import { notifySkillsChanged, setSkillLister, setSkillRunner } from './hooks'
 
 type AgentMethods =
   | 'agentRun' | 'agentApprove' | 'agentCancel' | 'agentTools' | 'agentThreads' | 'agentThread' | 'agentDeleteThread'
@@ -20,8 +20,16 @@ export function registerAgentIpc(rt: AgentRuntime) {
     agentThread: id => rt.thread(String(id)),
     agentDeleteThread: id => rt.deleteThread(String(id)),
     agentSkills: () => rt.skills(),
-    agentSaveSkill: skill => rt.saveSkill(skill),
-    agentDeleteSkill: id => rt.deleteSkill(String(id))
+    agentSaveSkill: skill => {
+      const saved = rt.saveSkill(skill)
+      // 定时设置可能变了：让调度器重排技能任务
+      notifySkillsChanged()
+      return saved
+    },
+    agentDeleteSkill: id => {
+      rt.deleteSkill(String(id))
+      notifySkillsChanged()
+    }
   }
   for (const [method, handler] of Object.entries(handlers)) {
     ipcMain.handle(`api:${method}`, async (_event, ...args) => {
@@ -34,4 +42,7 @@ export function registerAgentIpc(rt: AgentRuntime) {
     })
   }
   setSkillRunner((skillId, params) => rt.runSkillHeadless(skillId, params))
+  // 调度器按技能的 schedule 建定时任务：内置（含用户覆盖）+ 自定义技能
+  setSkillLister(() => rt.skills())
+  notifySkillsChanged()
 }

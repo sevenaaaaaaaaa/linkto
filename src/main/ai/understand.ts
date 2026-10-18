@@ -548,6 +548,46 @@ export class UnderstandService {
     if (this.worthAi(rows.get(messageId), h)) this.enqueue(messageId)
   }
 
+  /**
+   * 定期补扫（自动任务调用）：一批邮件即时算启发式并触发收集（待办 / 会议 / 财务 / 项目，幂等）；
+   * AI 后台理解开着时，对值得的、还没有 AI 结果的邮件（含之前失败 / 离线错过的）逐封补跑，最多 maxAi 封。
+   * 后台用量闸门抛错（超额 / 用电池）时停下并返回原因。
+   */
+  async sweep(ids: string[], opts: { ai: boolean; maxAi: number }): Promise<{ checked: number; ai: number; failed: number; stopped: string | null }> {
+    const { insights, heuristics, rows, ai } = this.compute(ids)
+    if (this.deps.onInsight) for (const ins of Object.values(insights)) if (ins.bundle !== 'newsletter') this.deps.onInsight(ins)
+    let done = 0
+    let failed = 0
+    let stopped: string | null = null
+    if (opts.ai && this.backgroundReady()) {
+      const want = [...heuristics]
+        .filter(([id, h]) => ai[id]?.source !== 'ai' && this.worthAi(rows.get(id), h))
+        .sort((a, b) => b[1].urgency - a[1].urgency)
+        .map(([id]) => id)
+      for (const id of want) {
+        if (done >= opts.maxAi) break
+        this.failed.delete(id)
+        let p = this.inflight.get(id)
+        if (!p) {
+          p = this.runAi(id).finally(() => this.inflight.delete(id))
+          this.inflight.set(id, p)
+        }
+        try {
+          await p
+          done++
+        } catch (err) {
+          failed++
+          this.failed.add(id)
+          if (err instanceof Error && err.name === 'BudgetError') {
+            stopped = err.message
+            break
+          }
+        }
+      }
+    }
+    return { checked: Object.keys(insights).length, ai: done, failed, stopped }
+  }
+
   /** 启动时：最新 30 封未读收件箱邮件中缺 AI 结果的补跑 */
   startupScan() {
     if (!this.backgroundReady()) return

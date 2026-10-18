@@ -552,3 +552,12 @@ export interface LinkToApi {
   onboardingScanStart(opts: { days: number; accountIds?: string[] | null; steps: ('todo' | 'finance' | 'attachments' | 'kb' | 'projects')[] }): Promise<void>
   onboardingScanDismiss(): Promise<void>
 }
+
+// ---------- 自动任务全局设置 / 首次整理「稍后」（追加） ----------
+
+export interface LinkToApi {
+  agentJobSettings(): Promise<import('./types').AgentJobSettings>
+  agentJobSetSettings(patch: Partial<import('./types').AgentJobSettings>): Promise<import('./types').AgentJobSettings>
+  /** 首次整理「稍后」：本次启动不再提示，下次启动再提醒一次 */
+  onboardingScanLater(): Promise<void>
+}

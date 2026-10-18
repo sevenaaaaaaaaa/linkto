@@ -95,6 +95,13 @@ function httpError(status: number, body: string, model: string): Error {
   return new Error(`AI 请求失败 (${status})：${snippet}`)
 }
 
+/** 后台用量闸门（自动任务模块注册）：每次请求前同步调用，后台任务超出每日上限 / 用电池时抛错；前台请求直接放行 */
+let requestGuard: (() => void) | null = null
+
+export function setAiRequestGuard(fn: (() => void) | null) {
+  requestGuard = fn
+}
+
 /** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()
@@ -108,6 +115,7 @@ export class AIService {
   }
 
   async stream(requestId: string, messages: AIChatMessage[], onDelta: (delta: string) => void): Promise<string> {
+    requestGuard?.()
     const s = this.getSettings()
     // 内置本地引擎：模型推理完全在本机，无需 Key、断网可用
     if (s.baseURL === 'builtin-local') {

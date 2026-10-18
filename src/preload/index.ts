@@ -47,6 +47,7 @@ const METHOD_NAMES = [
   'agentRun', 'agentApprove', 'agentCancel', 'agentTools', 'agentThreads', 'agentThread', 'agentDeleteThread',
   'agentSkills', 'agentSaveSkill', 'agentDeleteSkill', 'agentJobs', 'agentJobSet', 'agentJobRunNow', 'agentActivity',
   'onboardingScanStatus', 'onboardingScanStart', 'onboardingScanDismiss',
+  'agentJobSettings', 'agentJobSetSettings', 'onboardingScanLater',
   'financeList', 'financeCreate', 'financeUpdate', 'financeDelete', 'financeMarkPaid', 'financeMakeTodo', 'financeFromMessage',
   'financeMessages', 'financePair', 'financeUnpair', 'financeScan', 'financeExportCsv',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',

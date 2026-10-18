@@ -5,7 +5,7 @@ import type { MailStore } from '../db'
 import type { AIService } from '../ai/service'
 import { aiReady } from '../ai/service'
 import { FINANCE_EXTRACT } from '../ai/prompts'
-import { acceptCandidate, bodyOf, detectFinance, looksFinancial, rootDomain, type FinanceCandidate, type FinanceMailInput } from './detect'
+import { acceptCandidate, addCycle, bodyOf, detectFinance, looksFinancial, rootDomain, type FinanceCandidate, type FinanceMailInput } from './detect'
 import { findMergeTarget, mergeInto, newRecordData, type FinanceRow } from './merge'
 import { candidateFromAi, jsonFromText } from './ai-map'
 import { extractEntities } from '../mail/understand-heuristic'
@@ -377,6 +377,27 @@ export class FinanceService {
       n++
     }
     return n
+  }
+
+  /**
+   * 订阅续费推断（每日整理调用）：有周期、未取消的订阅，下次续费日已过去一天以上且没有新邮件更新时，
+   * 按周期顺延到下一个未来日期（推断值，记 renewInferred；之后来了真实续费邮件照常覆盖）。返回顺延条数。
+   */
+  rollRenewals(now = Date.now()): { rolled: number; ids: string[] } {
+    const ids: string[] = []
+    for (const r of this.rows(false)) {
+      const d = r.data
+      if (d.kind !== 'subscription' || !d.cycle || d.cycle === 'once') continue
+      if (d.status === 'cancelled' || d.status === 'refunded') continue
+      if (!r.dueAt || r.dueAt > now - DAY_MS) continue
+      let next = r.dueAt
+      for (let i = 0; i < 120 && next <= now; i++) next = addCycle(next, d.cycle)
+      if (next <= now) continue
+      this.deps.store.updateInsight(r.id, { dueAt: next, data: { renewInferred: true } })
+      ids.push(r.id)
+    }
+    if (ids.length) this.deps.event({ type: 'finance-changed' })
+    return { rolled: ids.length, ids }
   }
 
   pair(ids: string[]): string | null {

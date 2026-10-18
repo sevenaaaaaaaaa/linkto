@@ -654,6 +654,40 @@ export class ProjectService {
     return { added, suggested }
   }
 
+  /**
+   * 定期归并（自动任务）：最近 N 天的邮件按同样规则对「允许自动归入」的项目再过一遍，
+   * 补上实时归并漏掉的（离线、理解失败、项目后来才改了对方 / 关键词），刷新「建议归入」队列。
+   */
+  sweepRecent(days: number, accountIds?: string[] | null): { added: number; suggested: number; projectIds: string[] } {
+    const projects = this.matchProjects().filter(p => p.auto)
+    if (!projects.length) return { added: 0, suggested: 0, projectIds: [] }
+    const since = Date.now() - Math.max(1, Math.min(365, days)) * DAY
+    const acct = accountIds?.length ? ` AND m.account_id IN (${accountIds.map(() => '?').join(',')})` : ''
+    const rows = this.db
+      .prepare(`SELECT ${COLS}, m.text FROM messages m WHERE m.date >= ?${acct} AND ${NOT_TRASH} ORDER BY m.date ASC LIMIT 3000`)
+      .all(since, ...(accountIds ?? [])) as any[]
+    const mine = this.myAddrs()
+    const before = new Map(projects.map(p => [p.id, p.messageIds.length + (p.record.data.suggestions?.length ?? 0)]))
+    let added = 0
+    let suggested = 0
+    for (const r of dedupeByMessageId(rows)) {
+      const res = this.judge(r, mine, projects, false)
+      if (res === 'auto') added++
+      if (res === 'suggest') suggested++
+    }
+    const touched = projects.filter(p => p.messageIds.length + (p.record.data.suggestions?.length ?? 0) !== before.get(p.id)).map(p => p.id)
+    if (added || suggested) this.changed()
+    return { added, suggested, projectIds: touched }
+  }
+
+  /** 规则版发现的候选数（首次整理只报个数、不自动建项目） */
+  discoverCount(days = 60): { count: number; names: string[] } {
+    const threads = this.recentThreads(Math.max(7, Math.min(365, days)))
+    if (!threads.length) return { count: 0, names: [] }
+    const list = this.discoverHeuristic(threads)
+    return { count: list.length, names: list.map(c => c.name).slice(0, 4) }
+  }
+
   // ================= AI：摘要 / 发现 =================
 
   private ready() {
