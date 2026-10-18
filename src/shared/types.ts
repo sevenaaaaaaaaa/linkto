@@ -578,8 +578,8 @@ export interface TodoData {
   external?: Partial<Record<TodoProvider, { id: string; listId?: string; etag?: string; syncedAt: number }>>
 }
 
-/** swipe：营销灵感收藏（公司洞察挑出的范本邮件） */
-export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe'
+/** swipe：营销灵感收藏（公司洞察挑出的范本邮件）；finance：账单 / 订阅 / 订单 / 企业往来款项；project：项目（一件事的多封邮件） */
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project'
 
 export interface InsightRecord {
   id: string
@@ -644,6 +644,97 @@ export interface CompanyInsight {
   campaigns?: { messageIds: string[]; period: string; theme: string; offer: string; tactics: string[] }[]
   conversionPoints?: { messageId: string; subject: string; date: number; stage: string; triggers: string[]; cta: string; why: string }[]
   bestPicks?: { messageId: string; subject: string; date: number; why: string; learn: string[]; stage: string; triggers: string[] }[]
+}
+
+// ---------- 财务（账单 / 订阅 / 电商订单 / 企业对账） ----------
+
+/** bill 账单（信用卡 / 水电 / 云服务）· subscription 订阅续费 · order 电商订单 · invoice 发票 · payment 付款 / 收款通知 · receipt 回单 / 收据 · refund 退款 */
+export type FinanceKind = 'bill' | 'subscription' | 'order' | 'invoice' | 'payment' | 'receipt' | 'refund'
+
+export type FinanceStatus = 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded' | 'disputed'
+
+export type FinanceCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'once'
+
+/**
+ * 一笔款项（insights kind='finance' 的 data）。一笔钱可能对应多封邮件（账单 → 催缴 → 付款成功 → 发票），
+ * 都挂在 messageIds 上；企业对账时同一笔交易的发票 / 付款 / 回单用 matchId 归到一组。
+ * insights 行的 dueAt = 应付日 / 续费日，status open = 未结清，done = 已结清 / 已取消。
+ */
+export interface FinanceData {
+  kind: FinanceKind
+  /** out = 我付出（支出 / 应付），in = 我收到（收入 / 应收） */
+  direction: 'out' | 'in'
+  /** 商家 / 公司显示名 */
+  counterparty: string
+  /** 对方发件域名（归并同一商家用） */
+  domain?: string | null
+  /** 金额（元为单位的数值）；识别不出时为 null */
+  amount: number | null
+  /** ISO 4217，默认 CNY */
+  currency: string
+  status: FinanceStatus
+  dueAt?: number | null
+  paidAt?: number | null
+  /** 账期 / 订阅周期起止 */
+  periodStart?: number | null
+  periodEnd?: number | null
+  /** 分类：软件订阅 / 云服务 / 通讯 / 水电 / 信用卡 / 购物 / 差旅 / 办公 / 外包 / 货款 …（自由文本，界面按它分组） */
+  category?: string | null
+  // —— 订阅 ——
+  cycle?: FinanceCycle | null
+  /** 管理 / 退订入口 */
+  manageUrl?: string | null
+  trialEndsAt?: number | null
+  // —— 电商订单 ——
+  shop?: string | null
+  orderNo?: string | null
+  items?: { name: string; qty?: number; price?: number }[]
+  tracking?: string | null
+  // —— 企业往来 ——
+  invoiceNo?: string | null
+  poNo?: string | null
+  contractNo?: string | null
+  /** 对账组：同一笔交易的发票 / 付款 / 回单共用一个 matchId */
+  matchId?: string | null
+  /** 所属项目（insights kind='project' 的 id） */
+  projectId?: string | null
+  /** 关联邮件（第一封是来源） */
+  messageIds: string[]
+  /** 关联附件（发票 PDF 等） */
+  attachmentIds?: string[]
+  source: 'heuristic' | 'ai' | 'manual'
+  /** 0~1，自动识别的把握 */
+  confidence?: number
+  notes?: string | null
+  /** 已生成的提醒待办（insights kind='todo' 的 id） */
+  todoId?: string | null
+  updatedAt?: number
+}
+
+// ---------- 项目（一件事 / 一段合作的多封邮件） ----------
+
+export type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
+
+/** insights kind='project' 的 data；待办用 TodoData.project 关联（存项目名），款项用 FinanceData.projectId 关联 */
+export interface ProjectData {
+  name: string
+  status: ProjectStatus
+  /** 账户色板外的项目色（token 名或 oklch，界面自行映射） */
+  color?: string | null
+  /** 往来对象：域名或邮箱地址，命中即归入 */
+  counterparties: string[]
+  /** 关键词：主题 / 正文命中即归入（AI 归并的依据之一） */
+  keywords: string[]
+  threadIds: string[]
+  messageIds: string[]
+  members?: { name?: string; address: string }[]
+  budget?: { amount: number; currency: string } | null
+  startedAt?: number | null
+  dueAt?: number | null
+  /** true = 允许自动把新邮件归入 */
+  auto: boolean
+  notes?: string | null
+  updatedAt?: number
 }
 
 /** 营销灵感收藏条目（insights kind='swipe' 的 data） */
