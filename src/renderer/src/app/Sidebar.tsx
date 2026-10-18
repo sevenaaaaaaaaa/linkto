@@ -3,6 +3,7 @@ import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
 import { OnboardingCard } from './Guidance'
+import { usePrefs } from '../lib/prefs'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
@@ -155,6 +156,7 @@ export function Sidebar() {
   const { accounts, folders, scope, setScope, accountCtx } = useMail()
   const view = useView()
   const prefs = useFolderPrefs()
+  const sb = usePrefs().sidebar
   const [pendingCount, setPendingCount] = useState(0)
   const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
@@ -222,10 +224,10 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
-        <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />
-        <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />
-        <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />
-        <Row icon={<IconPin {...ico} />} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />
+        {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
+        {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
+        {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}
+        {sb.pinned && <Row icon={<IconPin {...ico} />} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />}
         {pendingCount > 0 && (
           <Row icon={<IconShield {...ico} />} label="待审批发件人" unread={pendingCount} active={is('screener')} onClick={() => go({ kind: 'screener', title: '待审批发件人' })} />
         )}
@@ -281,7 +283,7 @@ export function Sidebar() {
         <GroupHeader label="智能" open={smartOpen} onToggle={toggleSmart} />
         {smartOpen && (
           <>
-            <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />
+            {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
             <Row
               icon={<IconRobot {...ico} />}
               label="Agent"
@@ -289,7 +291,7 @@ export function Sidebar() {
               onClick={() => goView('agent')}
               trailing={<kbd className="text-2xs" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>⌘J</kbd>}
             />
-            <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />
+            {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
             <SmartViewsSection />
           </>
         )}
@@ -304,7 +306,7 @@ export function Sidebar() {
         )}
       </nav>
 
-      <OnboardingCard />
+      {sb.onboarding && <OnboardingCard />}
       <SyncFooter />
 
       <div className="shrink-0 h-11 border-t border-[var(--border)] px-2 flex items-center gap-0.5">

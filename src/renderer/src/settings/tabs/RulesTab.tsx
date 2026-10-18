@@ -33,7 +33,11 @@ const ACTIONS: { value: RuleActionType; label: string }[] = [
   { value: 'saveToKb', label: '存入知识库' },
   { value: 'notify', label: '发系统通知' },
   { value: 'runConnector', label: '发送到连接器' },
-  { value: 'moveFolder', label: '移到文件夹' }
+  { value: 'moveFolder', label: '移到文件夹' },
+  { value: 'archive', label: '归档' },
+  { value: 'pin', label: '置顶' },
+  { value: 'snooze', label: '稍后处理（小时）' },
+  { value: 'createTodo', label: '建待办' }
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -249,7 +253,12 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                 const actions = [...r.actions]
                 actions[i] = {
                   type: v as RuleActionType,
-                  value: v === 'setCategory' ? 'personal' : v === 'runConnector' ? connectorOptions[0]?.value : v === 'moveFolder' ? folderOptions[0]?.value : undefined
+                  value:
+                    v === 'setCategory' ? 'personal'
+                    : v === 'runConnector' ? connectorOptions[0]?.value
+                    : v === 'moveFolder' ? folderOptions[0]?.value
+                    : v === 'snooze' ? '3'
+                    : undefined
                 }
                 props.onChange({ ...r, actions })
               }}
@@ -264,6 +273,18 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                   props.onChange({ ...r, actions })
                 }}
                 options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            )}
+            {(a.type === 'snooze' || a.type === 'createTodo') && (
+              <input
+                value={a.value ?? ''}
+                onChange={e => {
+                  const actions = [...r.actions]
+                  actions[i] = { ...a, value: e.target.value }
+                  props.onChange({ ...r, actions })
+                }}
+                placeholder={a.type === 'snooze' ? '小时数，如 3' : '待办前缀，如「付款」（可空）'}
+                className="w-[180px] text-sm bg-zinc-50 rounded-lg px-2.5 py-1.5 outline-none border border-ink/[0.05]"
               />
             )}
             {a.type === 'moveFolder' && folderOptions.length > 0 && (

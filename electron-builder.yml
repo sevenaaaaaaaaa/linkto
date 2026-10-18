@@ -18,8 +18,9 @@ mac:
         - arm64
   darkModeSupport: true
   hardenedRuntime: false
-  # 本地构建：跳过代码签名（Apple 时间戳服务不可达会导致打包失败；自用 dmg 无需签名）
-  identity: null
+  # 本地构建：ad-hoc 签名（"-"，不需要证书、不访问 Apple 时间戳服务）。
+  # 不能用 null 跳过签名：未封装签名的 bundle 无法使用 macOS 系统通知（UNErrorDomain 错误 1，通知全部失败）
+  identity: "-"
 dmg:
   # DMG layout: app + Applications link + Gatekeeper helper + install notes.
   # Paths are relative to the repo root (electron-builder must run from there).

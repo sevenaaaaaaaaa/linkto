@@ -33,6 +33,7 @@ import type { AIService } from './ai/service'
 import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
+import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-drive/proton'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
 import { aiReady } from './ai/service'
@@ -203,7 +204,7 @@ export function registerIpc(ctx: AppContext) {
     const row = store.getMessageRow(messageId)
     if (!row) return
     // 移动类动作放最后，避免先移走后其他动作找不到邮件
-    const isMove = (t: string) => t === 'moveTrash' || t === 'moveFolder'
+    const isMove = (t: string) => t === 'moveTrash' || t === 'moveFolder' || t === 'archive'
     const ordered = [...actions].sort((x, y) => Number(isMove(x.type)) - Number(isMove(y.type)))
     for (const action of ordered) {
       try {
@@ -247,6 +248,27 @@ export function registerIpc(ctx: AppContext) {
             break
           case 'moveFolder':
             if (action.value) await handlers.moveToFolder([[messageId], action.value] as never, undefined as never)
+            break
+          case 'archive':
+            await moveOrDelete(messageId, 'archive')
+            break
+          case 'pin':
+            await handlers.pinMessages([[messageId], true] as never, undefined as never)
+            break
+          case 'snooze': {
+            const hours = Math.max(1, Number(action.value) || 3)
+            store.setSnoozed([messageId], Date.now() + hours * 3600_000)
+            break
+          }
+          case 'createTodo':
+            store.insertInsight({
+              id: `todo-rule-${messageId}`.slice(0, 120),
+              kind: 'todo',
+              messageId,
+              title: action.value ? `${action.value}：${row.subject || '邮件'}` : row.subject || '（无主题）',
+              data: { from: '规则' },
+              dueAt: null
+            })
             break
           // notify 由主进程通知模块处理
         }
@@ -755,14 +777,9 @@ export function registerIpc(ctx: AppContext) {
     },
     getNotificationSettings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     setNotificationSettings: ([s]: [NotificationSettings]) => appStore.set('notifications', s),
-    notifyTest: async () => {
-      notifier.notify(
-        { accountId: '__test__', messageId: '', subject: '测试通知 🔔', from: '这是一条来自林可兔的通知测试', category: 'personal' },
-        0,
-        true
-      )
-      return true
-    },
+    notifyTest: async () => (await notifier.test()).ok,
+    /** 测试通知并回传投递结果（系统通知失败原因 / 是否走了 AppleScript 兜底） */
+    notifyTestResult: () => notifier.test(),
     getAISettings: () => appStore.getAI(),
     setAISettings: ([s]: [AISettings]) => appStore.setAI(s),
     // ---- 内置本地引擎 ----
@@ -1260,10 +1277,12 @@ export function registerIpc(ctx: AppContext) {
     listCloudDrives: () => listDrives(ctx.appStore),
 
     saveCloudDrive: async ([cfg, secret]: [CloudDriveConfig, string]) => {
-      const res = saveDrive(ctx.appStore, { ...cfg, id: cfg.id || randomUUID() }, secret)
+      // 新建时先生成 id，连接测试用同一 id（否则探针找不到刚保存的网盘）
+      const id = cfg.id || randomUUID()
+      const res = saveDrive(ctx.appStore, { ...cfg, id }, secret)
       if (res.ok) {
         // 保存成功即自动测一次连接，把结果透出给 UI
-        const probe = await driveTest(ctx.appStore, cfg.id)
+        const probe = await driveTest(ctx.appStore, id)
         return probe.ok ? { ok: true } : { ok: true, error: `已保存，但连接测试未通过：${probe.error ?? '未知原因'}` }
       }
       return res
@@ -1299,6 +1318,14 @@ export function registerIpc(ctx: AppContext) {
     },
 
     cloudSyncEml: ([driveId]: [string]) => syncEmlMirror(ctx.appStore, driveId),
+
+    pickDirectory: async ([title]: [string | undefined]) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const res = await dialog.showOpenDialog(win, { title, properties: ['openDirectory', 'createDirectory'] })
+      return res.canceled || !res.filePaths[0] ? null : res.filePaths[0]
+    },
+
+    detectProtonDrive: () => ({ folders: detectProtonDriveFolders(), downloadUrl: PROTON_DRIVE_DOWNLOAD_URL }),
 
     // ================= Newsletter =================
 
@@ -1390,6 +1417,7 @@ export function registerIpc(ctx: AppContext) {
   // 主进程内部复用的能力（与渲染进程调用走同一实现）
   return {
     runRuleActions,
+    archive: (messageId: string) => moveOrDelete(messageId, 'archive'),
     aiClassify: async (messageIds: string[]): Promise<void> => {
       await handlers.aiClassify([messageIds], undefined as never)
     }

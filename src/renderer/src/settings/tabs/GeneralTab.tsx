@@ -7,15 +7,15 @@ import {
 import type { GeneralSettings } from '@shared/types'
 
 export function SectionTitle(props: { children: React.ReactNode }) {
-  return <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-1 mt-5">{props.children}</div>
+  return <h2 className="text-xs font-semibold mb-1 mt-7 first:mt-1" style={{ color: 'var(--faint)', letterSpacing: '0.04em' }}>{props.children}</h2>
 }
 
 export function SettingRow(props: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
+    <div className="flex items-center gap-4 py-3 border-b border-[var(--border-soft)]">
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-zinc-800">{props.label}</div>
-        {props.desc && <div className="text-xs text-zinc-400 mt-0.5">{props.desc}</div>}
+        <div className="text-sm" style={{ color: 'var(--fg)' }}>{props.label}</div>
+        {props.desc && <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--faint)' }}>{props.desc}</div>}
       </div>
       {props.children}
     </div>
@@ -96,16 +96,6 @@ export function GeneralTab() {
           options={[
             { value: 'trash', label: '移入废纸篓' },
             { value: 'perm', label: '永久删除' }
-          ]}
-        />
-      </SettingRow>
-      <SettingRow label="列表密度">
-        <Select
-          value={s.density}
-          onChange={v => update({ density: v as GeneralSettings['density'] })}
-          options={[
-            { value: 'cozy', label: '标准' },
-            { value: 'compact', label: '紧凑' }
           ]}
         />
       </SettingRow>

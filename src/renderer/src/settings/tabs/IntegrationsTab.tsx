@@ -251,10 +251,11 @@ function ConnectorConfigDialog(props: { manifest: ConnectorManifest; onClose(): 
   )
 }
 
-/** 网盘备份：WebDAV（NAS/Nextcloud/Alist/坚果云）+ Dropbox，保存 eml 原文与附件 */
+/** 网盘备份：WebDAV（NAS/Nextcloud/Alist/坚果云）+ Dropbox + 本地同步目录（Proton Drive 等），保存 eml 原文与附件 */
 const DRIVE_KIND_LABEL: Record<CloudDriveKind, string> = {
   webdav: 'WebDAV / NAS',
-  dropbox: 'Dropbox'
+  dropbox: 'Dropbox',
+  local: '本地同步目录'
 }
 
 function CloudDrivesSection() {
@@ -266,8 +267,30 @@ function CloudDrivesSection() {
   const [username, setUsername] = useState('')
   const [secret, setSecret] = useState('')
   const [remotePath, setRemotePath] = useState('/LinkTo')
+  const [localPath, setLocalPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Proton Drive 预设：检测到的同步目录（多账户时可切换）；null = 未检测
+  const [protonFolders, setProtonFolders] = useState<{ path: string; account: string }[] | null>(null)
+  const [protonUrl, setProtonUrl] = useState('')
+
+  const pickLocal = async () => {
+    const dir = await api.pickDirectory('选择网盘的本地同步目录')
+    if (dir) setLocalPath(dir)
+  }
+
+  // 一键 Proton Drive：检测同步目录并预填；未安装则给出下载引导
+  const presetProton = async () => {
+    setKind('local')
+    setMsg(null)
+    const res = await api.detectProtonDrive()
+    setProtonFolders(res.folders)
+    setProtonUrl(res.downloadUrl)
+    if (res.folders.length) {
+      setLocalPath(res.folders[0].path)
+      if (!name.trim()) setName('Proton Drive')
+    }
+  }
 
   const reload = async () => setDrives(await api.listCloudDrives())
   useEffect(() => void reload(), [])
@@ -275,7 +298,11 @@ function CloudDrivesSection() {
   const save = async () => {
     setBusy(true)
     setMsg(null)
-    const res = await api.saveCloudDrive({ id: '', kind, name, url, username, remotePath }, secret)
+    const isLocal = kind === 'local'
+    const res = await api.saveCloudDrive(
+      { id: '', kind, name, url: isLocal ? '' : url, username: isLocal ? '' : username, remotePath, localPath: isLocal ? localPath : undefined },
+      isLocal ? '' : secret
+    )
     setBusy(false)
     if (res.ok) {
       setMsg({ ok: !res.error, text: res.error ?? `已保存并通过连接测试：${name}` })
@@ -283,6 +310,8 @@ function CloudDrivesSection() {
       setUrl('')
       setUsername('')
       setSecret('')
+      setLocalPath('')
+      setProtonFolders(null)
       await reload()
     } else {
       setMsg({ ok: false, text: res.error ?? '保存失败' })
@@ -293,8 +322,9 @@ function CloudDrivesSection() {
     <>
       <SectionTitle>网盘备份</SectionTitle>
       <div className="text-xs text-zinc-500 mb-2">
-        把邮件 eml 原文与附件存到你自己的网盘 / NAS：支持 WebDAV（群晖、威联通、Nextcloud、Alist、坚果云等）与
-        Dropbox。保存后可在阅读窗一键上传，也可全量增量同步 eml 镜像。Proton Drive 无公开 API 暂不支持。
+        把邮件 eml 原文与附件存到你自己的网盘 / NAS：支持 WebDAV（群晖、威联通、Nextcloud、Alist、坚果云等）、
+        Dropbox，以及本地同步目录（Proton Drive、iCloud Drive 等桌面客户端的同步文件夹，复制进去即由客户端自动上云）。
+        保存后可在阅读窗一键上传，也可全量增量同步 eml 镜像。
       </div>
 
       {drives.length > 0 && (
@@ -308,7 +338,11 @@ function CloudDrivesSection() {
                   <span className="text-2xs px-1.5 py-px rounded-sm bg-zinc-100 text-zinc-500">{DRIVE_KIND_LABEL[d.kind]}</span>
                 </div>
                 <div className="text-xs text-zinc-400 mt-0.5 font-mono truncate">
-                  {d.kind === 'webdav' ? `${d.url} → ${d.remotePath}` : `Dropbox → ${d.remotePath}`}
+                  {d.kind === 'webdav'
+                    ? `${d.url} → ${d.remotePath}`
+                    : d.kind === 'local'
+                      ? `${d.localPath ?? ''} → ${d.remotePath}`
+                      : `Dropbox → ${d.remotePath}`}
                 </div>
               </div>
               <button
@@ -357,8 +391,8 @@ function CloudDrivesSection() {
           </button>
         ) : (
           <div className="space-y-2.5">
-            <div className="flex gap-2">
-              {(['webdav', 'dropbox'] as CloudDriveKind[]).map(k => (
+            <div className="flex flex-wrap items-center gap-2">
+              {(['webdav', 'dropbox', 'local'] as CloudDriveKind[]).map(k => (
                 <button
                   key={k}
                   onClick={() => setKind(k)}
@@ -367,14 +401,62 @@ function CloudDrivesSection() {
                   {DRIVE_KIND_LABEL[k]}
                 </button>
               ))}
+              <span className="w-px h-4 bg-ink/10 mx-0.5" />
+              <button
+                onClick={() => void presetProton()}
+                title="检测 Proton Drive for macOS 的同步目录并预填"
+                className="text-xs px-3 py-1.5 rounded-lg border border-dashed border-ink/[0.14] text-zinc-600 hover:bg-zinc-50"
+              >
+                + Proton Drive
+              </button>
             </div>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="名称（如：群晖 NAS）"
+              placeholder={kind === 'local' ? '名称（如：Proton Drive）' : '名称（如：群晖 NAS）'}
               className="w-full text-sm bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-ink/[0.06]"
             />
-            {kind === 'webdav' ? (
+            {kind === 'local' ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={localPath}
+                    onChange={e => setLocalPath(e.target.value)}
+                    placeholder="本地同步目录（如 ~/Library/CloudStorage/ProtonDrive-…-folder）"
+                    className="flex-1 min-w-0 text-sm bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-ink/[0.06] font-mono"
+                  />
+                  <button onClick={() => void pickLocal()} className="text-xs px-3 py-2 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0">
+                    选择…
+                  </button>
+                </div>
+                {protonFolders && protonFolders.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {protonFolders.map(f => (
+                      <button
+                        key={f.path}
+                        onClick={() => setLocalPath(f.path)}
+                        title={f.path}
+                        className={`text-2xs px-2 py-1 rounded-md border ${localPath === f.path ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-ink/[0.06] text-zinc-500'}`}
+                      >
+                        {f.account || 'Proton Drive'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {protonFolders && protonFolders.length === 0 && (
+                  <div className="text-xs leading-relaxed rounded-lg px-3 py-2 bg-amber-50 text-amber-700">
+                    未检测到 Proton Drive 同步目录。Proton Drive 没有公开 API，需先安装 Proton Drive for macOS 并登录，其同步文件夹会出现在
+                    ~/Library/CloudStorage/ 下。
+                    <button onClick={() => void api.openExternal(protonUrl)} className="ml-1 underline underline-offset-2">
+                      下载 Proton Drive
+                    </button>
+                  </div>
+                )}
+                <div className="text-2xs text-zinc-400">
+                  文件复制到「所选目录{remotePath.trim() || '/LinkTo'}/eml、/attachments」，由网盘客户端自动同步上云，无需密钥。
+                </div>
+              </>
+            ) : kind === 'webdav' ? (
               <>
                 <input
                   value={url}
@@ -408,7 +490,7 @@ function CloudDrivesSection() {
             <input
               value={remotePath}
               onChange={e => setRemotePath(e.target.value)}
-              placeholder="远端根目录（如 /LinkTo）"
+              placeholder={kind === 'local' ? '目录内的子文件夹（如 /LinkTo）' : '远端根目录（如 /LinkTo）'}
               className="w-full text-sm bg-zinc-50 rounded-lg px-3 py-2 outline-none border border-ink/[0.06] font-mono"
             />
             <div className="flex items-center gap-2">

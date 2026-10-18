@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AccountWithStatus, Folder, ListSort, MessageSummary, ScopeKind } from '@shared/types'
 import { api } from '../lib/api'
+import { getPrefs } from '../lib/prefs'
 
 export interface Scope {
   kind: ScopeKind
@@ -102,7 +103,12 @@ export const useMail = create<MailState>((set, get) => ({
   nlResults: null,
   accountCtx: null,
   triage: false,
-  rail: (localStorage.getItem('ms_rail') as 'context' | 'agent' | null) || 'context',
+  rail: (() => {
+    const saved = localStorage.getItem('ms_rail')
+    if (saved !== null) return (saved || null) as 'context' | 'agent' | null
+    const d = getPrefs().defaultRail
+    return d === 'none' ? null : d
+  })(),
 
   loadAccounts: async () => {
     const accounts = await api.listAccounts()

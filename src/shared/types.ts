@@ -252,16 +252,30 @@ export interface GeneralSettings {
   dockBadge: boolean
   /** Screener 新发件人审批：新发件人邮件先进入待审队列 */
   screenerEnabled: boolean
+  /** 定期整理：已读的订阅邮件 N 天后自动归档（0 / 缺省 = 关闭） */
+  cleanupNewsletterDays?: number
+  /** 定期整理：已读的通知类邮件 N 天后自动归档（0 / 缺省 = 关闭） */
+  cleanupNotificationDays?: number
 }
 
 export interface NotificationSettings {
   enabled: boolean
   /** 通知动作 1/2/3，Canary 式 */
   actions: [NotificationAction, NotificationAction, NotificationAction]
+  /** 智能通知：仅个人邮件 / 需要你处理的邮件触发 */
   smart: boolean
   sound: boolean
-  /** 仅个人邮件通知（智能通知模式） */
   perAccount: Record<string, { enabled: boolean; sound: string }>
+  /** 免打扰时段（默认关闭；支持跨午夜） */
+  quietHours?: QuietHours
+}
+
+export interface QuietHours {
+  enabled: boolean
+  /** "HH:MM" */
+  start: string
+  /** "HH:MM" */
+  end: string
 }
 
 export type NotificationAction =
@@ -290,6 +304,8 @@ export interface MailTemplate {
   subject: string
   html: string
   updatedAt: number
+  /** 分类（如「商务往来」）；空/缺省视为「未分类」 */
+  category?: string
 }
 
 // ---------- 规则 ----------
@@ -317,6 +333,12 @@ export type RuleActionType =
   | 'runConnector'
   /** 移到文件夹，value = 目标文件夹 id（同账户） */
   | 'moveFolder'
+  | 'archive'
+  | 'pin'
+  /** 稍后处理，value = 小时数 */
+  | 'snooze'
+  /** 建待办，value = 标题前缀（空则用邮件主题） */
+  | 'createTodo'
 
 export interface RuleAction {
   type: RuleActionType
@@ -432,9 +454,10 @@ export interface ConnectorInstance {
   config: Record<string, string>
 }
 
-// ---------- 网盘备份（WebDAV / Dropbox，存 eml 原文与附件） ----------
+// ---------- 网盘备份（WebDAV / Dropbox / 本地同步目录，存 eml 原文与附件） ----------
 
-export type CloudDriveKind = 'webdav' | 'dropbox'
+/** local：本地同步目录（如 Proton Drive / iCloud Drive 的同步文件夹），复制文件即由网盘客户端自动上云 */
+export type CloudDriveKind = 'webdav' | 'dropbox' | 'local'
 
 export interface CloudDriveConfig {
   id: string
@@ -446,6 +469,8 @@ export interface CloudDriveConfig {
   username: string
   /** 远端根目录（如 /LinkTo） */
   remotePath: string
+  /** 本地同步目录的绝对路径（仅 kind = 'local'） */
+  localPath?: string
 }
 
 // ---------- 撰写 ----------
@@ -488,6 +513,8 @@ export type MailEvent =
   | { type: 'ai-local-download'; modelId: string; received: number; total: number; percent: number; done?: boolean; error?: string }
   /** 邮件理解结果新增/更新（AI 结果异步到达） */
   | { type: 'mail-insights'; ids: string[] }
+  /** 点击系统通知：主窗口打开指定邮件 */
+  | { type: 'open-message'; messageId: string }
 
 // ---------- 智能洞察 ----------
 

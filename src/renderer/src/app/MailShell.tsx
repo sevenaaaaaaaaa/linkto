@@ -8,6 +8,7 @@ import { TriageView } from './TriageView'
 import { ContextRail } from './ContextRail'
 import { MovePalette } from './MovePalette'
 import { CoachTip } from './Guidance'
+import { getPrefs, usePrefs } from '../lib/prefs'
 import { useInsightEvents } from '../lib/insights'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
@@ -26,6 +27,7 @@ export function MailShell() {
   const view = useView()
   const triage = useMail(st => st.triage)
   const rail = useMail(st => st.rail)
+  usePrefs() // 订阅个性化偏好：设置窗改动后即时应用到根节点
   useInsightEvents()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState('')
@@ -148,6 +150,8 @@ export function MailShell() {
         return
       }
       if (typing) return
+      // 单键快捷键可在「个性化」里关闭（与输入法 / 无障碍工具冲突时）
+      if (!meta && !getPrefs().singleKey && /^[a-zA-Z]$/.test(e.key)) return
 
       const state = useMail.getState()
       const idx = state.messages.findIndex(m => m.id === state.selectedId)

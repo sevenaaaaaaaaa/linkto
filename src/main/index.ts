@@ -8,8 +8,9 @@ import { MailSender } from './mail/sender'
 import { Outbox } from './mail/outbox'
 import { AIService, aiReady } from './ai/service'
 import { evalAiRules, hasAiCondition } from './rules/engine'
+import { startCleanup } from './mail/cleanup'
 import { RULE_AI_JUDGE } from './ai/prompts'
-import type { RuleAction } from '@shared/types'
+import type { MailBundle, MailSection, RuleAction } from '@shared/types'
 import { LocalEngine } from './ai/local-engine'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
@@ -18,7 +19,7 @@ import { readFolderPrefs } from './mail/folder-prefs'
 import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
-import { Notifier, focusMainWindow } from './notify'
+import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
@@ -82,7 +83,7 @@ async function applyArrivalActions(messageId: string, actions: RuleAction[]) {
     if (row) {
       notifier.notify(
         { accountId: row.account_id, messageId, subject: row.subject ?? '', from: row.from_name || row.from_addr || '', category: row.category ?? 'personal' },
-        mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0),
+        0,
         true
       )
     }
@@ -143,6 +144,44 @@ function broadcast(payload: unknown) {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send('event', payload)
   }
+  // 已读 / 删除 / 移动 / snooze 等本地操作都会广播 messages-changed：
+  // 统一在此刷新 Dock 角标与托盘未读数（之前只在同步引擎回调里刷新，标已读后角标要等下一轮同步）
+  const type = (payload as { type?: string } | null)?.type
+  if (type === 'messages-changed' || type === 'new-mail') scheduleBadgeUpdate()
+}
+
+let badgeTimer: NodeJS.Timeout | null = null
+function scheduleBadgeUpdate() {
+  if (badgeTimer) return
+  badgeTimer = setTimeout(() => {
+    badgeTimer = null
+    try {
+      updateDockBadge()
+    } catch (err) {
+      console.error('[badge]', err)
+    }
+  }, 250)
+}
+
+/** 点击通知：显示（必要时重建）主窗口；带 messageId 时在主窗口打开该邮件 */
+function focusMainForNotification(messageId?: string) {
+  let win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  const fresh = !win
+  if (!win) {
+    createMainWindow()
+    win = mainWindow
+  }
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  app.focus({ steal: true })
+  if (!messageId) return
+  const send = () => {
+    if (!win.isDestroyed()) win.webContents.send('event', { type: 'open-message', messageId })
+  }
+  if (fresh || win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(send, 800))
+  else send()
 }
 
 function createMainWindow() {
@@ -152,8 +191,8 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#f8f3e8',
+    trafficLightPosition: { x: 14, y: 18 },
+    backgroundColor: '#F4F5F7',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -182,13 +221,13 @@ function createSettingsWindow(tab?: string) {
     return
   }
   settingsWindow = new BrowserWindow({
-    width: 900,
-    height: 640,
-    minWidth: 760,
+    width: 1000,
+    height: 700,
+    minWidth: 820,
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#f8f3e8',
+    backgroundColor: '#F4F5F7',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -214,7 +253,7 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
     minHeight: 460,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#faf7f0',
+    backgroundColor: '#F4F5F7',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -246,7 +285,7 @@ function createGhostWindow() {
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#f8f3e8',
+    backgroundColor: '#F4F5F7',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -403,6 +442,10 @@ async function bootstrap() {
   try {
     db.exec('ALTER TABLE messages ADD COLUMN snoozed_until INTEGER')
   } catch { /* 列已存在 */ }
+  // 旧库迁移：模板分类
+  try {
+    db.exec("ALTER TABLE templates ADD COLUMN category TEXT DEFAULT ''")
+  } catch { /* 列已存在 */ }
   // Screener 首次初始化：存量发件人全部视为已知（只筛从现在起的新面孔）
   try {
     const screened = (db.prepare('SELECT COUNT(*) AS c FROM sender_screening').get() as any).c as number
@@ -478,11 +521,10 @@ async function bootstrap() {
       progress: (accountId, text) => broadcast({ type: 'sync-progress', accountId, text }),
       changed: accountId => {
         broadcast({ type: 'messages-changed', accountId })
-        updateDockBadge()
       },
       newMail: (accountId, messageId, subject, from, category) => {
         broadcast({ type: 'new-mail', accountId, subject, from })
-        notifier.notify({ accountId, messageId, subject, from, category }, 0)
+        notifier.notify({ accountId, messageId, subject, from, category })
         // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
         const ai = appStore.getAI()
         const row = mailStore.getMessageRow(messageId)
@@ -547,6 +589,10 @@ async function bootstrap() {
       flag: async messageId => {
         const row = mailStore.getMessageRow(messageId)
         if (!row) return
+        const flags = new Set(String(row.flags ?? '').split(' ').filter(Boolean))
+        flags.add('\\Flagged')
+        mailStore.updateMessageFlags(messageId, [...flags])
+        broadcast({ type: 'messages-changed' })
         await engine.getWorker(row.account_id)?.setFlags(row.folder_path, row.uid, ['\\Flagged'], []).catch(() => {})
       },
       archive: async messageId => {
@@ -556,7 +602,24 @@ async function bootstrap() {
         const archivePath = await worker?.archiveTargetPath()
         if (worker && archivePath) await worker.moveToFolder(row.folder_path, row.uid, archivePath).catch(() => {})
       },
-      focus: () => focusMainWindow(),
+      focus: messageId => focusMainForNotification(messageId),
+      describe: messageId => {
+        const row = mailStore.getMessageRow(messageId)
+        if (!row) return null
+        let insight: { section: MailSection; bundle: MailBundle | null } | null = null
+        try {
+          // AI 结果已就绪用 AI，否则即时计算启发式（同步、无模型调用）
+          const i = understand?.getInsights([messageId])[messageId]
+          if (i) insight = { section: i.section, bundle: i.bundle }
+        } catch (err) {
+          console.error('[notify] insight failed:', err)
+        }
+        return {
+          insight,
+          snoozedUntil: row.snoozed_until ?? null,
+          seen: String(row.flags ?? '').includes('\\Seen')
+        }
+      },
       reply: (accountId, messageId) => {
         const row = mailStore.getMessageRow(messageId)
         createComposeWindow({
@@ -598,6 +661,8 @@ async function bootstrap() {
   const internal = registerIpc(ctx)
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
+  // 定期整理：已读的旧订阅 / 通知按设置天数自动归档
+  startCleanup({ appStore, store: mailStore, archive: internal.archive, onChanged: () => broadcast({ type: 'messages-changed' }) })
 
   buildAppMenu()
   initNativeIntegration({

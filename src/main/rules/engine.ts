@@ -59,21 +59,25 @@ function matchCondition(c: RuleCondition, ctx: RuleEvalContext): boolean {
   }
 }
 
-/** 返回规则命中的动作列表（未命中返回空）。含 AI 条件的规则不在这里判断（同步路径不能等模型） */
+/** 合并多条命中规则的动作：同类型动作只保留一次（后面的规则覆盖前面的值） */
+function mergeActions(lists: RuleAction[][]): RuleAction[] {
+  const byType = new Map<string, RuleAction>()
+  for (const list of lists) for (const a of list) byType.set(a.type, a)
+  return [...byType.values()]
+}
+
+/**
+ * 返回所有命中规则的动作（未命中返回空）——与常见邮件过滤器一致，多条规则可以叠加生效。
+ * 含 AI 条件的规则不在这里判断（同步路径不能等模型）。
+ */
 export function evalRules(rules: Rule[], ctx: RuleEvalContext): RuleAction[] {
   const enabled = rules.filter(r => r.enabled && !hasAiCondition(r)).sort((a, b) => a.order - b.order)
-  for (const rule of enabled) {
-    const hit =
-      rule.conditions.length > 0 &&
-      rule.conditions.every(c => matchCondition(c, ctx))
-    if (hit) return rule.actions
-  }
-  return []
+  return mergeActions(enabled.filter(r => r.conditions.length > 0 && r.conditions.every(c => matchCondition(c, ctx))).map(r => r.actions))
 }
 
 /**
  * 含 AI 条件的规则：普通条件先在本地判断，全部通过后才逐条问 AI（judge 返回是否满足）。
- * 与普通规则相互独立，同样按顺序取第一条命中。
+ * 与普通规则相互独立，所有命中的规则叠加生效。
  */
 export async function evalAiRules(
   rules: Rule[],
@@ -81,6 +85,7 @@ export async function evalAiRules(
   judge: (criteria: string) => Promise<boolean>
 ): Promise<RuleAction[]> {
   const candidates = rules.filter(r => r.enabled && hasAiCondition(r)).sort((a, b) => a.order - b.order)
+  const hits: RuleAction[][] = []
   for (const rule of candidates) {
     const plain = rule.conditions.filter(c => c.field !== 'ai')
     if (!plain.every(c => matchCondition(c, ctx))) continue
@@ -91,9 +96,9 @@ export async function evalAiRules(
         break
       }
     }
-    if (ok) return rule.actions
+    if (ok) hits.push(rule.actions)
   }
-  return []
+  return mergeActions(hits)
 }
 
 export const CATEGORY_VALUES: MessageCategory[] = ['personal', 'notification', 'newsletter', 'noise']

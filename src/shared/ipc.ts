@@ -62,7 +62,7 @@ export interface LinkToApi {
   oauthAuthorize(provider: ProviderKey): Promise<{ ok: boolean; error?: string; email?: string; accountId?: string }>
 
   // ---------- 备份与恢复（账户配置跨设备迁移） ----------
-  listBackupTargets(): Promise<{ id: string; label: string; path: string; available: boolean }[]>
+  listBackupTargets(): Promise<{ id: string; label: string; path: string; available: boolean; hint?: string; downloadUrl?: string }[]>
   createBackup(targetId: string, passphrase: string, includeSecrets: boolean): Promise<{ ok: boolean; error?: string; path?: string; accountCount?: number }>
   /** 打开文件选择器并返回备份文件头部信息（无需口令） */
   restoreBackupPick(): Promise<{ ok: boolean; error?: string; path?: string; meta?: { createdAt: number; accountCount: number; hasSecrets: boolean } }>
@@ -102,6 +102,8 @@ export interface LinkToApi {
   getNotificationSettings(): Promise<NotificationSettings>
   setNotificationSettings(s: NotificationSettings): Promise<void>
   notifyTest(): Promise<boolean>
+  /** 发送测试通知并返回投递结果：native = 系统通知；applescript = 系统通知失败后的兜底；none = 都失败 */
+  notifyTestResult(): Promise<{ ok: boolean; via: 'native' | 'applescript' | 'none'; error?: string }>
   getAISettings(): Promise<AISettings>
   setAISettings(s: AISettings): Promise<void>
   aiProbeLocal(): Promise<{ found: boolean; baseURL: string; provider: string; models: string[] }>
@@ -208,6 +210,10 @@ export interface LinkToApi {
   cloudUpload(messageId: string, driveId: string, what: 'eml' | 'attachment' | 'attachments', attachmentId?: string): Promise<{ ok: boolean; error?: string; path?: string; count?: number }>
   /** 全量增量同步本地 eml 镜像到网盘 */
   cloudSyncEml(driveId: string): Promise<{ ok: boolean; error?: string; uploaded?: number; skipped?: number }>
+  /** 选择本地目录（本地同步目录类网盘用），取消返回 null */
+  pickDirectory(title?: string): Promise<string | null>
+  /** 检测本机 Proton Drive 同步目录（可能多账户），附带客户端下载地址 */
+  detectProtonDrive(): Promise<{ folders: { path: string; account: string }[]; downloadUrl: string }>
 
   // ---------- Newsletter ----------
   unsubscribe(messageId: string, method: 'http' | 'mailto'): Promise<{ ok: boolean; error?: string }>

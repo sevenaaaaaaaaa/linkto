@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, type Dirent } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, type Dirent } from 'node:fs'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { CloudDriveConfig } from '@shared/types'
 import type { AppStore } from '../store'
 
@@ -7,6 +7,7 @@ import type { AppStore } from '../store'
  * 网盘备份模块：把邮件 eml 原文与附件保存到用户自己的云盘 / NAS。
  * - WebDAV：通用协议，覆盖群晖 DSM、威联通 QNAP、Nextcloud / ownCloud、Alist、坚果云等
  * - Dropbox：官方 HTTP API（长期访问令牌）
+ * - 本地同步目录（local）：复制到 Proton Drive / iCloud Drive 等客户端的同步文件夹，由客户端自动上云（无需密钥）
  * 密钥（WebDAV 密码 / Dropbox token）经 AppStore safeStorage 加密存钥匙串，配置本体明文存 KV。
  */
 
@@ -22,6 +23,11 @@ export function saveDrive(appStore: AppStore, cfg: CloudDriveConfig, secret: str
   if (cfg.kind === 'webdav' && !/^https?:\/\//i.test(cfg.url)) return { ok: false, error: 'WebDAV 服务器地址需以 http(s):// 开头' }
   if (cfg.kind === 'webdav' && !cfg.username.trim()) return { ok: false, error: 'WebDAV 需要用户名' }
   if (cfg.kind === 'dropbox' && !secret.trim()) return { ok: false, error: 'Dropbox 需要访问令牌' }
+  if (cfg.kind === 'local') {
+    const dir = cfg.localPath?.trim() ?? ''
+    if (!dir || !isAbsolute(dir)) return { ok: false, error: '请选择本地同步目录' }
+    if (!isDirSafe(dir)) return { ok: false, error: '所选目录不存在或不可访问' }
+  }
   const list = listDrives(appStore)
   const i = list.findIndex(d => d.id === cfg.id)
   if (i >= 0) list[i] = cfg
@@ -34,6 +40,19 @@ export function saveDrive(appStore: AppStore, cfg: CloudDriveConfig, secret: str
 export function removeDrive(appStore: AppStore, id: string): void {
   appStore.set(KV_KEY, listDrives(appStore).filter(d => d.id !== id))
   appStore.deleteSecret(SECRET_PREFIX + id)
+}
+
+function isDirSafe(p: string): boolean {
+  try {
+    return statSync(p).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/** 本地同步目录下的完整路径：<localPath>/<remotePath 根>/<相对路径> */
+function localFull(cfg: CloudDriveConfig, full: string): string {
+  return join(cfg.localPath ?? '', ...full.split('/').filter(Boolean))
 }
 
 function secretOf(appStore: AppStore, id: string): string {
@@ -97,9 +116,21 @@ async function dbxMkdirp(token: string, dir: string): Promise<void> {
 async function driveUpload(appStore: AppStore, driveId: string, remotePath: string, data: Buffer): Promise<{ ok: boolean; error?: string; path?: string }> {
   const cfg = listDrives(appStore).find(d => d.id === driveId)
   if (!cfg) return { ok: false, error: '网盘不存在' }
+  const full = rootOf(cfg) + remotePath
+  if (cfg.kind === 'local') {
+    // 本地同步目录：直接写入文件，由网盘客户端负责上云
+    if (!cfg.localPath || !isDirSafe(cfg.localPath)) return { ok: false, error: '本地同步目录不存在（网盘客户端是否已退出或目录被移动？）' }
+    try {
+      const target = localFull(cfg, full)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, data)
+      return { ok: true, path: target }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
   const secret = secretOf(appStore, driveId)
   if (!secret) return { ok: false, error: '网盘密钥缺失，请重新保存配置' }
-  const full = rootOf(cfg) + remotePath
   try {
     if (cfg.kind === 'dropbox') {
       await dbxMkdirp(secret, full.split('/').slice(0, -1).join('/'))
@@ -127,8 +158,9 @@ async function driveUpload(appStore: AppStore, driveId: string, remotePath: stri
 async function driveExists(appStore: AppStore, driveId: string, remotePath: string): Promise<boolean> {
   const cfg = listDrives(appStore).find(d => d.id === driveId)
   if (!cfg) return false
-  const secret = secretOf(appStore, driveId)
   const full = rootOf(cfg) + remotePath
+  if (cfg.kind === 'local') return existsSync(localFull(cfg, full))
+  const secret = secretOf(appStore, driveId)
   try {
     if (cfg.kind === 'dropbox') {
       const res = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {

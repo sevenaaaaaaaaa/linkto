@@ -1,8 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
 import { existsSync, readdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join, basename } from 'node:path'
 import { dialog, BrowserWindow } from 'electron'
 import type { AccountConfig, OAuthClientConfig, OAuthTokens } from '@shared/types'
+import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from '../cloud-drive/proton'
 import type { MailStore } from '../db'
 import type { AppStore } from '../store'
 import type { SyncEngine } from '../mail/sync-engine'
@@ -18,6 +20,10 @@ export interface BackupTarget {
   label: string
   path: string
   available: boolean
+  /** 不可用时的提示（如引导安装网盘客户端） */
+  hint?: string
+  /** 网盘客户端下载地址 */
+  downloadUrl?: string
 }
 
 export interface BackupMeta {
@@ -85,23 +91,41 @@ export class BackupService {
 
   /** 可用的备份目标（检测各网盘的本地同步目录） */
   listTargets(): BackupTarget[] {
-    const home = this.deps.appStore.dataDir.split('/Library/')[0]
+    // 用系统主目录：数据目录可能被 --user-data-dir 指到别处，不能再从它反推 ~
+    const home = homedir()
     const candidates: BackupTarget[] = []
-    const push = (id: string, label: string, path: string) =>
-      candidates.push({ id, label, path, available: existsSync(path) })
+    // 同类网盘可能有多个账户目录：id 依次追加序号，保证唯一（首个保持原 id 以兼容）
+    const push = (id: string, label: string, path: string, extra?: Partial<BackupTarget>) => {
+      let uid = id
+      for (let n = 2; candidates.some(c => c.id === uid); n++) uid = `${id}-${n}`
+      candidates.push({ id: uid, label, path, available: existsSync(path), ...extra })
+    }
 
     push('icloud', 'iCloud Drive', join(home, 'Library/Mobile Documents/iCloud~com~apple~CloudDocs'))
-    // 第三方网盘在 macOS 上通常挂载在 ~/Library/CloudStorage/
+    // 第三方网盘在 macOS 上通常挂载在 ~/Library/CloudStorage/（Proton Drive 单独检测，见下）
     const cloudStorage = join(home, 'Library/CloudStorage')
     try {
       for (const name of readdirSync(cloudStorage)) {
         const lower = name.toLowerCase()
         if (lower.includes('dropbox')) push('dropbox', 'Dropbox', join(cloudStorage, name))
-        else if (lower.includes('proton')) push('proton', 'Proton Drive', join(cloudStorage, name))
         else if (lower.includes('onedrive')) push('onedrive', 'OneDrive', join(cloudStorage, name))
         else if (lower.includes('nutstore') || lower.includes('jianguoyun')) push('nutstore', '坚果云', join(cloudStorage, name))
       }
     } catch { /* CloudStorage 不存在则跳过 */ }
+    // Proton Drive：无公开 API，借助 macOS 客户端的同步目录（可能多账户；兼容旧版 ~/Proton Drive）
+    const protons = detectProtonDriveFolders(home)
+    if (protons.length) {
+      for (const p of protons) {
+        const label = protons.length > 1 ? `Proton Drive（${p.account || '~/Proton Drive'}）` : 'Proton Drive'
+        push('proton', label, p.path)
+      }
+    } else {
+      push('proton', 'Proton Drive', join(cloudStorage, 'ProtonDrive-<账户>-folder'), {
+        available: false,
+        hint: '未检测到 Proton Drive 同步目录。安装 Proton Drive for macOS 并登录后，其同步文件夹会出现在 ~/Library/CloudStorage/ 下，届时可直接备份到 Proton Drive。',
+        downloadUrl: PROTON_DRIVE_DOWNLOAD_URL
+      })
+    }
     push('dropbox-fallback', 'Dropbox（~/Dropbox）', join(home, 'Dropbox'))
     return candidates
   }

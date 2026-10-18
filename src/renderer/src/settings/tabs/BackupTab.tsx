@@ -3,12 +3,14 @@ import { api } from '../../lib/api'
 import { SectionTitle } from './GeneralTab'
 
 type BackupMeta = { createdAt: number; accountCount: number; hasSecrets: boolean }
-type Target = { id: string; label: string; path: string; available: boolean }
+type Target = { id: string; label: string; path: string; available: boolean; hint?: string; downloadUrl?: string }
 
 /** 备份与恢复：口令加密的账户配置跨设备迁移（iCloud Drive / Dropbox / Proton Drive / 自选目录） */
 export function BackupTab() {
   const [targets, setTargets] = useState<Target[]>([])
   const [targetId, setTargetId] = useState<string>('icloud')
+  // 点击未安装的网盘（如 Proton Drive）时展示安装引导
+  const [hintFor, setHintFor] = useState<string | null>(null)
   const [passphrase, setPassphrase] = useState('')
   const [passphrase2, setPassphrase2] = useState('')
   const [includeSecrets, setIncludeSecrets] = useState(true)
@@ -80,21 +82,41 @@ export function BackupTab() {
         <div className="py-2.5 border-b border-ink/[0.04]">
           <div className="text-sm text-zinc-800 mb-2">备份到</div>
           <div className="flex flex-wrap gap-1.5">
-            {targets.map(t => (
-              <button
-                key={t.id}
-                disabled={!t.available}
-                onClick={() => setTargetId(t.id)}
-                title={t.path}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition disabled:opacity-30 ${
-                  targetId === t.id ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-ink/[0.08] text-zinc-600 hover:bg-zinc-50'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+            {targets.map(t =>
+              !t.available && t.hint ? (
+                <button
+                  key={t.id}
+                  onClick={() => setHintFor(hintFor === t.id ? null : t.id)}
+                  title="未检测到同步目录，点击查看如何启用"
+                  className={`text-xs px-3 py-1.5 rounded-lg border border-dashed transition ${
+                    hintFor === t.id ? 'border-ink/[0.22] text-zinc-600 bg-zinc-50' : 'border-ink/[0.14] text-zinc-400 hover:bg-zinc-50'
+                  }`}
+                >
+                  {t.label}
+                  <span className="ml-1 text-2xs">· 未安装</span>
+                </button>
+              ) : (
+                <button
+                  key={t.id}
+                  disabled={!t.available}
+                  onClick={() => {
+                    setTargetId(t.id)
+                    setHintFor(null)
+                  }}
+                  title={t.path}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition disabled:opacity-30 ${
+                    targetId === t.id ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-ink/[0.08] text-zinc-600 hover:bg-zinc-50'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              )
+            )}
             <button
-              onClick={() => setTargetId('pick')}
+              onClick={() => {
+                setTargetId('pick')
+                setHintFor(null)
+              }}
               className={`text-xs px-3 py-1.5 rounded-lg border transition ${
                 targetId === 'pick' ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-ink/[0.08] text-zinc-600 hover:bg-zinc-50'
               }`}
@@ -102,6 +124,23 @@ export function BackupTab() {
               选择目录…
             </button>
           </div>
+          {(() => {
+            const t = targets.find(x => x.id === hintFor)
+            if (!t?.hint) return null
+            return (
+              <div className="mt-2 rounded-lg px-3 py-2 bg-zinc-50 border border-ink/[0.05] text-xs text-zinc-600 leading-relaxed">
+                {t.hint}
+                {t.downloadUrl && (
+                  <button
+                    onClick={() => void api.openExternal(t.downloadUrl!)}
+                    className="ml-1.5 font-medium text-blue-600 underline underline-offset-2"
+                  >
+                    下载 {t.label} for macOS
+                  </button>
+                )}
+              </div>
+            )
+          })()}
           {targetId === 'pick' && (
             <p className="text-xs text-zinc-400 mt-1.5">
               提示：把目录选到 Dropbox / Proton Drive 等网盘的同步文件夹里，同样能自动云同步。

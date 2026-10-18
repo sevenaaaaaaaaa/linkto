@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { AISettings, NotificationAction } from '@shared/types'
+import type { AISettings, NotificationAction, QuietHours } from '@shared/types'
 
 export type { AISettings }
 
@@ -14,6 +14,9 @@ export interface GeneralSettings {
   dockBadge: boolean
   /** Screener 新发件人审批 */
   screenerEnabled: boolean
+  /** 定期整理：已读的订阅 / 通知邮件 N 天后自动归档（0 / 缺省 = 关闭） */
+  cleanupNewsletterDays?: number
+  cleanupNotificationDays?: number
 }
 
 export interface NotificationSettings {
@@ -22,6 +25,8 @@ export interface NotificationSettings {
   smart: boolean
   sound: boolean
   perAccount: Record<string, { enabled: boolean; sound: string }>
+  /** 免打扰时段（默认关闭；支持跨午夜） */
+  quietHours?: QuietHours
 }
 
 export const DEFAULT_GENERAL: GeneralSettings = {
@@ -38,7 +43,8 @@ export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
   actions: ['markRead', 'reply', 'delete'],
   smart: false,
   sound: true,
-  perAccount: {}
+  perAccount: {},
+  quietHours: { enabled: false, start: '22:00', end: '08:00' }
 }
 
 const AI_KEY_SECRET = 'ai:apiKey'

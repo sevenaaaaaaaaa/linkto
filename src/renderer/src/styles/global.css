@@ -171,7 +171,10 @@
   --control-h: 28px;
   --control-h-lg: 32px;
   /* 栏宽随视口收缩：放大显示（⌘+ / 系统「更大字体」缩放）后 CSS 视口变窄，固定栏宽会把阅读区挤没 */
-  --rail-w: 64px;
+  --row-py: 10px;
+  --reader-size: 14px;
+  --reader-max: 760px;
+  --rail-w: 76px; /* 须容纳 macOS 红绿灯（x=14 起约 52px 宽） */
   --sidebar-w: clamp(176px, 15vw, 216px);
   --list-w: clamp(300px, 30vw, 400px);
   --context-w: clamp(240px, 20vw, 300px);
@@ -405,6 +408,11 @@
   --color-blue-400: var(--accent-strong);
   --color-blue-500: var(--accent);
   --color-blue-700: oklch(from var(--accent) calc(l - 0.08) c h);
+}
+
+/* 紧凑密度：列表行更矮，一屏多看几封 */
+[data-density='compact'] {
+  --row-py: 5px;
 }
 
 /* ---------- AI 荧光标记：只用于 AI 产出（要点关键短语、正文划重点） ---------- */

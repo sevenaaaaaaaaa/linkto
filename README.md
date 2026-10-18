@@ -23,6 +23,7 @@ AI 原生邮件工作台 —— OpenFlow 家族「林」字辈成员。
   - 信用卡账单、会议通知自动提炼成待办；Newsletter 自动提取文章进阅读清单
   - 每日商情：定期学习近 36 小时邮件，按主题整理 digest + 当日重点 + 备忘录 + 建议删除哪些
   - 公司洞察：按时间线剖析一家公司发来的所有邮件（运营策略 / 品牌价值可信度 / 你未来被转化的指数）
+- **模板预设库**：设置 → 模板内置 35 个中文 / 英文邮件模板（商务往来、会议与日程、婉拒、感谢致歉、求职人事、客服售后、个人生活、Business English），一键添加到「我的模板」后按分类管理；`{对方称呼}` `{我的名字}` `{日期}` 在撰写窗插入时自动填充
 - **知识库**：一键收藏邮件为知识条目（自动打标签），支持检索与基于知识库的 AI 问答
 - **Newsletter 阅读侧**：自动识别订阅邮件、订阅发件人管理、List-Unsubscribe 一键退订
 - **「荧光签」设计语言**：冷白纸底 + 墨黑主操作，荧光色只给 AI——看到荧光就是 AI 帮你划的重点；Geist 字体，全 oklch token 驱动，明暗 + 9 款主题预设、24 款阅读信纸皮肤照常可用。品牌标「年轮 @」：@ 是邮件，两圈年轮是越用越厚的 Agent 记忆，荧光内核是 AI，向右的尾线是 To
@@ -82,6 +83,8 @@ AI 功能：设置 → AI → 选择预设（智谱 GLM / OpenAI / DeepSeek / Ol
 设置 → 备份：
 
 - **备份**：选目标（iCloud Drive / Dropbox / Proton Drive / 坚果云 / OneDrive / 任意目录）→ 设备份口令 → 生成 `LinkTo-Backup-*.lkbak`（AES-256-GCM 加密，口令经 scrypt 派生，不落盘）。放入网盘同步目录即自动云同步
+- **Proton Drive**：Proton Drive 没有公开 API，林可兔借助 [Proton Drive for macOS](https://proton.me/drive/download) 的本地同步目录（`~/Library/CloudStorage/ProtonDrive-<账户>-folder`，多账户逐一列出；兼容旧版 `~/Proton Drive`）。未安装时备份目标显示「未安装」并给出下载入口
+- **邮件原文 / 附件存网盘**（设置 → 集成 → 网盘备份）：WebDAV（群晖 / 威联通 / Nextcloud / Alist / 坚果云）、Dropbox，或任意**本地同步目录**——一键「+ Proton Drive」自动填入检测到的同步目录，文件复制到 `<目录>/LinkTo/eml`、`/attachments` 后由网盘客户端自动上云
 - **恢复**：新设备上选择备份文件 → 输入口令 → 账户（含服务器配置、密码、OAuth 令牌，可选）即刻恢复并开始同步；已存在的账户自动跳过不重复导入
 - 口令忘记无法恢复，请妥善保管
 

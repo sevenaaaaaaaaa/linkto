@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { IconPlus, IconMinus, IconLink, IconClose, IconList, IconListOrdered } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
-import type { MailTemplate, Signature } from '@shared/types'
+import type { Signature } from '@shared/types'
 
 /** 富文本简易编辑器（contentEditable + 执行命令） */
 export function HtmlEditor(props: { html: string; onChange(html: string): void; minHeight?: number }) {
@@ -29,9 +29,55 @@ export function HtmlEditor(props: { html: string; onChange(html: string): void; 
 }
 
 function Toolbar(props: { target: React.RefObject<HTMLDivElement | null> }) {
+  // 插入链接：Electron 不支持 window.prompt（渲染时调用会直接抛错白屏），改为工具栏内联输入框
+  const [linkUrl, setLinkUrl] = useState<string | null>(null)
+  const savedRange = useRef<Range | null>(null)
   const exec = (cmd: string, value?: string) => {
     props.target.current?.focus()
     document.execCommand(cmd, false, value)
+  }
+  const openLink = () => {
+    const sel = window.getSelection()
+    savedRange.current = sel && sel.rangeCount && props.target.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null
+    setLinkUrl('https://')
+  }
+  const applyLink = () => {
+    const url = linkUrl?.trim()
+    setLinkUrl(null)
+    if (!url || url === 'https://') return
+    props.target.current?.focus()
+    const sel = window.getSelection()
+    if (savedRange.current && sel) {
+      sel.removeAllRanges()
+      sel.addRange(savedRange.current)
+    }
+    // 未选中文字时直接插入链接文本
+    if (!sel || sel.isCollapsed) document.execCommand('insertHTML', false, `<a href="${url.replace(/"/g, '&quot;')}">${url.replace(/</g, '&lt;')}</a>`)
+    else document.execCommand('createLink', false, url)
+  }
+  if (linkUrl !== null) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-ink/[0.06] bg-zinc-50/60">
+        <IconLink width={13} height={13} className="text-zinc-500 shrink-0" />
+        <input
+          autoFocus
+          value={linkUrl}
+          onChange={e => setLinkUrl(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') applyLink()
+            else if (e.key === 'Escape') setLinkUrl(null)
+          }}
+          placeholder="链接地址，回车确认"
+          className="flex-1 min-w-0 text-xs font-mono bg-white rounded-md px-2 py-1 outline-none border border-ink/[0.08]"
+        />
+        <button type="button" onClick={applyLink} className="text-xs px-2 py-1 rounded-md bg-blue-600 text-on-accent">
+          插入
+        </button>
+        <button type="button" onClick={() => setLinkUrl(null)} className="text-xs px-2 py-1 rounded-md text-zinc-500 hover:bg-ink/5">
+          取消
+        </button>
+      </div>
+    )
   }
   const btn = (label: React.ReactNode, cmd: string, value?: string, style?: string) => (
     <button
@@ -53,7 +99,15 @@ function Toolbar(props: { target: React.RefObject<HTMLDivElement | null> }) {
       {btn(<IconList width={14} height={14} />, 'insertUnorderedList')}
       {btn(<IconListOrdered width={14} height={14} />, 'insertOrderedList')}
       <div className="w-px h-4 bg-ink/10 mx-1" />
-      {btn(<IconLink width={13} height={13} />, 'createLink', window.prompt('链接地址') ?? undefined)}
+      <button
+        type="button"
+        title="插入链接"
+        onMouseDown={e => e.preventDefault()}
+        onClick={openLink}
+        className="w-7 h-7 rounded-md text-sm text-zinc-600 hover:bg-ink/5 inline-flex items-center justify-center"
+      >
+        <IconLink width={13} height={13} />
+      </button>
       {btn(<IconClose width={13} height={13} />, 'unlink')}
       <div className="flex-1" />
       {btn('HTML', 'formatBlock', 'pre', 'font-mono text-2xs')}
@@ -170,103 +224,9 @@ export function SignaturesTab() {
   )
 }
 
-// ================= 模板 =================
+// ================= 模板（实现见 TemplatesTab.tsx） =================
 
-export function TemplatesTab() {
-  const [templates, setTemplates] = useState<MailTemplate[]>([])
-  const [current, setCurrent] = useState<MailTemplate | null>(null)
-
-  const reload = async () => {
-    const t = await api.listTemplates()
-    setTemplates(t)
-  }
-  useEffect(() => void reload(), [])
-
-  return (
-    <div className="flex gap-5 h-full">
-      <div className="w-[210px] shrink-0 flex flex-col">
-        <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] flex-1 overflow-y-auto">
-          {templates.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setCurrent(t)}
-              className={`w-full px-3.5 py-3 text-left text-sm border-b border-ink/[0.04] last:border-0 ${
-                current?.id === t.id ? 'bg-selected text-accent-ink font-medium' : 'hover:bg-ink/[0.03]'
-              }`}
-            >
-              <span className="block truncate">{t.name}</span>
-              {t.subject && <span className={`block text-xs truncate ${current?.id === t.id ? 'text-accent-ink/70' : 'text-zinc-400'}`}>{t.subject}</span>}
-            </button>
-          ))}
-        </div>
-        <div className="mt-2.5 flex gap-1">
-          <button
-            onClick={async () => {
-              const t: MailTemplate = { id: `tpl-${Date.now()}`, name: '新模板', to: '', subject: '', html: '<p>Hi,</p>', updatedAt: Date.now() }
-              await api.saveTemplate(t)
-              await reload()
-              setCurrent(t)
-            }}
-            className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5"
-          >
-            <IconPlus width={16} height={16} />
-          </button>
-          <button
-            onClick={async () => {
-              if (current) {
-                await api.deleteTemplate(current.id)
-                setCurrent(null)
-                await reload()
-              }
-            }}
-            className="p-2 rounded-lg text-zinc-500 hover:bg-red-50 hover:text-red-500"
-          >
-            <IconMinus width={16} height={16} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        {current ? (
-          <div className="max-w-[560px] space-y-3">
-            <input
-              value={current.name}
-              onChange={e => setCurrent({ ...current, name: e.target.value })}
-              className="w-full text-md font-semibold outline-none bg-transparent"
-              placeholder="模板名称"
-            />
-            <input
-              value={current.to}
-              onChange={e => setCurrent({ ...current, to: e.target.value })}
-              className="w-full text-sm rounded-xl bg-white border border-ink/[0.08] px-3.5 py-2.5 outline-none"
-              placeholder="收件人（可选）"
-            />
-            <input
-              value={current.subject}
-              onChange={e => setCurrent({ ...current, subject: e.target.value })}
-              className="w-full text-sm rounded-xl bg-white border border-ink/[0.08] px-3.5 py-2.5 outline-none"
-              placeholder="主题"
-            />
-            <HtmlEditor html={current.html} onChange={html => setCurrent({ ...current, html })} minHeight={200} />
-            <div className="flex justify-end">
-              <button
-                onClick={async () => {
-                  await api.saveTemplate({ ...current, updatedAt: Date.now() })
-                  await reload()
-                }}
-                className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 text-on-accent hover:bg-blue-700"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        ) : (
-          <Empty text="模板用于快速插入常用邮件内容（写在撰写窗口右上角）" />
-        )}
-      </div>
-    </div>
-  )
-}
+export { TemplatesTab } from './TemplatesTab'
 
 function Empty(props: { text: string }) {
   return <div className="text-sm text-zinc-400 mt-16 text-center">{props.text}</div>

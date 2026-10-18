@@ -9,6 +9,7 @@ import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, I
 import type { BulkTodo, Folder, ListSort, MailInsight, MessageSummary, TodayBrief } from '@shared/types'
 import { goView } from '../lib/route'
 import { noteMouseAction } from './Guidance'
+import { usePrefs, setPrefs } from '../lib/prefs'
 import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
 
@@ -61,7 +62,9 @@ function RowSlot(props: { checked: boolean; show: boolean; unread: boolean; onTo
 /** AI 一句话要点：关键短语荧光标出；没有理解结果时退回摘要片段 */
 function GistLine(props: { msg: MessageSummary; insight?: MailInsight }) {
   const { insight, msg } = props
-  if (!insight?.gist) return <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
+  const preview = usePrefs().rowPreview
+  if (preview === 'none') return null
+  if (preview === 'snippet' || !insight?.gist) return <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
   const [pre, key, post] = splitKey(insight.gist, insight.gistKey)
   return (
     <div className="mt-0.5 text-xs leading-[18px] line-clamp-2" style={{ color: 'var(--muted)' }} title={insight.source === 'ai' ? 'AI 要点' : '要点'}>
@@ -144,7 +147,7 @@ function MessageRow(props: {
         e.dataTransfer.setData('text/ms-mail-ids', ids.join(','))
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      className={`relative flex gap-2.5 pl-4 pr-3 py-2.5 border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
+      className={`relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
       style={{
         viewTransitionName: `mrow-${msg.id}`,
         background: props.selected || checked ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent'
@@ -239,7 +242,7 @@ function ThreadRow(props: {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         data-lens-id={latest.id}
-        className="relative flex gap-2.5 pl-4 pr-3 py-2.5 border-b border-[var(--border-soft)] cursor-default transition-colors"
+        className="relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors"
         style={{ viewTransitionName: `mrow-${latest.id}`, background: props.anyChecked && threadMulti ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent' }}
       >
         {props.colorByAccount[latest.accountId] && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: props.colorByAccount[latest.accountId], opacity: 0.85 }} />}
@@ -369,12 +372,9 @@ export function MessageList() {
   useEffect(() => {
     void useInsights.getState().load(messages.map(m => m.id))
   }, [messages])
-  const [sectioned, setSectioned] = useState(() => localStorage.getItem('ms_sections') !== '0')
-  const toggleSectioned = () => {
-    const v = !sectioned
-    setSectioned(v)
-    localStorage.setItem('ms_sections', v ? '1' : '0')
-  }
+  const prefs = usePrefs()
+  const sectioned = prefs.sections
+  const toggleSectioned = () => setPrefs({ sections: !sectioned })
   const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
 
   // —— 重力混合排序：时间分 × (1-t) + 重要分 × t；t=0 保持原排序，t>0 液态接管 ——
@@ -1791,6 +1791,7 @@ function SectionedInbox(props: {
 }) {
   const { sections: sec } = props
   const accountCtx = useMail(st => st.accountCtx)
+  const showBrief = usePrefs().brief
   const [pending, setPending] = useState(0)
   useEffect(() => {
     void api.screenerPendingCount().then(setPending).catch(() => {})
@@ -1814,7 +1815,7 @@ function SectionedInbox(props: {
 
   return (
     <div className="pb-6">
-      <TodayBriefCard accountId={accountCtx} />
+      {showBrief && <TodayBriefCard accountId={accountCtx} />}
 
       <SectionHeader label="需要你处理" count={sec.act.length} hint="AI 按紧急度排序" />
       {sec.act.map(props.renderRow)}

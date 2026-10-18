@@ -16,6 +16,7 @@ import { MenuButton, type MenuItem } from '../components/Menu'
 import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MailEntity, MailInsight, MailNextAction, MessageFull } from '@shared/types'
 import { useInsights, splitKey, dedupeEntities } from '../lib/insights'
 import { noteMouseAction } from './Guidance'
+import { getPrefs } from '../lib/prefs'
 import { Markdown, markdownToHtml } from '../components/Markdown'
 
 interface AIState {
@@ -225,7 +226,7 @@ export function Reader() {
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
     // 默认样式跟随应用主题（CSS 变量穿透 shadow 边界），阅读皮肤激活时由皮肤样式覆盖
     shadow.innerHTML = `<style>
-      :host { all: initial; display:block; font-family: var(--font-body); font-size:14px; line-height:22px; color: var(--fg); word-break: break-word; -webkit-font-smoothing: antialiased; }
+      :host { all: initial; display:block; font-family: var(--font-body); font-size: var(--reader-size, 14px); line-height:1.65; color: var(--fg); word-break: break-word; -webkit-font-smoothing: antialiased; }
       * { max-width: 100% !important; }
       img { height:auto; }
       a { color: var(--accent-ink); }
@@ -250,7 +251,7 @@ export function Reader() {
       }
     })
     // AI 划重点：把理解结果里的原句片段在正文中用荧光标出（只包裹文本节点，不改动邮件结构）
-    if (insight?.highlights.length) highlightPhrases(root, insight.highlights)
+    if (insight?.highlights.length && getPrefs().highlights) highlightPhrases(root, insight.highlights)
   }, [msg, settings, showRemote, cidMap, skin, insight?.highlights.join('\u0001')])
 
   const showBlocked = () => setShowRemote(true)
@@ -807,12 +808,13 @@ export function Reader() {
           </div>
         )}
         <div
-          className="overflow-hidden"
+          className="overflow-hidden mx-auto"
           style={
             skin
               ? { borderRadius: 'var(--r-md)' }
               : {
                   borderRadius: 'var(--r-md)',
+                  maxWidth: 'var(--reader-max)',
                   background: 'var(--surface-strong)',
                   border: '1px solid var(--border-soft)',
                   padding: '20px 24px'

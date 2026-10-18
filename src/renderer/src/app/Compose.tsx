@@ -7,6 +7,7 @@ import Image from '@tiptap/extension-image'
 import { api, useAsync, displayName } from '../lib/api'
 import { parseComposePrefill } from '../preload/parse'
 import { sanitizeEmailHtml } from '../lib/sanitize'
+import { buildAutoVars, fillPlaceholders, firstRecipientName, sortTemplateCategories, UNCATEGORIZED } from '../lib/template-presets'
 import { IconSend, IconAttach, IconClose, IconSave, IconLink, IconQuote, IconList, IconListOrdered } from '../components/icons'
 import type { Address, MailTemplate, MessageFull } from '@shared/types'
 
@@ -81,11 +82,24 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
     editor.commands.insertContent(`<div>${signature}</div>`)
   }
 
+  // 插入模板：自动填充 {我的名字}（发件账户名）、{对方称呼}（首位收件人显示名）、{日期}；填不了的占位符原样保留
   const insertTemplate = (t: MailTemplate) => {
     if (!editor) return
-    if (t.subject && !subject) setSubject(t.subject)
-    editor.commands.insertContent(t.html)
+    const acc = accounts?.find(a => a.id === accountId)
+    const vars = buildAutoVars({ recipient: firstRecipientName(to), me: acc?.name })
+    if (t.subject && !subject) setSubject(fillPlaceholders(t.subject, vars))
+    editor.commands.insertContent(fillPlaceholders(t.html, vars, true))
   }
+
+  // 模板按分类分组（下拉里用 optgroup 展示）
+  const templateGroups = useMemo(() => {
+    const groups = new Map<string, MailTemplate[]>()
+    for (const t of templates ?? []) {
+      const c = t.category?.trim() || UNCATEGORIZED
+      groups.set(c, [...(groups.get(c) ?? []), t])
+    }
+    return sortTemplateCategories(groups.keys()).map(c => [c, groups.get(c)!] as const)
+  }, [templates])
 
   const parseAddrs = (s: string): Address[] =>
     s
@@ -236,11 +250,21 @@ export function ComposeWindow({ prefill }: { prefill?: Partial<import('@shared/t
               className="text-xs text-zinc-500 bg-zinc-50 rounded-lg px-2 py-1 outline-none border border-ink/[0.05]"
             >
               <option value="">插入模板…</option>
-              {templates!.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              {templateGroups.length > 1
+                ? templateGroups.map(([cat, list]) => (
+                    <optgroup key={cat} label={cat}>
+                      {list.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                : templates!.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
             </select>
           )}
         </div>

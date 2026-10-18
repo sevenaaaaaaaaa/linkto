@@ -8,6 +8,7 @@ import type { AppStore } from '../store'
 import { DEFAULT_GENERAL } from '../store'
 import { heuristicClassify, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
+import { isNotifiableArrival } from '../notify-policy'
 import { parseEmailRaw } from './parse-pool'
 import type { FolderPref, Rule, RuleAction } from '@shared/types'
 
@@ -670,14 +671,31 @@ export class AccountWorker {
     if (inserted && isNewsletter && env.from) {
       this.store.upsertNewsletterSender(this.account.id, env.from.address)
     }
-    // Screener：新发件人登记（存量往来自动放行，新面孔进待审队列）
+    // Screener：新发件人登记（存量往来自动放行，新面孔进待审队列）。
+    // 已登记为待审 / 已拒的发件人，后续来信同样视为被拦（之前只拦第一封）
     let held = false
     if (inserted && special === 'inbox' && env.from?.address) {
       const screenerEnabled = this.appStore.get('general', DEFAULT_GENERAL).screenerEnabled
       held = this.store.ensureSenderScreened(env.from.address, screenerEnabled) === 'pending'
+      if (!held) {
+        const st = this.store.senderScreeningStatus(env.from.address)
+        held = st === 'pending' || st === 'deny'
+      }
     }
-    if (inserted && special === 'inbox' && !held && Date.now() - env.date < 120_000 && env.flags.every(f => f !== '\\Seen')) {
-      this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name ?? env.from.address) : '', category)
+    // 新邮件通知由「真正到达」驱动（增量抓取、未读、24h 内），不再要求 internalDate 在 2 分钟内——
+    // Bridge 延迟、睡眠唤醒补拉、时钟偏差都会让真实新邮件超出 2 分钟窗口而永远不通知
+    if (
+      isNotifiableArrival({
+        inserted,
+        inbox: special === 'inbox',
+        arrival,
+        seen: env.flags.some(f => f === '\\Seen'),
+        held,
+        date: env.date,
+        now: Date.now()
+      })
+    ) {
+      this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name || env.from.address) : '', category)
     }
     if (inserted && special === 'inbox' && arrival) {
       this.events.arrived(this.account.id, id, actions.filter(a => a.type !== 'setCategory' && a.type !== 'markNewsletter'))

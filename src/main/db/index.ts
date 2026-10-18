@@ -329,6 +329,15 @@ export class MailStore {
     return status === 'allow' ? 'allow' : 'pending'
   }
 
+  /** Screener：发件人当前状态（未登记返回 null） */
+  senderScreeningStatus(addr: string): 'allow' | 'pending' | 'deny' | null {
+    if (!addr) return null
+    const row = this.db.prepare('SELECT status FROM sender_screening WHERE addr = ?').get(addr.toLowerCase()) as
+      | { status: 'allow' | 'pending' | 'deny' }
+      | undefined
+    return row?.status ?? null
+  }
+
   listSenderScreening(status: string): any[] {
     return this.db
       .prepare(
@@ -417,6 +426,19 @@ export class MailStore {
   }
 
   // ================= 置顶（pin） =================
+
+  /** 定期整理候选：收件箱里已读、未加旗标、未置顶、早于 cutoff 的订阅 / 通知邮件 */
+  listCleanupCandidates(kind: 'newsletter' | 'notification', cutoff: number, limit: number): string[] {
+    const cond = kind === 'newsletter' ? '(m.is_newsletter = 1 OR m.category = \'newsletter\')' : "m.category IN ('notification','noise') AND m.is_newsletter = 0"
+    const rows = this.db
+      .prepare(
+        `SELECT m.id FROM messages m WHERE m.folder_path = 'INBOX' AND ${cond} AND m.date < ?
+           AND m.flags LIKE '%\\Seen%' AND m.flags NOT LIKE '%\\Flagged%' AND COALESCE(m.pinned, 0) = 0
+         ORDER BY m.date ASC LIMIT ?`
+      )
+      .all(cutoff, limit) as any[]
+    return rows.map(r => r.id)
+  }
 
   setPinned(ids: string[], pinned: boolean) {
     const clear = this.db.prepare('UPDATE messages SET pinned = 0, pinned_order = NULL WHERE id = ?')
@@ -753,16 +775,24 @@ export class MailStore {
 
   listTemplates(): MailTemplate[] {
     const rows = this.db.prepare('SELECT * FROM templates ORDER BY updated_at DESC').all() as any[]
-    return rows.map(r => ({ id: r.id, name: r.name, to: r.to_addr ?? '', subject: r.subject ?? '', html: r.html ?? '', updatedAt: r.updated_at }))
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      to: r.to_addr ?? '',
+      subject: r.subject ?? '',
+      html: r.html ?? '',
+      updatedAt: r.updated_at,
+      category: r.category || undefined
+    }))
   }
 
   saveTemplate(t: MailTemplate) {
     this.db
       .prepare(
-        `INSERT INTO templates (id, name, to_addr, subject, html, updated_at) VALUES (?,?,?,?,?,?)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, to_addr=excluded.to_addr, subject=excluded.subject, html=excluded.html, updated_at=excluded.updated_at`
+        `INSERT INTO templates (id, name, to_addr, subject, html, updated_at, category) VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, to_addr=excluded.to_addr, subject=excluded.subject, html=excluded.html, updated_at=excluded.updated_at, category=excluded.category`
       )
-      .run(t.id, t.name, t.to, t.subject, t.html, t.updatedAt)
+      .run(t.id, t.name, t.to, t.subject, t.html, t.updatedAt, t.category?.trim() ?? '')
   }
 
   deleteTemplate(id: string) {
@@ -1302,7 +1332,8 @@ export class MailStore {
     to_addr TEXT DEFAULT '',
     subject TEXT DEFAULT '',
     html TEXT DEFAULT '',
-    updated_at INTEGER
+    updated_at INTEGER,
+    category TEXT DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS rules (

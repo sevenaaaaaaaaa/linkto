@@ -54,6 +54,13 @@ export default function App() {
     if (ev.type === 'new-mail') {
       void useMail.getState().loadFolders()
     }
+    // 点击系统通知：切到统一收件箱并选中该邮件（主进程只发给主窗口）
+    if (ev.type === 'open-message' && ev.messageId) {
+      if (location.hash !== '#/mail') location.hash = '#/mail'
+      useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
+      const id = ev.messageId
+      setTimeout(() => useMail.getState().select(id), 60)
+    }
   })
 
   // 窗口聚焦时刷新账户与文件夹，避免多窗口 / 长时间闲置后的数据滞后
