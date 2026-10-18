@@ -9,6 +9,7 @@ import type { ArchiveJobStatus, ArchiveSuggestion, AttachmentCategory, Attachmen
 import { ATTACHMENT_CATEGORIES } from '@shared/attachments'
 import { attachmentCategoryLabel, cloudLabel, extBadge, fmtBytes, fmtDay, useAttachmentEvents } from './model'
 import { ArchiveSheet, GhostBtn, JobProgress, PrimaryBtn, ReleaseSheet, Sheet } from './Sheets'
+import { AttachmentTextSection } from './AttachmentText'
 
 type StateFilter = NonNullable<AttachmentQuery['state']>
 type Layout = 'grid' | 'list'
@@ -849,6 +850,7 @@ function Detail(props: {
           <Row k="时间" v={new Date(it.date).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} />
           {acc && <Row k="账户" v={<span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: acc.color }} />{acc.name}</span>} />}
         </div>
+        <AttachmentTextSection id={it.id} filename={it.filename} contentType={it.contentType} />
         <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border-soft)' }}>
           <div className="caps mb-1.5" style={{ color: 'var(--faint)' }}>网盘</div>
           {it.cloud.length ? (

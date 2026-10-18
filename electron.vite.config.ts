@@ -17,7 +17,9 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
           // MIME 解析专用 utilityProcess（重邮件解析不阻塞主进程）
-          'parse-worker': resolve(__dirname, 'src/main/parse-worker.ts')
+          'parse-worker': resolve(__dirname, 'src/main/parse-worker.ts'),
+          // PDF 文本层提取专用 utilityProcess（pdfjs-dist 作为外部依赖在运行时加载）
+          'pdf-worker': resolve(__dirname, 'src/main/attachments/pdf-worker.ts')
         }
       }
     }

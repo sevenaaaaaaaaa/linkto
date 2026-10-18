@@ -6,6 +6,7 @@ import { api, fmtTime } from '../../lib/api'
 import { fmtMoney, useFinance, type FinanceRec } from '../../lib/finance'
 import { IconClose } from '../../components/icons'
 import { openMail } from './RecRow'
+import { PdfCheckLine } from './PdfCheck'
 import { goView } from '../../lib/route'
 import { Chip, Money, StatusChip, btn, btnStyle, btnPrimary, btnPrimaryStyle, field, fieldStyle } from './ui'
 
@@ -334,6 +335,8 @@ export function FinanceDetail(props: { rec: FinanceRec | null; now: number; cate
             <button className={btn} style={btnStyle} onClick={props.onClose}>取消</button>
           </div>
         )}
+
+        {r && d.pdfCheck && <PdfCheckLine check={d.pdfCheck} amount={d.amount} currency={d.currency} invoiceNo={d.invoiceNo} />}
 
         {r && !!d.events?.length && (
           <section>

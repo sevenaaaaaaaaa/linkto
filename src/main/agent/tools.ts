@@ -11,6 +11,8 @@ import type { UnderstandService } from '../ai/understand'
 import type { FinanceService } from '../finance/service'
 import type { ProjectService } from '../projects/service'
 import type { AttachmentService } from '../attachments/service'
+import { attachmentText } from '../attachments/text'
+import { slicePages } from '../attachments/text-parse'
 import { searchTerms, rankByTerms } from '../search-terms'
 import { notifyLocalChange as notifySyncChange } from '../todo-sync'
 import { notifyLocalChange as notifyIntegrationChange } from '../todo-integrations'
@@ -1214,13 +1216,64 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const res = svc().list({ category: (a.category as AttachmentCategory) ?? null, counterparty: a.counterparty ?? null, search: a.query ?? null, year: a.year ?? null, sort: 'date', limit: 500, offset: 0 })
         const since = a.within_days ? Date.now() - a.within_days * DAY : 0
         const list = res.items.filter(x => x.date >= since && (!a.direction || x.direction === a.direction))
+        const texts = attachmentText()?.infoMany(list.slice(0, a.limit).map(x => x.id)) ?? new Map()
         return {
           data: {
             total: list.length,
-            items: list.slice(0, a.limit).map(x => ({ id: x.id, filename: x.filename, category: attachmentCategoryLabel(x.category), counterparty: x.counterparty, direction: x.direction === 'in' ? '收到' : '发出', date: fmtDay(x.date), size_kb: Math.round(x.size / 1024), subject: x.subject, message_id: x.messageId, cached: x.cached, in_cloud: x.cloud.length > 0 }))
+            items: list.slice(0, a.limit).map(x => ({ id: x.id, filename: x.filename, category: attachmentCategoryLabel(x.category), counterparty: x.counterparty, direction: x.direction === 'in' ? '收到' : '发出', date: fmtDay(x.date), size_kb: Math.round(x.size / 1024), subject: x.subject, message_id: x.messageId, cached: x.cached, in_cloud: x.cloud.length > 0, text: attachmentTextLabel(x.ext, texts.get(x.id)) }))
           },
           summary: list.length ? `找到 ${list.length} 个附件` : '没有找到附件',
           refs: list.slice(0, a.limit).map(x => ({ type: 'attachment' as const, id: x.id, label: x.filename }))
+        }
+      }
+    },
+    {
+      name: 'read_attachment',
+      title: '读附件正文',
+      domain: 'attachment',
+      risk: 'read',
+      description: '按附件 id（来自 attachment_search / read_email）读取附件正文：PDF 文本层，或 txt / csv / md / html / eml 等纯文本。可按页读（page_from / page_to，从 1 开始）。扫描件没有文本层时会说明。发票 PDF 会附带抽到的发票号 / 金额 / 开票日期 / 销售方 / 购买方。',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '附件 id' },
+          max_chars: { type: 'integer', minimum: 200, maximum: 20000, default: 6000, description: '最多返回多少字（默认 6000）' },
+          page_from: { type: 'integer', minimum: 1, description: '从第几页开始（PDF）' },
+          page_to: { type: 'integer', minimum: 1, description: '读到第几页（含）' }
+        },
+        required: ['id']
+      },
+      async run(a) {
+        const t = attachmentText()
+        if (!t) throw new ToolError('附件正文服务尚未就绪')
+        const id = String(a.id ?? '').trim()
+        if (!id) throw new ToolError('缺少附件 id，先用 attachment_search 找到附件')
+        const item = deps.attachments()?.getItem(id)
+        const res = await t.read(id, 400_000)
+        if (!res.ok) throw new ToolError(res.error ?? '读取失败')
+        const info = res.info
+        const name = item?.filename ?? id
+        if (!res.text || info?.method === 'none') {
+          return { data: { id, filename: name, has_text: false, pages: info?.pages ?? 0, reason: info?.error ?? '没有可提取的文字' }, summary: `「${name}」没有可读文字`, refs: [{ type: 'attachment', id, label: name }] }
+        }
+        const max = Math.min(20000, Math.max(200, Number(a.max_chars) || 6000))
+        const part = slicePages(res.text, a.page_from ?? null, a.page_to ?? null)
+        const body = part.text.replace(/\n\f\n/g, '\n\n[分页]\n\n')
+        const inv = info?.invoice
+        return {
+          data: {
+            id,
+            filename: name,
+            method: info?.method,
+            pages: info?.pages ?? part.total,
+            ...(part.total > 1 ? { page_range: `${part.from}-${part.to}` } : {}),
+            chars: body.length,
+            truncated: body.length > max || !!info?.truncated,
+            text: body.slice(0, max),
+            ...(inv ? { invoice: { invoice_no: inv.invoiceNo ?? null, issue_date: inv.issueDate ?? null, total: inv.total ?? null, currency: inv.currency ?? null, seller: inv.seller ?? null, buyer: inv.buyer ?? null } } : {})
+          },
+          summary: `读了「${name}」${info?.pages ? `${part.total > 1 ? ` 第 ${part.from}-${part.to} 页` : ''}（共 ${info.pages} 页）` : ''} · ${Math.min(body.length, max)} 字`,
+          refs: [{ type: 'attachment', id, label: name }]
         }
       }
     },
@@ -1472,6 +1525,12 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
     if (t.risk !== 'read' && t.params.properties && !t.params.properties.reason) t.params.properties.reason = REASON
   }
   return tools
+}
+
+/** attachment_search 结果里的正文状态：已提取 → 「有正文 · 3 页」；能提取但还没提取 → 「可读取」 */
+function attachmentTextLabel(ext: string, info: { method: string; pages: number; chars: number } | undefined): string | null {
+  if (info) return info.method === 'none' ? '无文字（扫描件等）' : `有正文 · ${info.pages > 1 ? `${info.pages} 页 · ` : ''}${info.chars} 字`
+  return /^(pdf|txt|csv|tsv|md|markdown|html?|eml|json|xml|log)$/i.test(ext || '') ? '可用 read_attachment 读取' : null
 }
 
 export function toolInfo(t: AgentTool): AgentToolInfo {

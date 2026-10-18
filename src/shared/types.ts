@@ -722,6 +722,23 @@ export interface FinanceData {
   reminded?: string[]
   /** 企业往来（参与对账）；false = 个人消费类的付款 / 发票，不进对账 */
   business?: boolean
+  /** 关联的发票 PDF（同一封邮件的附件）抽到的金额 / 发票号与本记录的核对结果 */
+  pdfCheck?: FinancePdfCheck | null
+}
+
+/** 款项 ↔ 发票 PDF 正文核对 */
+export interface FinancePdfCheck {
+  /** PDF 上的价税合计 / Total */
+  amount?: number | null
+  /** PDF 上的发票号码 / Invoice No. */
+  invoiceNo?: string | null
+  /** 没发现矛盾（金额与发票号都对得上，或记录里缺的一方无从比较） */
+  matched: boolean
+  /** 一句话：「金额不符：记录 ¥1,060.00 · PDF ¥2,120.00」 */
+  note?: string
+  /** 核对用的附件 */
+  attachmentId?: string | null
+  checkedAt?: number
 }
 
 export type FinanceLogistics = 'ordered' | 'shipped' | 'in_transit' | 'delivered'
@@ -1338,6 +1355,26 @@ export interface AttachmentTextInfo {
   chars: number
   extractedAt: number
   error?: string | null
+  /** 只提取了前若干页 / 前若干字 */
+  truncated?: boolean
+  /** 纯文本类附件探测到的编码（utf-8 / gbk / big5 …） */
+  encoding?: string | null
+  /** 发票类 PDF 抽到的结构化字段 */
+  invoice?: AttachmentInvoiceFields | null
+}
+
+/** 发票正文抽取结果（字段都可能缺） */
+export interface AttachmentInvoiceFields {
+  invoiceNo?: string | null
+  invoiceCode?: string | null
+  /** YYYY-MM-DD */
+  issueDate?: string | null
+  /** 价税合计 / Total（数值） */
+  total?: number | null
+  tax?: number | null
+  currency?: string | null
+  seller?: string | null
+  buyer?: string | null
 }
 
 // ---------- 事件触发 · 会后跟进（追加的可选字段，接口声明合并） ----------

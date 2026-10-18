@@ -14,6 +14,7 @@ import {
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { AttachmentBadge } from './attachments/AttachmentBadge'
+import { AttachmentTextButton } from './attachments/AttachmentText'
 import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MailEntity, MailInsight, MailNextAction, MessageFull } from '@shared/types'
 import { useInsights, splitKey, dedupeEntities } from '../lib/insights'
 import { noteMouseAction } from './Guidance'
@@ -1034,6 +1035,7 @@ function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; on
           <IconCloud width={11} height={11} />
         </button>
       )}
+      <AttachmentTextButton id={a.id} filename={a.filename} contentType={a.contentType} />
       {driveMenu && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setDriveMenu(false)} />

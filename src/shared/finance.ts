@@ -116,7 +116,8 @@ const normRef = (s: string | null | undefined) => String(s ?? '').toUpperCase().
 
 export function refsOf(d: FinanceData): Set<string> {
   const out = new Set<string>()
-  for (const r of [d.invoiceNo, d.poNo, d.contractNo, d.orderNo]) {
+  // 发票 PDF 正文抽到的发票号也参与配对（邮件正文没写发票号时尤其有用）
+  for (const r of [d.invoiceNo, d.pdfCheck?.invoiceNo, d.poNo, d.contractNo, d.orderNo]) {
     const n = normRef(r)
     if (n.length >= 4) out.add(n)
   }

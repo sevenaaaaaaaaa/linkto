@@ -11,6 +11,7 @@ import type { InsightsService } from '../ai/insights'
 import type { FinanceService } from '../finance/service'
 import type { ProjectService } from '../projects/service'
 import type { AttachmentService } from '../attachments/service'
+import { attachmentText } from '../attachments/text'
 import { KB_LEARN, JSON_RETRY_NUDGE } from '../ai/prompts'
 import type { ActivityStore } from './activity'
 import { isBudgetError, type AiBudget } from './budget'
@@ -181,6 +182,8 @@ export async function organizeAttachments(deps: WorkDeps, opts: { since: number;
     new Set((deps.store.db.prepare(`SELECT id FROM attachment_index WHERE skip = 0${af.sql}`).all(...af.params) as { id: string }[]).map(r => r.id))
   const before = ids()
   await svc.scan()
+  // 顺带为新的 PDF / 纯文本附件提取正文（有上限、逐个让出，不等它完成）
+  void attachmentText()?.backfill({ limit: 20 }).catch(() => {})
   const rows = deps.store.db
     .prepare(`SELECT id, filename, size, date FROM attachment_index WHERE skip = 0 AND date >= ?${af.sql} ORDER BY date DESC`)
     .all(opts.since, ...af.params) as { id: string; filename: string; size: number; date: number }[]
@@ -278,6 +281,7 @@ export function knowledgeCandidates(deps: WorkDeps, opts: { since: number; accou
     }
   }
   const mine = myAddrs(deps.store)
+  const pdfTexts = pdfTextsOf([...pdf])
   // 同一会话里有我的回信也算「有来回」：按主题粗判，标志位优先
   return fresh.map(r => ({
     id: r.id,
@@ -290,9 +294,29 @@ export function knowledgeCandidates(deps: WorkDeps, opts: { since: number; accou
     fromMe: mine.has(String(r.from_addr ?? '').toLowerCase()),
     replied: String(r.flags ?? '').includes('\\Answered'),
     hasPdf: pdf.has(r.id),
+    ...(pdfTexts.has(r.id) ? { pdfText: pdfTexts.get(r.id) } : {}),
     hasAttachments: !!r.has_attachments,
     date: Number(r.date) || 0
   }))
+}
+
+/** 已提取过的 PDF 正文节选（只读缓存，不触发提取；附件正文服务未就绪时为空） */
+function pdfTextsOf(messageIds: string[]): Map<string, string> {
+  try {
+    return attachmentText()?.cachedTextsForMessages(messageIds, 6000) ?? new Map()
+  } catch {
+    return new Map()
+  }
+}
+
+/** 挑中的邮件带 PDF 时：取正文节选一并交给 AI 提炼（必要时现提取，单封最多 2 个 PDF） */
+async function pdfExcerptFor(messageId: string, maxChars: number): Promise<string> {
+  try {
+    const r = await attachmentText()?.pdfExcerpt(messageId, maxChars)
+    return r?.text ? `\n\n附件 PDF 正文（节选）：\n${r.text}` : ''
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -315,9 +339,10 @@ export async function learnKnowledge(deps: WorkDeps, opts: { since: number; limi
     }
     const row = deps.store.getMessageRow(p.id)
     if (!row) continue
+    const pdfPart = p.reasons.includes('PDF 资料') ? await pdfExcerptFor(p.id, 3000) : ''
     const user =
       `发件人：${row.from_name ?? ''} <${row.from_addr ?? ''}>\n日期：${new Date(row.date ?? Date.now()).toLocaleDateString('zh-CN')}\n主题：${row.subject ?? ''}\n` +
-      `（规则判断的价值信号：${p.reasons.join('、') || '—'}）\n\n正文：\n${String(row.text || row.snippet || '').slice(0, 5000)}`
+      `（规则判断的价值信号：${p.reasons.join('、') || '—'}）\n\n正文：\n${String(row.text || row.snippet || '').slice(0, 5000)}${pdfPart}`
     let parsed: any
     try {
       const ask = (extra: string) =>

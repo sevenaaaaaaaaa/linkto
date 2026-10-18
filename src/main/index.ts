@@ -718,7 +718,7 @@ async function bootstrap() {
   }
   const internal = registerIpc(ctx)
   // 附件中心：索引 / 分类 / 缓存策略 / 网盘归档（独立注册 api:attach* 通道）
-  initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
+  initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload), finance: () => finance })
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   registerProjectIpc(projects)
   registerFinanceIpc(finance)

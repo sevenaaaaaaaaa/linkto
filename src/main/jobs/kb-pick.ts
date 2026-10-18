@@ -19,6 +19,8 @@ export interface KbCandidateInput {
   replied: boolean
   /** 带 PDF 资料 */
   hasPdf: boolean
+  /** 已提取的 PDF 正文节选（附件正文缓存里有才带；没有时只按 hasPdf 加分） */
+  pdfText?: string
   hasAttachments: boolean
   date: number
 }
@@ -52,9 +54,10 @@ export function scoreKnowledge(m: KbCandidateInput): KbScore {
   const len = text.replace(/\s+/g, '').length
   let score = 0
   let groups = 0
+  const pdfText = m.pdfText ?? ''
   for (const s of SIGNALS) {
     const inSubject = s.re.test(subject)
-    const inBody = s.re.test(text.slice(0, 6000))
+    const inBody = s.re.test(text.slice(0, 6000)) || (!!pdfText && s.re.test(pdfText.slice(0, 6000)))
     if (inSubject || inBody) {
       groups++
       score += inSubject ? 3 : 2
@@ -68,6 +71,7 @@ export function scoreKnowledge(m: KbCandidateInput): KbScore {
     score += 2
     reasons.push('PDF 资料')
   }
+  score += pdfTextBonus(pdfText, reasons)
   if (m.isNewsletter || m.category === 'newsletter') {
     // Newsletter 只要「精华」：要有实质主题、够长
     if (!groups || len < 1500) return { id: m.id, score: -Infinity, reasons: ['普通订阅'] }
@@ -83,6 +87,15 @@ export function scoreKnowledge(m: KbCandidateInput): KbScore {
   }
   if (m.fromMe) score -= 1
   return { id: m.id, score, reasons }
+}
+
+/** PDF 正文加分：内容够长（≥1500 字）+1；读起来像发票 / 合同等事务性单据的不加（它们归财务 / 附件管，不是知识） */
+function pdfTextBonus(pdfText: string, reasons: string[]): number {
+  const len = pdfText.replace(/\s+/g, '').length
+  if (len < 1500) return 0
+  if (/(发票代码|发票号码|价税合计|invoice\s*no|amount\s*due)/i.test(pdfText.slice(0, 4000))) return 0
+  reasons.push('PDF 正文充实')
+  return len >= 6000 ? 2 : 1
 }
 
 /** 挑出最值得学的 limit 封：分数 ≥ minScore，同分取更新的 */

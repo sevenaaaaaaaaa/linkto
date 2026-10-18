@@ -46,6 +46,8 @@ export interface AttachmentDeps {
   ai: AIService
   getAISettings(): AISettings
   event(payload: unknown): void
+  /** 附件正文核对财务记录用（发票 PDF ↔ 款项）；不传则不做核对 */
+  finance?: () => import('../finance/service').FinanceService | null
 }
 
 interface MsgRow {

@@ -1,8 +1,10 @@
 import { ipcMain } from 'electron'
 import type { LinkToApi } from '@shared/ipc'
 import { AttachmentService, type AttachmentDeps } from './service'
+import { initAttachmentText } from './text'
 
 export { AttachmentService }
+export { attachmentText } from './text'
 
 /** 进程内单例：ipc.ts 的附件读取 / 保存在缓存被释放后借它自动重新下载 */
 let current: AttachmentService | null = null
@@ -54,5 +56,7 @@ export function initAttachments(deps: AttachmentDeps): AttachmentService {
     })
   }
   svc.start()
+  // 附件正文（PDF 文本层 / 纯文本）：api:readAttachmentText + hooks 读取器
+  initAttachmentText({ db: deps.db, store: deps.store, attachments: svc, finance: deps.finance, event: deps.event })
   return svc
 }
