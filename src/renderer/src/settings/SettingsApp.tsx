@@ -9,9 +9,10 @@ import { AiTab } from './tabs/AiTab'
 import { IntegrationsTab } from './tabs/IntegrationsTab'
 import { BackupTab } from './tabs/BackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
+import { TodoSyncSection } from './tabs/TodoSyncSection'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook, IconSearch,
-  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette
+  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare
 } from '../components/icons'
 
 interface Page {
@@ -38,7 +39,8 @@ const GROUPS: { title: string; pages: Page[] }[] = [
     pages: [
       { id: 'personal', label: '个性化', desc: '列表、阅读、侧栏、账户颜色、字体与快捷键', icon: IconPalette, keywords: '个性化 密度 紧凑 舒适 字号 字体 宽度 侧栏 快捷键 单键 颜色 AI 要点 分区 简报 划重点 右侧栏' },
       { id: 'notifications', label: '通知', desc: '新邮件提醒、智能通知、免打扰与声音', icon: IconBell, keywords: '通知 提醒 声音 免打扰 智能通知 角标 测试通知' },
-      { id: 'rules', label: '自动化', desc: 'AI 自动处理、规则与一键配方、定期整理', icon: IconLayers, keywords: '自动化 规则 配方 自动归档 自动分类 自动提炼 每日简报 理解新邮件 AI 判断 连接器动作 整理 清理' }
+      { id: 'rules', label: '自动化', desc: 'AI 自动处理、规则与一键配方、定期整理', icon: IconLayers, keywords: '自动化 规则 配方 自动归档 自动分类 自动提炼 每日简报 理解新邮件 AI 判断 连接器动作 整理 清理' },
+      { id: 'todo', label: '待办与日历', desc: '跨设备同步待办，打通提醒事项、系统日历、Google Tasks、Microsoft To Do', icon: IconCheckSquare, keywords: '待办 同步 跨设备 手机 加密 口令 提醒事项 Reminders 日历 Calendar Google Tasks Microsoft To Do Outlook' }
     ]
   },
   {
@@ -154,6 +156,7 @@ export default function SettingsApp() {
           {tab === 'ai' && <AiTab />}
           {tab === 'integrations' && <IntegrationsTab />}
           {tab === 'backup' && <BackupTab />}
+          {tab === 'todo' && <TodoSettingsPage />}
         </div>
       </main>
     </div>
@@ -177,5 +180,14 @@ function NavItem(props: { page: Page; active: boolean; sub?: string; onClick(): 
         {props.sub && <span className="block truncate text-2xs font-normal" style={{ color: 'var(--faint)' }}>{props.sub}</span>}
       </span>
     </button>
+  )
+}
+
+/** 待办与日历：跨设备同步（自己的邮箱）+ 外部服务打通 */
+function TodoSettingsPage() {
+  return (
+    <div className="max-w-[680px] flex flex-col gap-8">
+      <TodoSyncSection />
+    </div>
   )
 }
