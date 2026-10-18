@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSkills, sortSkills, categoryOrder, OUTPUT_LABEL, scheduleLabel, requestSkillRun } from '../../lib/agent-skills'
-import { IconSearch, IconPlus, IconPin, IconPlay, IconClock, IconMailDot } from '../../components/icons'
+import { IconSearch, IconPlus, IconPin, IconPlay, IconClock, IconMailDot, IconZap } from '../../components/icons'
+import { EVENT_WHEN } from '@shared/agent-events'
 import type { AgentSkill } from '@shared/types'
 import { btn, btnStyle, btnPrimary, btnPrimaryStyle, Chip, SectionTitle } from '../finance/ui'
 import { SkillIcon, paramSummary } from './skill-ui'
@@ -131,6 +132,13 @@ function SkillCard(props: { skill: AgentSkill; onEdit(): void; onCopy(): void })
             <IconClock width={10} height={10} /> {sched}
           </Chip>
         )}
+        {(s.triggers ?? [])
+          .filter(t => t.enabled)
+          .map(t => (
+            <Chip key={t.event} tone="ai" title="事件触发：新邮件命中时以这封邮件为上下文在后台运行，结果写进活动记录">
+              <IconZap width={10} height={10} /> {EVENT_WHEN[t.event]}自动运行
+            </Chip>
+          ))}
         {params && (
           <span className="text-2xs truncate min-w-0" style={{ color: 'var(--faint)' }} title={`参数：${params}`}>
             参数：{params}

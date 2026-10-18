@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentActivity, OnboardingScanStatus } from '@shared/types'
 import { api } from '../../lib/api'
-import { goView } from '../../lib/route'
+import { goAgent, goView } from '../../lib/route'
 import { openFinance } from '../../lib/finance'
 import { openProjects } from '../../lib/projects'
 import { fmtTime, groupByDay, REF_LABEL, todaySummary, useAgentActivity, useAgentJobs } from '../../lib/automation'
 import { openAgentRef } from '../../lib/automation-refs'
-import { IconAttach, IconBook, IconCheck, IconCheckSquare, IconClose, IconLayers, IconMinus, IconRefresh } from '../../components/icons'
+import { launchSkill } from '../../lib/agent-skills'
+import { IconAttach, IconBook, IconCheck, IconCheckSquare, IconClose, IconLayers, IconMinus, IconRefresh, IconZap } from '../../components/icons'
 import { IconWallet } from '../finance/FinanceNav'
 import { ico, JobList, JobSettingsBlock } from './AutomationJobs'
 
@@ -16,9 +17,9 @@ import { ico, JobList, JobSettingsBlock } from './AutomationJobs'
  * 设计：墨黑主操作 --accent；荧光 --ai 只标 AI 产出（AI 任务角标、AI 学到的条目）
  * ================================================================ */
 
-const AI_STATS = ['kb', 'kbMerged', 'memories', 'skills', 'brief']
+const AI_STATS = ['kb', 'kbMerged', 'memories', 'skills', 'brief', 'events']
 const isAiOutput = (a: AgentActivity) => a.source === 'skill' || a.source === 'chat' || AI_STATS.some(k => (a.stats?.[k] ?? 0) > 0)
-const SOURCE_LABEL: Record<AgentActivity['source'], string> = { job: '自动任务', skill: '技能', chat: '对话', onboarding: '首次整理' }
+const SOURCE_LABEL: Record<AgentActivity['source'], string> = { job: '自动任务', skill: '技能', chat: '对话', onboarding: '首次整理', event: '事件' }
 
 function ActivityItem(props: { a: AgentActivity; fresh: boolean }) {
   const a = props.a
@@ -39,9 +40,15 @@ function ActivityItem(props: { a: AgentActivity; fresh: boolean }) {
         <span className="text-sm font-medium min-w-0" style={{ color: 'var(--fg)' }}>
           {a.title}
         </span>
-        <span className="text-2xs" style={{ color: 'var(--faint)' }}>
-          {SOURCE_LABEL[a.source] ?? a.source}
-        </span>
+        {a.source === 'event' ? (
+          <span className="text-2xs px-1 rounded-[var(--r-xs)]" style={{ background: 'var(--hover)', color: 'var(--muted)' }} title="新邮件命中事件后自动运行 / 会后提示">
+            <IconZap width={9} height={9} className="inline -mt-px" /> 事件
+          </span>
+        ) : (
+          <span className="text-2xs" style={{ color: 'var(--faint)' }}>
+            {SOURCE_LABEL[a.source] ?? a.source}
+          </span>
+        )}
       </div>
       {a.detail && (
         <div
@@ -54,9 +61,19 @@ function ActivityItem(props: { a: AgentActivity; fresh: boolean }) {
           {a.detail}
         </div>
       )}
-      {!!a.refs?.length && (
+      {(!!a.refs?.length || !!a.action) && (
         <div className="flex flex-wrap gap-1.5 mt-1.5">
-          {a.refs.map((r, i) => (
+          {a.action && (
+            <button
+              onClick={() => launchSkill(a.action!.skillId, {}, a.action!.messageId ?? null)}
+              className="h-6 px-2 inline-flex items-center rounded-[var(--r-sm)] text-xs font-semibold border border-[var(--border-strong)] hover:bg-[var(--hover)]"
+              style={{ background: 'var(--surface-strong)', color: 'var(--fg)' }}
+              title="以这封邮件为上下文，在 Agent 对话里运行技能"
+            >
+              {a.action.label}
+            </button>
+          )}
+          {(a.refs ?? []).map((r, i) => (
             <button
               key={`${r.type}:${r.id}:${i}`}
               onClick={() => openAgentRef(r)}
@@ -113,12 +130,29 @@ export function ActivityTimeline(props: { items: AgentActivity[] | null; fresh: 
   )
 }
 
+/** 打开「自动任务 → 活动记录」（页面还没挂载时，挂载后切到活动记录） */
+let pendingActivityTab = false
+export function openActivityLog() {
+  pendingActivityTab = true
+  goAgent('auto')
+  window.dispatchEvent(new CustomEvent('ms:automation-activity'))
+}
+
 /** 自动任务与活动记录（左侧 Agent「自动任务」页） */
 /** embedded：挂在 Agent 外壳里时不再重复「自动任务」大标题，只留今日汇总与切换 */
 export function AutomationPanel(props: { embedded?: boolean } = {}) {
   const { settings, saveSettings } = useAgentJobs()
   const { items, fresh } = useAgentActivity(300)
-  const [tab, setTab] = useState<'jobs' | 'activity'>('jobs')
+  const [tab, setTab] = useState<'jobs' | 'activity'>(() => (pendingActivityTab ? ((pendingActivityTab = false), 'activity') : 'jobs'))
+  // 阅读页事件条「查看结果」/ 事件通知：直接切到活动记录
+  useEffect(() => {
+    const on = () => {
+      pendingActivityTab = false
+      setTab('activity')
+    }
+    window.addEventListener('ms:automation-activity', on)
+    return () => window.removeEventListener('ms:automation-activity', on)
+  }, [])
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -252,8 +286,8 @@ export function OnboardingScanHost() {
     const off = api.onEvent(ev => {
       const e = ev as { type?: string; status?: OnboardingScanStatus }
       if (e.type === 'onboarding-scan' && e.status) setSt(e.status)
-      // 定时技能通知点击：打开 Agent（活动记录在「自动任务」页）
-      if (e.type === 'open-agent-activity') goView('agent')
+      // 定时技能 / 事件触发通知点击：打开 Agent → 自动任务 → 活动记录
+      if (e.type === 'open-agent-activity') openActivityLog()
     })
     return () => void off()
   }, [])

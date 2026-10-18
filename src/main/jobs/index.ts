@@ -9,6 +9,8 @@ import { ActivityStore } from './activity'
 import { AiBudget, onBattery } from './budget'
 import { JobScheduler, type JobDef } from './scheduler'
 import { OnboardingScan } from './onboarding'
+import { meetingFollowupJob } from './meeting-followup'
+import { initEventTriggers } from '../agent/event-trigger'
 import { dayKey, DAY_MS, HOUR_MS, skillCadence, slotOfDay, sweepWindow } from './schedule'
 import {
   aiBlockedReason, financeBreakdown, fmtBytes, kbRefs, learnKnowledge, organizeAttachments, organizeFinance, organizeProjects, projectLabel, sweepTodos,
@@ -63,6 +65,9 @@ export function initJobs(input: JobsDeps) {
   })
 
   for (const def of builtinJobs(deps, activity)) scheduler.register(def)
+  scheduler.register(meetingFollowupJob({ ...deps, log }))
+  // 事件触发技能：新邮件命中发票 / 行程变更 / 安全提醒等事件时自动运行技能（index.ts 的到达与 onInsight 回调调用）
+  const events = initEventTriggers({ ...deps, log })
 
   // ---------------- 定时技能 ----------------
 
@@ -172,6 +177,7 @@ export function initJobs(input: JobsDeps) {
     scheduler,
     activity,
     onboarding,
+    events,
     onAccountStatus: (accountId: string, status: string) => onboarding.onAccountStatus(accountId, status),
     stop: () => scheduler.stop()
   }

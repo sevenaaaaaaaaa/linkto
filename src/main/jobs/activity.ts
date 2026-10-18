@@ -31,6 +31,12 @@ export class ActivityStore {
       );
       CREATE INDEX IF NOT EXISTS idx_agent_kb_learned_at ON agent_kb_learned(at);
     `)
+    // 一键动作（事件触发 / 会后跟进）：只新增列
+    try {
+      db.exec('ALTER TABLE agent_activity ADD COLUMN action_json TEXT')
+    } catch {
+      /* 已有该列 */
+    }
   }
 
   add(a: Omit<AgentActivity, 'id' | 'at'> & { at?: number }): AgentActivity {
@@ -44,11 +50,12 @@ export class ActivityStore {
         .filter((r, i, all) => all.findIndex(x => x.type === r.type && x.id === r.id) === i)
         .slice(0, 20)
         .map(r => ({ type: r.type, id: String(r.id), label: String(r.label ?? '').slice(0, 120) })),
-      ...(a.stats ? { stats: a.stats } : {})
+      ...(a.stats ? { stats: a.stats } : {}),
+      ...(a.action?.skillId ? { action: { label: String(a.action.label || '运行').slice(0, 20), skillId: String(a.action.skillId), messageId: a.action.messageId ?? null } } : {})
     }
     this.db
-      .prepare('INSERT INTO agent_activity (id, at, source, title, detail, refs_json, stats_json) VALUES (?,?,?,?,?,?,?)')
-      .run(row.id, row.at, row.source, row.title, row.detail ?? null, JSON.stringify(row.refs ?? []), row.stats ? JSON.stringify(row.stats) : null)
+      .prepare('INSERT INTO agent_activity (id, at, source, title, detail, refs_json, stats_json, action_json) VALUES (?,?,?,?,?,?,?,?)')
+      .run(row.id, row.at, row.source, row.title, row.detail ?? null, JSON.stringify(row.refs ?? []), row.stats ? JSON.stringify(row.stats) : null, row.action ? JSON.stringify(row.action) : null)
     this.db.prepare(`DELETE FROM agent_activity WHERE id NOT IN (SELECT id FROM agent_activity ORDER BY at DESC LIMIT ${KEEP})`).run()
     return row
   }
@@ -69,7 +76,13 @@ export class ActivityStore {
       } catch {
         /* ignore */
       }
-      return { id: r.id, at: Number(r.at), source: r.source, title: r.title, detail: r.detail ?? null, refs, ...(stats ? { stats } : {}) }
+      let action: AgentActivity['action'] = null
+      try {
+        action = r.action_json ? JSON.parse(r.action_json) : null
+      } catch {
+        /* ignore */
+      }
+      return { id: r.id, at: Number(r.at), source: r.source, title: r.title, detail: r.detail ?? null, refs, ...(stats ? { stats } : {}), ...(action ? { action } : {}) }
     })
   }
 

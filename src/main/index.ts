@@ -538,6 +538,8 @@ async function bootstrap() {
       const b = collectMeetingTodo(mailStore, ins)
       // 财务中心：账单 / 订阅 / 订单 / 企业往来自动收集（排队异步，幂等）
       finance?.onInsight(ins)
+      // 事件触发技能：实时新到的邮件命中发票 / 行程变更等事件 → 自动运行对应技能
+      jobs?.events.onInsight(ins)
       if (a || b) {
         broadcast({ type: 'todos-changed' })
         notifyLocalChange()
@@ -574,6 +576,8 @@ async function bootstrap() {
       },
       arrived: (accountId, messageId, ruleActions) => {
         void handleArrival(accountId, messageId, ruleActions).catch(err => console.error('[rules]', err))
+        // 事件触发技能：登记「实时到达」（回填 / 初始同步不走这里，不会触发）；须在 understand.onArrival 之前
+        jobs?.events.markArrival(messageId)
         // 邮件理解：新到收件箱邮件排入后台 AI 队列（启发式结果按需即时计算）
         try {
           understand.onArrival(messageId)

@@ -101,6 +101,7 @@ export function todaySummary(items: AgentActivity[], now = Date.now()): string |
   if (sum.projectHints) parts.push(`发现 ${sum.projectHints} 个项目线索`)
   if (sum.archived) parts.push(`归档 ${sum.archived} 封旧邮件`)
   if (sum.skills) parts.push(`跑了 ${sum.skills} 次技能`)
+  if (sum.events) parts.push(`处理 ${sum.events} 封事件邮件`)
   if (sum.brief) parts.push('生成每日简报')
   return parts.length ? parts.join('、') : null
 }

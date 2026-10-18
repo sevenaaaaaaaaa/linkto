@@ -26,6 +26,7 @@ import { addMessageToFinance } from '../lib/finance'
 import { goView } from '../lib/route'
 import { Markdown, markdownToHtml } from '../components/Markdown'
 import { ProjectStrip, projectMenuItems } from './projects/ProjectBits'
+import { EventStrip } from './agent/EventStrip'
 import { useProjectIndex } from '../lib/projects'
 
 interface AIState {
@@ -727,6 +728,7 @@ export function Reader() {
 
       <ProjectStrip msg={msg} />
       <FinanceStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
+      <EventStrip messageId={msg.id} />
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

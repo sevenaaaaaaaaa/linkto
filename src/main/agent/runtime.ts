@@ -9,6 +9,7 @@ import { aiReady, ToolsUnsupportedError, type AIService, type AIToolMessage, typ
 import { AGENT_HEADLESS, AGENT_JSON_PROTOCOL, AGENT_OUTPUT_MODE, AGENT_RUNTIME, AGENT_WRAP_UP } from '../ai/prompts'
 import { BUILTIN_SKILLS } from './skills-catalog'
 import { logActivity } from './hooks'
+import { sanitizeTriggers } from './events'
 import { buildTools, fmtTime, toolInfo, toolListText, ToolError, type AgentTool, type ToolDeps } from './tools'
 import {
   AGENT_LIMITS,
@@ -68,7 +69,7 @@ const HISTORY_TURNS = 10
 
 interface SkillStoreData {
   custom: AgentSkill[]
-  overrides: Record<string, Pick<AgentSkill, 'pinned' | 'schedule' | 'autoApprove'>>
+  overrides: Record<string, Pick<AgentSkill, 'pinned' | 'schedule' | 'autoApprove' | 'triggers'>>
 }
 
 export class AgentRuntime {
@@ -133,7 +134,7 @@ export class AgentRuntime {
     return this.skills().find(s => s.id === id) ?? null
   }
 
-  /** 内置技能只保存 pinned / schedule / autoApprove 覆盖；其余为自定义技能的新建 / 更新 */
+  /** 内置技能只保存 pinned / schedule / autoApprove / triggers 覆盖；其余为自定义技能的新建 / 更新 */
   saveSkill(input: AgentSkill): AgentSkill {
     const data = this.skillData()
     const known = new Set(this.tools.map(t => t.name))
@@ -143,7 +144,9 @@ export class AgentRuntime {
       data.overrides[builtin.id] = {
         pinned: !!input.pinned,
         schedule: input.schedule ?? null,
-        autoApprove: clean(input.autoApprove)?.filter(n => this.tools.find(t => t.name === n)?.risk === 'write')
+        autoApprove: clean(input.autoApprove)?.filter(n => this.tools.find(t => t.name === n)?.risk === 'write'),
+        // 事件触发：传了才覆盖（不传时保留之前的设置 / 内置默认）
+        ...(Array.isArray(input.triggers) ? { triggers: sanitizeTriggers(input.triggers) } : data.overrides[builtin.id]?.triggers ? { triggers: data.overrides[builtin.id].triggers } : {})
       }
       this.deps.appStore.set(SKILLS_KEY, data)
       this.changed()
@@ -159,6 +162,7 @@ export class AgentRuntime {
       instructions: String(input.instructions ?? '').slice(0, 8000),
       tools: clean(input.tools),
       autoApprove: clean(input.autoApprove)?.filter(n => this.tools.find(t => t.name === n)?.risk === 'write'),
+      triggers: sanitizeTriggers(input.triggers),
       builtin: false,
       updatedAt: Date.now()
     }

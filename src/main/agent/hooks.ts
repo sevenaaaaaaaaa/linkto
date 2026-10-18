@@ -69,6 +69,15 @@ export async function listSkillsForSchedule(): Promise<AgentSkill[]> {
   return (list ?? []).filter(s => !!s?.schedule && !!s.schedule.every)
 }
 
+/** 全部技能（事件触发按 triggers 匹配；未注册来源时退回内置技能目录） */
+export async function listAllSkills(): Promise<AgentSkill[]> {
+  try {
+    return (lister ? await lister() : BUILTIN_SKILLS) ?? []
+  } catch {
+    return BUILTIN_SKILLS
+  }
+}
+
 // ---------- 附件正文读取（附件模块注册；事件触发 / 会后闭环 / 财务核对 / Agent 工具读取） ----------
 
 export type AttachmentTextReader = (attachmentId: string, maxChars?: number) => Promise<string | null>

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSkills, OUTPUT_LABEL } from '../../lib/agent-skills'
 import { SKILL_CATEGORIES } from '@shared/agent-skills'
+import { EVENT_KINDS, EVENT_LABEL } from '@shared/agent-events'
+import { useMail } from '../../stores/mail'
 import { IconClose, IconPlus, IconSave, IconTrash } from '../../components/icons'
-import type { AgentDomain, AgentSkill, AgentSkillParam, AgentToolInfo, AgentToolRisk } from '@shared/types'
+import type { AgentDomain, AgentEventKind, AgentSkill, AgentSkillParam, AgentSkillTrigger, AgentToolInfo, AgentToolRisk } from '@shared/types'
 import { btn, btnStyle, btnPrimary, btnPrimaryStyle, Chip, Seg } from '../finance/ui'
 import { SkillIcon, SKILL_ICON_CHOICES, fieldCls, fieldSty } from './skill-ui'
 
@@ -29,7 +31,7 @@ function newId() {
 }
 
 /**
- * 技能编辑器：新建 / 编辑自定义技能；内置技能只能改钉住、定时与预授权（说明只读，可复制为自定义后修改）。
+ * 技能编辑器：新建 / 编辑自定义技能；内置技能只能改钉住、定时、事件触发与预授权（说明只读，可复制为自定义后修改）。
  * 保存走 agentSaveSkill。
  */
 export function SkillEditor(props: { skill: AgentSkill | null; copy?: boolean; onClose(): void }) {
@@ -41,7 +43,7 @@ export function SkillEditor(props: { skill: AgentSkill | null; copy?: boolean; o
   const [draft, setDraft] = useState<AgentSkill>(() =>
     src
       ? props.copy
-        ? { ...structuredClone(src), id: newId(), name: `${src.name}（我的）`, builtin: false, pinned: false, schedule: null, category: src.category }
+        ? { ...structuredClone(src), id: newId(), name: `${src.name}（我的）`, builtin: false, pinned: false, schedule: null, category: src.category, triggers: (src.triggers ?? []).map(t => ({ ...t, enabled: false })) }
         : structuredClone(src)
       : { id: newId(), name: '', category: '自定义', description: '', instructions: '', params: [], output: 'report', icon: 'Sparkles', builtin: false, pinned: false, schedule: null }
   )
@@ -115,7 +117,7 @@ export function SkillEditor(props: { skill: AgentSkill | null; copy?: boolean; o
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
           {builtinLocked && (
             <div className="px-3 py-2 rounded-[var(--r-sm)] text-xs leading-relaxed" style={{ background: 'var(--bg-soft)', color: 'var(--muted)' }}>
-              内置技能的说明与参数不可修改；这里可以设置钉住、定时运行和预授权。想改说明，请用「复制为自定义」。
+              内置技能的说明与参数不可修改；这里可以设置钉住、定时运行、事件触发和预授权。想改说明，请用「复制为自定义」。
             </div>
           )}
 
@@ -318,6 +320,11 @@ export function SkillEditor(props: { skill: AgentSkill | null; copy?: boolean; o
             </div>
           </Field>
 
+          {/* 事件触发 */}
+          <Field label="事件触发" hint="新邮件命中事件时，以这封邮件为上下文在后台运行；写操作只列为建议，结果写进活动记录">
+            <TriggerEditor triggers={draft.triggers ?? []} onChange={triggers => set({ triggers })} />
+          </Field>
+
           <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--fg)' }}>
             <input type="checkbox" checked={!!draft.pinned} onChange={e => set({ pinned: e.target.checked })} />
             钉在侧栏 Agent 下
@@ -395,5 +402,64 @@ function OptionsInput(props: { options: { value: string; label: string }[]; disa
       className={`${fieldCls} !h-7 !text-xs`}
       style={fieldSty}
     />
+  )
+}
+
+/** 事件触发设置：事件多选（开 / 关）+ 每个开着的事件一行过滤条件与通知开关 */
+function TriggerEditor(props: { triggers: AgentSkillTrigger[]; onChange(t: AgentSkillTrigger[]): void }) {
+  const accounts = useMail(st => st.accounts)
+  const list = props.triggers
+  const on = (e: AgentEventKind) => list.some(t => t.event === e && t.enabled)
+  const toggle = (e: AgentEventKind) => {
+    const cur = list.find(t => t.event === e)
+    if (cur) props.onChange(list.map(t => (t.event === e ? { ...t, enabled: !t.enabled } : t)))
+    else props.onChange([...list, { event: e, enabled: true, notify: false, match: null }])
+  }
+  const patch = (e: AgentEventKind, p: Partial<AgentSkillTrigger>) => props.onChange(list.map(t => (t.event === e ? { ...t, ...p } : t)))
+  const setMatch = (t: AgentSkillTrigger, k: 'from' | 'subject' | 'accountId', v: string) => patch(t.event, { match: { ...(t.match ?? {}), [k]: v || null } })
+  const active = list.filter(t => t.enabled)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="触发事件">
+        {EVENT_KINDS.map(e => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => toggle(e)}
+            aria-pressed={on(e)}
+            className="h-7 px-2 rounded-[var(--r-sm)] text-xs border"
+            style={on(e) ? { background: 'var(--selected)', borderColor: 'var(--border-strong)', color: 'var(--accent-ink)' } : { background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--muted)' }}
+          >
+            {EVENT_LABEL[e]}
+          </button>
+        ))}
+      </div>
+      {!active.length && <div className="text-xs" style={{ color: 'var(--faint)' }}>没有开启的触发，只在手动运行或定时时执行。</div>}
+      {active.map(t => {
+        const needCond = t.event === 'custom' && !(t.match?.from || t.match?.subject || t.match?.accountId)
+        return (
+          <div key={t.event} className="rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 flex flex-col gap-2" style={{ background: 'var(--surface-strong)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold" style={{ color: 'var(--fg)' }}>{EVENT_LABEL[t.event]}</span>
+              <span className="flex-1" />
+              <label className="flex items-center gap-1 text-2xs whitespace-nowrap" style={{ color: 'var(--muted)' }} title="运行完发系统通知（受通知总开关与免打扰约束）">
+                <input type="checkbox" checked={!!t.notify} onChange={e => patch(t.event, { notify: e.target.checked })} /> 运行完通知我
+              </label>
+            </div>
+            <div className="grid grid-cols-[1fr_1fr_130px] gap-2">
+              <input value={t.match?.from ?? ''} onChange={e => setMatch(t, 'from', e.target.value)} placeholder="发件人包含（可选）" className={`${fieldCls} !h-7 !text-xs`} style={fieldSty} />
+              <input value={t.match?.subject ?? ''} onChange={e => setMatch(t, 'subject', e.target.value)} placeholder="主题包含（可选）" className={`${fieldCls} !h-7 !text-xs`} style={fieldSty} />
+              <select value={t.match?.accountId ?? ''} onChange={e => setMatch(t, 'accountId', e.target.value)} className={`${fieldCls} !h-7 !text-xs`} style={fieldSty} aria-label="限定账户">
+                <option value="">所有账户</option>
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.email}</option>
+                ))}
+              </select>
+            </div>
+            {needCond && <div className="text-2xs" style={{ color: 'var(--warn-ink)' }}>自定义条件至少填一个过滤条件，否则不会触发。</div>}
+          </div>
+        )
+      })}
+    </div>
   )
 }

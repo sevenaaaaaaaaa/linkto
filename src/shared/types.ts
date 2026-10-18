@@ -1190,7 +1190,7 @@ export interface AgentJobInfo {
 export interface AgentActivity {
   id: string
   at: number
-  source: 'job' | 'skill' | 'chat' | 'onboarding'
+  source: 'job' | 'skill' | 'chat' | 'onboarding' | 'event'
   title: string
   detail?: string | null
   refs?: AgentRef[]
@@ -1338,4 +1338,11 @@ export interface AttachmentTextInfo {
   chars: number
   extractedAt: number
   error?: string | null
+}
+
+// ---------- 事件触发 · 会后跟进（追加的可选字段，接口声明合并） ----------
+
+export interface AgentActivity {
+  /** 活动记录上的一键动作：以某封邮件为上下文打开 Agent 对话运行技能（如「刚结束的会：整理成待办」） */
+  action?: { label: string; skillId: string; messageId?: string | null } | null
 }
