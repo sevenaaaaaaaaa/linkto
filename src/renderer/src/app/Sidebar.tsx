@@ -216,11 +216,12 @@ export function Sidebar() {
       <div className="px-2 pb-2">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
+          title="命令面板：执行命令、跳转视图，或把文字交给邮件搜索 / Agent（⌘K）；只搜邮件用列表上方的搜索框（⌘F）"
           className="w-full h-8 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] text-sm border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors"
           style={{ background: 'var(--surface-strong)', color: 'var(--faint)' }}
         >
           <IconSearch width={14} height={14} />
-          <span className="flex-1 text-left">搜索或直接提问</span>
+          <span className="flex-1 text-left">命令、跳转与提问</span>
           <kbd className="text-2xs" style={{ fontFamily: 'var(--font-mono)' }}>⌘K</kbd>
         </button>
       </div>

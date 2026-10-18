@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMail, type Scope } from '../stores/mail'
 import { cycleTheme, themeLabel } from '../lib/theme'
-import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh } from '../components/icons'
+import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh, IconRobot } from '../components/icons'
+import { useSearch } from '../stores/search'
+import { askAgent } from '../lib/agent-ask'
 import type { MessageSummary } from '@shared/types'
 
 interface Command {
@@ -19,7 +21,7 @@ interface Command {
 const emit = (name: string) => window.dispatchEvent(new CustomEvent(name))
 const listAction = (action: string) => window.dispatchEvent(new CustomEvent('ms:list-action', { detail: action }))
 
-/** ⌘K 命令面板 —— ThirdC 式全局快速操作：导航 / 动作 / 邮件直达 */
+/** ⌘K 命令面板 —— 全局快速操作：命令 / 跳转 / 把文本交给列表搜索或 Agent / 邮件直达 */
 export function CommandPalette(props: { open: boolean; onClose(): void }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
@@ -45,7 +47,8 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     }
     let alive = true
     void api.searchMessages(q, 6).then(r => {
-      if (alive) setResults(r)
+      // 兼容旧主进程返回 { items } 的情况，避免面板崩溃
+      if (alive) setResults(Array.isArray(r) ? r : ((r as unknown as { items?: MessageSummary[] })?.items ?? []))
     })
     return () => {
       alive = false
@@ -138,9 +141,26 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     return commands.filter(c => (c.label + ' ' + (c.keywords ?? '')).toLowerCase().includes(q))
   }, [commands, query])
 
+  // 输入的文本可直接带到列表搜索（关键词 / AI）或交给 Agent 提问
+  const handoff = useMemo<Command[]>(() => {
+    const q = query.trim()
+    if (!q) return []
+    const toList = (ai: boolean) => () => {
+      props.onClose()
+      goView('mail')
+      void useSearch.getState().run(q, ai ? { ai: true } : { commit: true })
+    }
+    return [
+      { id: 'search-list', group: '搜索与提问', label: `在邮件列表中搜索「${q}」`, icon: <IconSearch width={14} height={14} />, run: toList(false) },
+      { id: 'search-ai', group: '搜索与提问', label: `AI 搜索「${q}」`, icon: <IconSparkles width={14} height={14} />, run: toList(true) },
+      { id: 'ask-agent', group: '搜索与提问', label: `问 Agent：${q}`, icon: <IconRobot width={14} height={14} />, run: () => { props.onClose(); askAgent(q) } }
+    ]
+  }, [query, props.onClose])
+
   const items = useMemo<Command[]>(
     () => [
       ...filtered,
+      ...handoff,
       ...results.map(r => ({
         id: `msg-${r.id}`,
         group: '邮件',
@@ -152,7 +172,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
         }
       }))
     ],
-    [filtered, results, props.onClose]
+    [filtered, handoff, results, props.onClose]
   )
 
   useEffect(() => setCursor(0), [query])
@@ -196,9 +216,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
           <IconSearch width={15} height={15} style={{ color: 'var(--muted)' }} />
           <input
             ref={inputRef}
+            data-search-input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="搜索命令、视图，或直接输入关键词找邮件…"
+            placeholder="输入命令、跳转视图，或输入文字去搜邮件 / 问 Agent…"
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-[var(--faint)]"
           />
           <kbd className="text-2xs px-1.5 py-0.5 rounded-md border border-[var(--border)] font-[var(--font-mono)]" style={{ color: 'var(--faint)' }}>
@@ -206,7 +227,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
           </kbd>
         </div>
         <div ref={listRef} className="max-h-[46vh] overflow-y-auto py-1.5">
-          {items.length === 0 && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--faint)' }}>没有匹配的命令</div>}
+          {items.length === 0 && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--faint)' }}>输入命令名称、视图，或任意文字去搜索 / 提问</div>}
           {items.map((c, i) => {
             const showGroup = c.group !== lastGroup
             lastGroup = c.group

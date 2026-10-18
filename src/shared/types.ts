@@ -682,6 +682,21 @@ export interface NLQuery {
   before?: string | null
   /** 无法结构化的部分退回关键词检索 */
   fallbackText?: string | null
+  // —— 以下为本地搜索语法（from: / to: / is: / in: …）追加的字段，全部可选，AI 编译结果不会填 ——
+  /** 多个关键词：每个都要命中（AND），各自走 FTS */
+  terms?: string[] | null
+  /** 收件人 / 抄送关键词（地址或姓名） */
+  to?: string | null
+  /** 只看已加旗标 */
+  flaggedOnly?: boolean | null
+  /** 限定账户 */
+  accountId?: string | null
+  /** 限定文件夹（任一命中即可） */
+  folderIds?: string[] | null
+  /** true = 搜全部文件夹（默认只搜收件箱） */
+  allFolders?: boolean | null
+  /** 返回条数上限（默认 60，最多 500） */
+  limit?: number | null
 }
 
 /** 待跟进邮件的 AI 判断 */

@@ -727,6 +727,10 @@ button {
   outline: none;
   box-shadow: var(--focus-ring);
 }
+/* 搜索框：焦点环画在外层容器（focus-within），输入框本身不再叠一层 */
+input[data-search-input]:focus-visible {
+  box-shadow: none;
+}
 
 @keyframes fade-in {
   from {

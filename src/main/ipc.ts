@@ -706,11 +706,8 @@ export function registerIpc(ctx: AppContext) {
       for (const id of ids) await moveOrDelete(id, s.deleteBehavior === 'perm' ? 'perm' : 'trash')
     },
 
-    searchMessages: ([q, limit]: [string, number]) => {
-      const ids = store.searchIds(q, limit)
-      const page = store.getMessages({ scope: 'search', search: q, limit, offset: 0 })
-      return page
-    },
+    // 契约是 MessageSummary[]（命令面板「邮件直达」）；此前返回整页对象导致面板渲染崩溃
+    searchMessages: ([q, limit]: [string, number]) => store.getMessages({ scope: 'search', search: q, limit, offset: 0 }).items,
 
     getAttachment: ([id]: [string]) => {
       const a = store.getAttachment(id)

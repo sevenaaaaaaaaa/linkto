@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AccountWithStatus, Folder, ListSort, MessageSummary, ScopeKind } from '@shared/types'
+import type { AccountWithStatus, Folder, ListSort, MessageSummary, NLQuery, ScopeKind } from '@shared/types'
 import { api } from '../lib/api'
 import { getPrefs } from '../lib/prefs'
 
@@ -57,6 +57,8 @@ interface MailState {
   syncProgress: Record<string, string>
   /** AI 自然语言搜索的结果集（非 null 时列表由它驱动） */
   nlResults: MessageSummary[] | null
+  /** 搜索框生成的结构化查询（关键词 / 语法 / AI）；scope=search 且非 null 时列表由它驱动 */
+  searchSpec: NLQuery | null
   /** 账户栏选中的账户（null = 全部账户）：收件箱切到该账户，旗标/置顶/稍后等视图按它过滤 */
   accountCtx: string | null
   /** 逐封处理模式：一次只看一封「需要你处理」的邮件，用大按钮快速清空 */
@@ -86,6 +88,9 @@ interface MailState {
 /** 这些全局视图在选中某个账户时只显示该账户的邮件 */
 const ACCOUNT_FILTERED_SCOPES = new Set<ScopeKind>(['flagged', 'pinned', 'snoozed', 'followup', 'unread', 'newsletter', 'category', 'screener'])
 
+/** 列表加载序号：连续触发（如边输边搜）时只采用最后一次的结果 */
+let loadSeq = 0
+
 export const useMail = create<MailState>((set, get) => ({
   accounts: [],
   folders: [],
@@ -101,6 +106,7 @@ export const useMail = create<MailState>((set, get) => ({
   lastClickedId: null,
   syncProgress: {},
   nlResults: null,
+  searchSpec: null,
   accountCtx: null,
   triage: false,
   rail: (() => {
@@ -122,14 +128,22 @@ export const useMail = create<MailState>((set, get) => ({
 
   setScope: scope => {
     const keepSearch = scope.kind === 'search'
-    set({ scope, messages: [], selectedId: null, selectedIds: new Set(), searchQuery: keepSearch ? get().searchQuery : '' })
+    set({ scope, messages: [], selectedId: null, selectedIds: new Set(), searchQuery: keepSearch ? get().searchQuery : '', searchSpec: keepSearch ? get().searchSpec : null })
     void get().loadMessages()
   },
 
   loadMessages: async () => {
-    const { scope, searchQuery } = get()
+    const { scope, searchQuery, searchSpec } = get()
+    const seq = ++loadSeq
     set({ loading: true })
     try {
+      // 搜索框的结构化查询：走 nlSearch（FTS + 语法条件）
+      if (scope.kind === 'search' && searchSpec) {
+        const page = await api.nlSearch(searchSpec)
+        if (seq !== loadSeq) return
+        set({ messages: page.items, total: page.total, loading: false })
+        return
+      }
       const page = await api.getMessages({
         scope: scope.kind,
         folderId: scope.folderId,
@@ -139,11 +153,12 @@ export const useMail = create<MailState>((set, get) => ({
         limit: 100,
         offset: 0
       })
+      if (seq !== loadSeq) return
       const ctx = get().accountCtx
       const items = ctx && ACCOUNT_FILTERED_SCOPES.has(scope.kind) ? page.items.filter(m => m.accountId === ctx) : page.items
       set({ messages: items, total: items.length === page.items.length ? page.total : items.length, loading: false })
     } catch {
-      set({ loading: false })
+      if (seq === loadSeq) set({ loading: false })
     }
   },
 
@@ -176,7 +191,8 @@ export const useMail = create<MailState>((set, get) => ({
 
   clearSelection: () => set({ selectedIds: new Set(), selectedId: null }),
 
-  setSearch: q => set({ searchQuery: q }),
+  // 外部直接设关键词（如「声呐」）：走旧的 getMessages 搜索路径，清掉搜索框的结构化查询
+  setSearch: q => set({ searchQuery: q, searchSpec: null }),
 
   setSort: s => {
     localStorage.setItem(SORT_KEY, s)

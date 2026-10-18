@@ -570,10 +570,38 @@ export class MailStore {
     category?: string | null; isNewsletter?: boolean | null; hasAttachment?: boolean | null
     unreadOnly?: boolean | null; withinDays?: number | null; after?: string | null; before?: string | null
     fallbackText?: string | null
+    terms?: string[] | null; to?: string | null; flaggedOnly?: boolean | null
+    accountId?: string | null; folderIds?: string[] | null; allFolders?: boolean | null; limit?: number | null
   }, limit = 60): MessagePage {
-    const where: string[] = ["m.folder_path = 'INBOX'"]
+    if (q.limit && q.limit > 0) limit = Math.min(Math.floor(q.limit), 500)
+    // 默认只搜收件箱；本地搜索语法可放开到全部文件夹或指定文件夹
+    const where: string[] = q.allFolders || q.folderIds?.length ? [] : ["m.folder_path = 'INBOX'"]
     const params: (string | number)[] = []
     const now = Date.now()
+    if (q.accountId) {
+      where.push('m.account_id = ?')
+      params.push(q.accountId)
+    }
+    if (q.folderIds?.length) {
+      where.push(`m.folder_id IN (${q.folderIds.map(() => '?').join(',')})`)
+      params.push(...q.folderIds)
+    }
+    if (q.to) {
+      where.push("(lower(COALESCE(m.to_json,'')) LIKE ? OR lower(COALESCE(m.cc_json,'')) LIKE ?)")
+      const p = `%${q.to.toLowerCase()}%`
+      params.push(p, p)
+    }
+    if (q.flaggedOnly) where.push("m.flags LIKE '%\\Flagged%'")
+    // 多关键词：逐个走 FTS（searchIds 内部失败时回退 LIKE），全部命中才算
+    for (const term of (q.terms ?? []).map(t => t.trim()).filter(Boolean)) {
+      const ids = this.searchIds(term, 2000)
+      if (!ids.length) {
+        where.push('0')
+        break
+      }
+      where.push(`m.id IN (${ids.map(() => '?').join(',')})`)
+      params.push(...ids)
+    }
     where.push(`(m.snoozed_until IS NULL OR m.snoozed_until <= ${now})`)
     where.push(`NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`)
     if (q.sender) {

@@ -12,6 +12,8 @@ import { noteMouseAction } from './Guidance'
 import { usePrefs, setPrefs } from '../lib/prefs'
 import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
+import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './MailSearch'
+import { useSearch } from '../stores/search'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -63,14 +65,22 @@ function RowSlot(props: { checked: boolean; show: boolean; unread: boolean; onTo
 function GistLine(props: { msg: MessageSummary; insight?: MailInsight }) {
   const { insight, msg } = props
   const preview = usePrefs().rowPreview
+  const terms = useSearchTerms()
   if (preview === 'none') return null
-  if (preview === 'snippet' || !insight?.gist) return <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
+  // 搜索结果：摘要里有命中词时优先展示摘要，让用户看到「为什么搜到它」
+  const snippetHit = terms.length > 0 && terms.some(t => msg.snippet?.toLowerCase().includes(t.toLowerCase()))
+  if (preview === 'snippet' || !insight?.gist || snippetHit)
+    return (
+      <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>
+        <Hl text={msg.snippet} terms={terms} />
+      </div>
+    )
   const [pre, key, post] = splitKey(insight.gist, insight.gistKey)
   return (
     <div className="mt-0.5 text-xs leading-[18px] line-clamp-2" style={{ color: 'var(--muted)' }} title={insight.source === 'ai' ? 'AI 要点' : '要点'}>
-      {pre}
+      <Hl text={pre} terms={terms} />
       {key && <mark className="hl">{key}</mark>}
-      {post}
+      <Hl text={post} terms={terms} />
     </div>
   )
 }
@@ -134,6 +144,7 @@ function MessageRow(props: {
 
   const multi = useMultiMode()
   const checked = multi && props.checked
+  const terms = useSearchTerms()
   return (
     <div
       onClick={props.onSelect}
@@ -159,7 +170,7 @@ function MessageRow(props: {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 h-[18px]">
           <span className={`truncate text-sm ${msg.unread ? 'font-semibold' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
-            {displayName(msg.from) || '（未知发件人）'}
+            <Hl text={displayName(msg.from) || '（未知发件人）'} terms={terms} />
           </span>
           <RowMeta msg={msg} />
           {!(hover && !multi) && (
@@ -167,7 +178,7 @@ function MessageRow(props: {
           )}
         </div>
         <div className={`mt-0.5 truncate text-sm ${msg.unread ? 'font-medium' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
-          {msg.subject || '（无主题）'}
+          <Hl text={msg.subject || '（无主题）'} terms={terms} />
         </div>
         <GistLine msg={msg} insight={props.insight} />
       </div>
@@ -234,6 +245,7 @@ function ThreadRow(props: {
   const others = msgs.length - 1
   const participants = [...new Set(msgs.map(m => displayName(m.from)))]
   const threadMulti = useMultiMode()
+  const terms = useSearchTerms()
 
   return (
     <div>
@@ -262,10 +274,10 @@ function ThreadRow(props: {
             <span className="ml-auto shrink-0 text-xs tabular-nums" style={{ color: 'var(--faint)' }}>{fmtDate(latest.date)}</span>
           </div>
           <div className={`mt-0.5 truncate text-sm ${latest.unread ? 'font-medium' : ''}`} style={{ color: latest.unread ? 'var(--fg)' : 'var(--muted)' }}>
-            {latest.subject || '（无主题）'}
+            <Hl text={latest.subject || '（无主题）'} terms={terms} />
           </div>
           <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>
-            {expanded ? '点击收起会话' : latest.snippet}
+            {expanded ? '点击收起会话' : <Hl text={latest.snippet} terms={terms} />}
           </div>
         </div>
       </div>
@@ -293,9 +305,8 @@ function ThreadRow(props: {
 }
 
 export function MessageList() {
-  const { scope, messages, total, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, setSearch, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
+  const { scope, messages, total, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
   const { accounts, folders } = useMail()
-  const [searchLocal, setSearchLocal] = useState(searchQuery)
   const [classifying, setClassifying] = useState(false)
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [moveMenu, setMoveMenu] = useState(false)
@@ -504,7 +515,12 @@ export function MessageList() {
   const [openBundle, setOpenBundle] = useState<string | null>(null)
   const [fyiOpen, setFyiOpen] = useState(() => localStorage.getItem('ms_fyi_open') !== '0')
 
-  useEffect(() => setSearchLocal(searchQuery), [searchQuery])
+  // 搜索会话与列表视图对齐：被其他入口切走 = 结束会话；外部关键词搜索（如声呐）同步到输入框
+  const searchSpec = useMail(s => s.searchSpec)
+  useEffect(() => {
+    if (scope.kind !== 'search') useSearch.getState().detach()
+    else if (!searchSpec && searchQuery) useSearch.setState({ input: searchQuery })
+  }, [scope.kind, searchSpec, searchQuery])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
 
   // 我的视图应用（Sidebar 派发）：还原过滤 chip 与重力滑块
@@ -528,44 +544,6 @@ export function MessageList() {
     return () => window.removeEventListener('ms:snooze-menu', open)
   }, [])
 
-  const runSearch = () => {
-    if (!searchLocal.trim()) return
-    setSearch(searchLocal.trim())
-    useMail.getState().setScope({ kind: 'search', title: `搜索：${searchLocal.trim()}` })
-  }
-
-  // ---- AI 自然语言搜索：问句编译成结构化查询，结果直接替换当前列表 ----
-  const [aiSearching, setAiSearching] = useState(false)
-  const [aiQueryDesc, setAiQueryDesc] = useState<string | null>(null)
-  const nlResults = useMail(s => s.nlResults)
-  const runAiSearch = async () => {
-    const q = searchLocal.trim()
-    if (!q || aiSearching) return
-    setAiSearching(true)
-    setAiQueryDesc(null)
-    try {
-      const res = await api.aiComposeQuery(q)
-      if (!res.ok) {
-        window.dispatchEvent(new CustomEvent('ms:toast', { detail: res.error ?? 'AI 搜索失败' }))
-        return
-      }
-      const page = await api.nlSearch(res.query)
-      const parts: string[] = []
-      if (res.query.sender) parts.push(`发件人 ${res.query.sender}`)
-      if (res.query.subject) parts.push(`主题含「${res.query.subject}」`)
-      if (res.query.category) parts.push({ personal: '个人', notification: '通知', newsletter: '订阅', noise: '噪声' }[res.query.category] ?? '')
-      if (res.query.hasAttachment) parts.push('带附件')
-      if (res.query.unreadOnly) parts.push('未读')
-      if (res.query.withinDays) parts.push(`最近 ${res.query.withinDays} 天`)
-      if (res.query.after) parts.push(`${res.query.after} 之后`)
-      if (parts.length === 0 && (res.query.fallbackText || res.query.text)) parts.push(`「${res.query.fallbackText || res.query.text}」`)
-      setAiQueryDesc(parts.filter(Boolean).join(' · ') || '全部收件箱')
-      useMail.setState({ nlResults: page.items, messages: page.items, total: page.total, loading: false, scope: { kind: 'search', title: `AI 搜索 · ${q}` } })
-    } finally {
-      setAiSearching(false)
-    }
-  }
-
   const aiOrganize = async () => {
     setClassifying(true)
     try {
@@ -576,15 +554,7 @@ export function MessageList() {
     }
   }
 
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') runSearch()
-    if (e.key === 'Escape') {
-      setSearch('')
-      setSearchLocal('')
-      if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
-    }
-  }
-
+  const searchActive = useSearch(s => !!s.active) && scope.kind === 'search'
   const allSelected = messages.length > 0 && messages.every(m => selectedIds.has(m.id))
 
   // ---- 收件箱纪律：Snooze / Screener / Split Inbox ----
@@ -787,50 +757,7 @@ export function MessageList() {
   return (
     <div className="surface relative w-[var(--list-w)] min-w-[300px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
       <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
-        <div
-          className="no-drag flex-1 h-7 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2 border border-[var(--border-soft)] transition-shadow focus-within:shadow-[var(--focus-ring)]"
-          style={{ background: 'var(--bg-soft)' }}
-        >
-          <IconSearch width={14} height={14} style={{ color: 'var(--faint)' }} />
-          <input
-            value={searchLocal}
-            onChange={e => setSearchLocal(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') void runAiSearch()
-              if (e.key === 'Escape') {
-                setSearch('')
-                setSearchLocal('')
-                setAiQueryDesc(null)
-                if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
-              }
-            }}
-            data-mail-search
-            placeholder="搜索，或直接提问（⌘F）"
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-[var(--faint)]"
-          />
-          <button
-            onClick={() => void runAiSearch()}
-            disabled={aiSearching || !searchLocal.trim()}
-            title="AI 搜索：用自然语言描述，AI 编译成结构化查询"
-            className="shrink-0 inline-flex items-center disabled:opacity-40"
-            style={{ color: 'var(--accent-strong)' }}
-          >
-            <IconSparkles width={13} height={13} className={aiSearching ? 'spinning' : ''} />
-          </button>
-          {searchLocal && (
-            <button
-              onClick={() => {
-                setSearch('')
-                setSearchLocal('')
-                setAiQueryDesc(null)
-                if (useMail.getState().scope.kind === 'search') useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' })
-              }}
-              style={{ color: 'var(--faint)' }}
-            >
-              <IconClose width={12} height={12} />
-            </button>
-          )}
-        </div>
+        <SearchBox />
       </div>
 
       <div ref={toolbarRef} className="shrink-0 h-[var(--toolbar-h)] flex items-center gap-1 pl-3 pr-2 border-b border-[var(--border-soft)]">
@@ -944,16 +871,7 @@ export function MessageList() {
         </div>
       )}
 
-      {aiQueryDesc && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border-soft)] fade-in" style={{ background: 'var(--accent-soft)' }}>
-          <IconSparkles width={11} height={11} style={{ color: 'var(--accent-strong)' }} />
-          <span className="text-xs truncate" style={{ color: 'var(--accent-strong)' }}>AI 理解为：{aiQueryDesc} · {messages.length} 封</span>
-          <div className="flex-1" />
-          <button onClick={() => { setAiQueryDesc(null); useMail.setState({ nlResults: null }); useMail.getState().setScope({ kind: 'unified', title: '统一收件箱' }) }} className="text-2xs" style={{ color: 'var(--muted)' }}>
-            退出
-          </button>
-        </div>
-      )}
+      {scope.kind === 'search' && <SearchHeader />}
 
       {/* 重力滑块（按需出现）：向右拖 = 重要性引力增强，邮件像液体一样重新沉降 */}
       {(gravityOpen || gravity > 0) && (
@@ -1163,7 +1081,8 @@ export function MessageList() {
             ))}
           </div>
         )}
-        {!loading && !messages.length && (
+        {!loading && !messages.length && searchActive && <SearchEmpty />}
+        {!loading && !messages.length && !searchActive && (
           <div className="p-10 text-center">
             <div className="text-sm" style={{ color: 'var(--muted)' }}>这里还没有邮件</div>
             {(scope.kind === 'unified' || scope.kind === 'category') && (
