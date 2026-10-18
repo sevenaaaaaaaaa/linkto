@@ -334,7 +334,7 @@ export function DropWell(props: { bottom: number }) {
     <div ref={menuRef} className="fixed right-6 z-40" style={{ bottom: props.bottom }}>
       <div
         title="液态投放井：把邮件拖进来，一秒速投到连接器"
-        className={`drop-well relative w-14 h-14 rounded-full liquid-glass flex items-center justify-center cursor-grab active:cursor-grabbing transition-all duration-300 ${hot ? 'drop-well-hot' : ''}`}
+        className={`drop-well relative w-14 h-14 max-[1100px]:w-11 max-[1100px]:h-11 rounded-full liquid-glass flex items-center justify-center cursor-grab active:cursor-grabbing transition-all duration-300 ${hot ? 'drop-well-hot' : ''}`}
       >
         {hot && <span className="ripple-ring" />}
         <IconPlug width={22} height={22} style={{ color: hot ? 'var(--accent)' : 'var(--muted)' }} />

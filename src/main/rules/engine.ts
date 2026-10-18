@@ -24,8 +24,12 @@ function matchField(ctx: RuleEvalContext, field: RuleCondition['field']): string
       return ctx.hasAttachment ? 'yes' : 'no'
     case 'isNewsletter':
       return ctx.isNewsletter ? 'yes' : 'no'
+    case 'ai':
+      return ''
   }
 }
+
+export const hasAiCondition = (r: Rule) => r.conditions.some(c => c.field === 'ai')
 
 function matchCondition(c: RuleCondition, ctx: RuleEvalContext): boolean {
   const actual = matchField(ctx, c.field)
@@ -55,14 +59,39 @@ function matchCondition(c: RuleCondition, ctx: RuleEvalContext): boolean {
   }
 }
 
-/** 返回规则命中的动作列表（未命中返回空） */
+/** 返回规则命中的动作列表（未命中返回空）。含 AI 条件的规则不在这里判断（同步路径不能等模型） */
 export function evalRules(rules: Rule[], ctx: RuleEvalContext): RuleAction[] {
-  const enabled = rules.filter(r => r.enabled).sort((a, b) => a.order - b.order)
+  const enabled = rules.filter(r => r.enabled && !hasAiCondition(r)).sort((a, b) => a.order - b.order)
   for (const rule of enabled) {
     const hit =
       rule.conditions.length > 0 &&
       rule.conditions.every(c => matchCondition(c, ctx))
     if (hit) return rule.actions
+  }
+  return []
+}
+
+/**
+ * 含 AI 条件的规则：普通条件先在本地判断，全部通过后才逐条问 AI（judge 返回是否满足）。
+ * 与普通规则相互独立，同样按顺序取第一条命中。
+ */
+export async function evalAiRules(
+  rules: Rule[],
+  ctx: RuleEvalContext,
+  judge: (criteria: string) => Promise<boolean>
+): Promise<RuleAction[]> {
+  const candidates = rules.filter(r => r.enabled && hasAiCondition(r)).sort((a, b) => a.order - b.order)
+  for (const rule of candidates) {
+    const plain = rule.conditions.filter(c => c.field !== 'ai')
+    if (!plain.every(c => matchCondition(c, ctx))) continue
+    let ok = true
+    for (const c of rule.conditions.filter(c => c.field === 'ai')) {
+      if (!c.value.trim() || !(await judge(c.value.trim()))) {
+        ok = false
+        break
+      }
+    }
+    if (ok) return rule.actions
   }
   return []
 }

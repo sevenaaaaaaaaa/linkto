@@ -6,7 +6,7 @@ import {
   JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE
 } from './prompts'
 import type { MailStore } from '../db'
-import type { AIService } from './service'
+import { aiReady, type AIService } from './service'
 
 const BILL_RE = /(账单|还款|信用卡|扣款|发票|收据|对账单|invoice|statement|payment due|billing)/i
 const MEETING_RE = /(会议|日程|日历邀请|议程|邀请你参加|meeting invitation|calendar invite|zoom|teams meet|腾讯会议|飞书会议)/i
@@ -53,9 +53,7 @@ export class InsightsService {
   ) {}
 
   private ready(): boolean {
-    const s = this.deps.getAISettings()
-    // builtin-local 走内置本地引擎，无需 API Key
-    return s.enabled && (s.baseURL === 'builtin-local' || !!s.apiKey)
+    return aiReady(this.deps.getAISettings())
   }
 
   private async json<T>(system: string, user: string): Promise<T> {
