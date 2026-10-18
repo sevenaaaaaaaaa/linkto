@@ -1,8 +1,16 @@
-import { IconCloud } from '../../components/icons'
+import { IconCheckSquare, IconClock, IconCloud, IconRefresh } from '../../components/icons'
 import { useEffect, useState } from 'react'
 import { api, useMailEvent } from '../../lib/api'
-import { SectionTitle, Toggle } from './GeneralTab'
-import type { CloudDriveConfig, CloudDriveKind, ConnectorInstance, ConnectorManifest } from '@shared/types'
+import { SectionTitle, Select, Toggle } from './GeneralTab'
+import type {
+  CloudDriveConfig,
+  CloudDriveKind,
+  ConnectorInstance,
+  ConnectorManifest,
+  TodoIntegrationStatus,
+  TodoProvider,
+  TodoSyncDirection
+} from '@shared/types'
 
 /** 集成页：连接器卡片式管理（对齐 Canary 集成交互），OpenFlow 家族产品将从这里接入 */
 export function IntegrationsTab() {
@@ -629,6 +637,288 @@ function McpSnippet(props: { label: string; text: string; onCopy(): void }) {
       <pre className="text-xs bg-zinc-50 rounded-lg px-3 py-2 border border-ink/[0.06] font-mono leading-relaxed whitespace-pre-wrap break-all text-zinc-700 select-text">
         {props.text}
       </pre>
+    </div>
+  )
+}
+
+// ================= 待办与日历同步 =================
+
+const DIRECTION_OPTIONS: { value: TodoSyncDirection; label: string }[] = [
+  { value: 'two-way', label: '双向' },
+  { value: 'export', label: '只导出到外部' },
+  { value: 'import', label: '只从外部导入' }
+]
+
+const PROVIDER_DESC: Record<TodoProvider, string> = {
+  'apple-reminders': 'macOS 提醒事项：选一个清单双向同步，完成、删除两边互通，iPhone 上也能看到。',
+  'apple-calendar': '把有固定时间的待办（会议、约好的电话）写进 macOS 日历；也可把其他日历的日程当作忙碌时段给排程避让。',
+  'google-tasks': '用 Gmail 账户授权 Google Tasks，选一个任务列表同步（Google 只保存截止日期，不含具体时刻）。',
+  'google-calendar': '把有固定时间的待办写进 Google 日历；可读取日程作为忙碌时段。',
+  'ms-todo': '用 Outlook / Microsoft 365 账户授权 Microsoft To Do，选一个列表同步，子任务对应「步骤」。',
+  'ms-calendar': '把有固定时间的待办写进 Outlook 日历；可读取日程作为忙碌时段。'
+}
+
+/** 相对时间：刚刚 / N 分钟前 / 今天 HH:mm / M月D日 HH:mm */
+function fmtSyncTime(ts: number | null | undefined): string {
+  if (!ts) return '尚未同步'
+  const diff = Date.now() - ts
+  if (diff < 60_000) return '刚刚同步'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前同步`
+  const d = new Date(ts)
+  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  return new Date().toDateString() === d.toDateString() ? `今天 ${hm} 同步` : `${d.getMonth() + 1}月${d.getDate()}日 ${hm} 同步`
+}
+
+/** 分段选择（与「个性化」页同款） */
+function DirectionSeg(props: { value: TodoSyncDirection; onChange(v: TodoSyncDirection): void }) {
+  return (
+    <div className="no-drag shrink-0 inline-flex p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="radiogroup">
+      {DIRECTION_OPTIONS.map(o => {
+        const on = o.value === props.value
+        return (
+          <button
+            key={o.value}
+            role="radio"
+            aria-checked={on}
+            onClick={() => props.onChange(o.value)}
+            className="h-7 px-2.5 rounded-[var(--r-xs)] text-xs transition-colors"
+            style={on ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 600, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** 待办与日历同步（挂在设置「待办与日历」页） */
+export function TodoIntegrationsSection(props: { onToast(t: string): void }) {
+  const [list, setList] = useState<TodoIntegrationStatus[]>([])
+  const reload = async () => setList(await api.todoIntegrationsStatus())
+  useEffect(() => void reload(), [])
+  useMailEvent(ev => {
+    if ((ev as { type: string }).type === 'todo-integrations-changed') void reload()
+  })
+
+  return (
+    <>
+      <SectionTitle>连接其他待办与日历</SectionTitle>
+      <div className="text-xs mb-2 leading-relaxed" style={{ color: 'var(--muted)' }}>
+        把待办和提醒事项、Google Tasks、Microsoft To Do 互相同步，或把有固定时间的待办写进日历。每个服务选一个目标清单；改动后约 5 秒自动同步，另每 10 分钟同步一次。
+      </div>
+      <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] divide-y divide-ink/[0.04]">
+        {list.map(s => (
+          <TodoSyncCard key={s.provider} status={s} onChanged={setList} onToast={props.onToast} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+function TodoSyncCard(props: { status: TodoIntegrationStatus; onChanged(l: TodoIntegrationStatus[]): void; onToast(t: string): void }) {
+  const s = props.status
+  const cfg = s.config
+  const [accountId, setAccountId] = useState<string>(cfg.accountId ?? s.accounts[0]?.id ?? '')
+  const [targets, setTargets] = useState<{ id: string; name: string }[] | null>(null)
+  const [busy, setBusy] = useState<'' | 'connect' | 'targets' | 'sync'>('')
+  const [error, setError] = useState('')
+  const [device, setDevice] = useState<{ userCode: string; verificationUri: string } | null>(null)
+  const active = s.connected && cfg.enabled
+
+  useEffect(() => {
+    if (!accountId && s.accounts[0]) setAccountId(s.accounts[0].id)
+  }, [s.accounts, accountId])
+
+  // 微软设备码：只在本卡片连接中时接收
+  useMailEvent(ev => {
+    const e = ev as { type: string; userCode?: string; verificationUri?: string }
+    if (busy === 'connect' && s.provider.startsWith('ms-') && e.type === 'oauth-device' && e.userCode && e.verificationUri) {
+      setDevice({ userCode: e.userCode, verificationUri: e.verificationUri })
+    }
+  })
+
+  const loadTargets = async () => {
+    setBusy('targets')
+    setError('')
+    const res = await api.todoIntegrationListTargets(s.provider, cfg.accountId ?? accountId)
+    setBusy('')
+    if (res.ok) setTargets(res.targets)
+    else setError(res.error ?? '读取清单失败')
+  }
+
+  useEffect(() => {
+    if (active && targets === null) void loadTargets()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
+
+  const connect = async () => {
+    setBusy('connect')
+    setError('')
+    setDevice(null)
+    const res = await api.todoIntegrationConnect(s.provider, { accountId: s.needsAccount ? accountId : null })
+    setBusy('')
+    setDevice(null)
+    if (!res.ok) {
+      setError(res.error ?? '连接失败')
+      return
+    }
+    props.onToast(`已连接${s.label}，请选择要同步的${s.kind === 'calendar' ? '日历' : '清单'}`)
+    props.onChanged(await api.todoIntegrationsStatus())
+    void loadTargets()
+  }
+
+  const update = async (patch: Parameters<typeof api.todoIntegrationUpdate>[1]) => {
+    setError('')
+    props.onChanged(await api.todoIntegrationUpdate(s.provider, patch))
+  }
+
+  const syncNow = async () => {
+    setBusy('sync')
+    setError('')
+    const res = await api.todoIntegrationSyncNow(s.provider)
+    setBusy('')
+    if (res.ok) props.onToast(`${s.label} 同步完成`)
+    else setError(res.error ?? '同步失败')
+  }
+
+  const disconnect = async () => {
+    props.onChanged(await api.todoIntegrationDisconnect(s.provider))
+    setTargets(null)
+    props.onToast(`已断开${s.label}，已同步的待办会保留`)
+  }
+
+  const stats = cfg.lastStats
+  const statsText = stats && (stats.pushed || stats.pulled || stats.removed)
+    ? ` · 导出 ${stats.pushed} · 导入 ${stats.pulled} · 移除 ${stats.removed}`
+    : ''
+  const shownError = error || (active ? cfg.lastError ?? '' : '')
+  const accountEmail = s.accounts.find(a => a.id === cfg.accountId)?.email
+
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-center gap-4">
+        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--hover)', color: 'var(--fg)' }}>
+          {s.kind === 'calendar' ? <IconClock width={18} height={18} /> : <IconCheckSquare width={18} height={18} />}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold" style={{ color: 'var(--fg)' }}>{s.label}</span>
+            {active && (
+              <span className="text-2xs px-1.5 py-px rounded-sm" style={{ background: 'var(--hover)', color: s.syncing ? 'var(--muted)' : 'var(--ok)' }}>
+                {s.syncing ? '同步中…' : '已连接'}
+              </span>
+            )}
+            {active && accountEmail && <span className="text-xs truncate" style={{ color: 'var(--faint)' }}>{accountEmail}</span>}
+          </div>
+          <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--faint)' }}>
+            {s.available ? PROVIDER_DESC[s.provider] : s.unavailableReason}
+          </div>
+        </div>
+        {active ? (
+          <button onClick={() => void disconnect()} className="text-xs px-3.5 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 shrink-0">
+            断开
+          </button>
+        ) : (
+          <button
+            onClick={() => void connect()}
+            disabled={!s.available || busy === 'connect' || (s.needsAccount && !accountId)}
+            className="text-xs px-4 py-1.5 rounded-lg bg-ink text-app hover:bg-ink/85 disabled:opacity-40 shrink-0"
+          >
+            {busy === 'connect' ? '连接中…' : '连接'}
+          </button>
+        )}
+      </div>
+
+      {!active && s.available && s.needsAccount && s.accounts.length > 1 && (
+        <div className="mt-3 flex items-center gap-3 pl-14">
+          <span className="text-xs w-16 shrink-0" style={{ color: 'var(--muted)' }}>邮箱账户</span>
+          <Select
+            value={accountId}
+            onChange={setAccountId}
+            options={s.accounts.map(a => ({ value: a.id, label: a.authorized ? `${a.email}（已授权）` : a.email }))}
+          />
+        </div>
+      )}
+
+      {device && (
+        <div className="mt-3 ml-14 rounded-xl px-4 py-3 text-xs leading-relaxed" style={{ background: 'var(--hover)', color: 'var(--muted)' }}>
+          已在浏览器打开 {device.verificationUri}，输入下面的代码完成授权：
+          <div className="flex items-center gap-3 mt-1.5">
+            <span className="text-lg font-semibold tracking-[.2em] font-mono select-all" style={{ color: 'var(--fg)' }}>{device.userCode}</span>
+            <button
+              onClick={() => void navigator.clipboard.writeText(device.userCode)}
+              className="text-xs px-3 py-1 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+            >
+              复制
+            </button>
+          </div>
+        </div>
+      )}
+
+      {active && (
+        <div className="mt-3 pl-14 space-y-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-xs w-16 shrink-0" style={{ color: 'var(--muted)' }}>{s.kind === 'calendar' ? '目标日历' : '目标清单'}</span>
+            {targets && targets.length ? (
+              <Select
+                value={cfg.listId ?? ''}
+                onChange={v => void update({ listId: v || null, listName: targets.find(t => t.id === v)?.name ?? null })}
+                options={[
+                  ...(cfg.listId ? [] : [{ value: '', label: '请选择…' }]),
+                  ...targets.map(t => ({ value: t.id, label: t.name })),
+                  ...(cfg.listId && !targets.some(t => t.id === cfg.listId) ? [{ value: cfg.listId, label: cfg.listName ?? cfg.listId }] : [])
+                ]}
+              />
+            ) : (
+              <span className="text-xs" style={{ color: 'var(--faint)' }}>
+                {busy === 'targets' ? '读取中…' : cfg.listName ?? (targets ? '没有可写入的清单' : '—')}
+              </span>
+            )}
+            <button
+              onClick={() => void loadTargets()}
+              disabled={busy === 'targets'}
+              title="重新读取清单"
+              className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-ink/5 disabled:opacity-40"
+              style={{ color: 'var(--muted)' }}
+            >
+              <IconRefresh width={14} height={14} />
+            </button>
+          </div>
+
+          {s.kind === 'tasks' ? (
+            <div className="flex items-center gap-3">
+              <span className="text-xs w-16 shrink-0" style={{ color: 'var(--muted)' }}>同步方向</span>
+              <DirectionSeg value={cfg.direction} onChange={v => void update({ direction: v })} />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-xs w-16 shrink-0" style={{ color: 'var(--muted)' }}>忙碌时段</span>
+              <span className="text-xs flex-1" style={{ color: 'var(--faint)' }}>读取其他日历的日程，排程时避开</span>
+              <Toggle checked={!!cfg.busy} onChange={v => void update({ busy: v })} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-0.5">
+            <span className="text-xs flex-1 min-w-0 truncate" style={{ color: 'var(--faint)' }}>
+              {cfg.listId ? `${fmtSyncTime(cfg.lastSyncAt)}${statsText}` : `选择${s.kind === 'calendar' ? '日历' : '清单'}后开始同步`}
+            </span>
+            <button
+              onClick={() => void syncNow()}
+              disabled={!cfg.listId || busy === 'sync' || s.syncing}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-40 shrink-0"
+            >
+              {busy === 'sync' || s.syncing ? '同步中…' : '立即同步'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {shownError && (
+        <div className="mt-2 ml-14 text-xs leading-relaxed rounded-lg px-3 py-2" style={{ background: 'var(--hover)', color: 'var(--danger)' }}>
+          {shownError}
+        </div>
+      )}
     </div>
   )
 }

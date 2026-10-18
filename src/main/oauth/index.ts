@@ -24,6 +24,12 @@ const MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token
 /** openid/profile/email 让 v2 端点返回 id_token，才能拿到邮箱地址（preferred_username） */
 const MS_SCOPE = 'openid profile email offline_access https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send'
 
+/** 待办 / 日历同步的额外 scope（增量授权，与邮件 token 分开存放） */
+export const GOOGLE_TASKS_SCOPE = 'https://www.googleapis.com/auth/tasks'
+export const GOOGLE_CALENDAR_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly'
+export const MS_TASKS_SCOPE = 'https://graph.microsoft.com/Tasks.ReadWrite'
+export const MS_CALENDAR_SCOPE = 'https://graph.microsoft.com/Calendars.ReadWrite'
+
 function decodeJwtPayload(jwt: string): Record<string, unknown> {
   try {
     const part = jwt.split('.')[1]
@@ -78,11 +84,11 @@ export class OAuthService {
     return { accessToken: data.access_token, refreshToken, expiresAt: Date.now() + (data.expires_in - 60) * 1000 }
   }
 
-  private async refreshMs(refreshToken: string, clientId: string): Promise<OAuthTokens> {
+  private async refreshMs(refreshToken: string, clientId: string, scope = MS_SCOPE): Promise<OAuthTokens> {
     const res = await fetch(MS_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token', scope: MS_SCOPE })
+      body: new URLSearchParams({ client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token', scope })
     })
     if (!res.ok) throw new Error(`Microsoft token 刷新失败 (${res.status})：${(await res.text()).slice(0, 150)}`)
     const data = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number; id_token?: string }
@@ -120,6 +126,49 @@ export class OAuthService {
     return next.accessToken
   }
 
+  // ---------- 额外 scope 的 token（待办 / 日历同步）：按账户 + 服务存，不覆盖邮件 token ----------
+
+  private scopedKey(accountId: string, kind: 'google' | 'ms'): string {
+    return `oauth-todo:${accountId}:${kind}`
+  }
+
+  saveScopedTokens(accountId: string, kind: 'google' | 'ms', tokens: OAuthTokens & { scope?: string }) {
+    this.appStore.saveSecret(this.scopedKey(accountId, kind), JSON.stringify(tokens))
+  }
+
+  loadScopedTokens(accountId: string, kind: 'google' | 'ms'): (OAuthTokens & { scope?: string }) | null {
+    const raw = this.appStore.loadSecret(this.scopedKey(accountId, kind))
+    if (!raw) return null
+    try {
+      return JSON.parse(raw) as OAuthTokens & { scope?: string }
+    } catch {
+      return null
+    }
+  }
+
+  deleteScopedTokens(accountId: string, kind?: 'google' | 'ms') {
+    for (const k of kind ? [kind] : (['google', 'ms'] as const)) this.appStore.deleteSecret(this.scopedKey(accountId, k))
+  }
+
+  /** 额外 scope 的有效 access token：临期自动刷新并持久化（微软按授权时的 scope 换 Graph token） */
+  async validScopedToken(accountId: string, kind: 'google' | 'ms', force = false): Promise<string> {
+    const tokens = this.loadScopedTokens(accountId, kind)
+    if (!tokens?.accessToken) throw new Error('尚未授权待办 / 日历权限，请先点「连接」')
+    if (!force && tokens.expiresAt > Date.now() + 120_000) return tokens.accessToken
+    if (!tokens.refreshToken) throw new Error('缺少 refresh token，请重新连接')
+    const cfg = this.clients()
+    if (kind === 'google') {
+      if (!cfg.google?.clientId || !cfg.google?.clientSecret) throw new Error('Google OAuth 客户端未配置')
+      const next = await this.refreshGoogle(tokens.refreshToken, cfg.google.clientId, cfg.google.clientSecret)
+      this.saveScopedTokens(accountId, kind, { ...next, email: tokens.email, scope: tokens.scope })
+      return next.accessToken
+    }
+    if (!cfg.ms?.clientId) throw new Error('Microsoft OAuth 客户端未配置')
+    const next = await this.refreshMs(tokens.refreshToken, cfg.ms.clientId, tokens.scope || `offline_access ${MS_TASKS_SCOPE}`)
+    this.saveScopedTokens(accountId, kind, { ...next, email: tokens.email ?? next.email, scope: tokens.scope })
+    return next.accessToken
+  }
+
   /** Google 授权是否已配置（client id + secret） */
   googleConfigured(): boolean {
     const c = this.clients().google
@@ -134,7 +183,12 @@ export class OAuthService {
    * Gmail 授权：本机回环流程。
    * 打开系统浏览器 → 用户在 Google 页面完成授权 → 127.0.0.1:{port} 收到 code → 换 token。
    */
-  async authorizeGoogle(): Promise<{ ok: boolean; error?: string; email?: string; tokens?: OAuthTokens }> {
+  async authorizeGoogle(opts?: {
+    /** 增量授权：只申请额外 scope（include_granted_scopes 会带上已授予的） */
+    scope?: string
+    /** 预选账户（增量授权时指定邮箱） */
+    loginHint?: string
+  }): Promise<{ ok: boolean; error?: string; email?: string; tokens?: OAuthTokens; scope?: string }> {
     const cfg = this.clients().google
     if (!cfg?.clientId || !cfg?.clientSecret) return { ok: false, error: '未配置 Google OAuth 客户端（设置 → 账户 → OAuth 应用凭据）' }
     if (this.googleBusy) return { ok: false, error: '已有授权在进行中' }
@@ -167,10 +221,11 @@ export class OAuthService {
               client_id: cfg.clientId,
               redirect_uri: redirectUri,
               response_type: 'code',
-              scope: GOOGLE_SCOPE,
+              scope: opts?.scope ? `openid email ${opts.scope}` : GOOGLE_SCOPE,
               access_type: 'offline',
               prompt: 'consent',
-              include_granted_scopes: 'true'
+              include_granted_scopes: 'true',
+              ...(opts?.loginHint ? { login_hint: opts.loginHint } : {})
             }).toString()
           void shell.openExternal(authUrl)
         })
@@ -192,7 +247,7 @@ export class OAuthService {
         })
       })
       if (!res.ok) throw new Error(`换取 token 失败 (${res.status})：${(await res.text()).slice(0, 150)}`)
-      const data = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number; id_token?: string }
+      const data = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number; id_token?: string; scope?: string }
       const payload = data.id_token ? decodeJwtPayload(data.id_token) : {}
       const email = (payload.email as string) ?? ''
       const tokens: OAuthTokens = {
@@ -201,7 +256,7 @@ export class OAuthService {
         expiresAt: Date.now() + (data.expires_in - 60) * 1000,
         email
       }
-      return { ok: true, email, tokens }
+      return { ok: true, email, tokens, scope: data.scope }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
@@ -214,7 +269,9 @@ export class OAuthService {
    * 通过 onDevice 回调把 userCode + verificationUri 交给 UI 展示，轮询直到用户在浏览器完成登录。
    */
   async authorizeMicrosoft(
-    onDevice: (info: { userCode: string; verificationUri: string }) => void
+    onDevice: (info: { userCode: string; verificationUri: string }) => void,
+    /** 增量授权：额外申请的 scope（如 Graph Tasks.ReadWrite）；不传 = 邮件 scope */
+    scope?: string
   ): Promise<{ ok: boolean; error?: string; email?: string; tokens?: OAuthTokens }> {
     const cfg = this.clients().ms
     if (!cfg?.clientId) return { ok: false, error: '未配置 Microsoft OAuth 客户端（设置 → 账户 → OAuth 应用凭据）' }
@@ -224,7 +281,7 @@ export class OAuthService {
       const deviceRes = await fetch(MS_DEVICE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: cfg.clientId, scope: MS_SCOPE })
+        body: new URLSearchParams({ client_id: cfg.clientId, scope: scope ? `openid profile email offline_access ${scope}` : MS_SCOPE })
       })
       if (!deviceRes.ok) throw new Error(`获取设备码失败 (${deviceRes.status})：${(await deviceRes.text()).slice(0, 150)}`)
       const device = (await deviceRes.json()) as {

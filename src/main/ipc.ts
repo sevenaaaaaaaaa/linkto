@@ -51,7 +51,14 @@ import { LocalEngine, type DownloadProgress } from './ai/local-engine'
 import type { AccountWorker } from './mail/sync-engine'
 import type { UnderstandService } from './ai/understand'
 import { DEFAULT_FOLDER_PREF, readFolderPrefs, writeFolderPref } from './mail/folder-prefs'
-import { notifyLocalChange, isTodoSyncEnabled, type TodoSyncService } from './todo-sync'
+import { notifyLocalChange as notifySyncChange, isTodoSyncEnabled, type TodoSyncService } from './todo-sync'
+import { initTodoIntegrations, notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
+
+/** 待办有本地改动：通知跨设备同步与外部服务同步 */
+function notifyLocalChange(id?: string) {
+  notifySyncChange(id)
+  notifyIntegrationChange()
+}
 
 /** 按 LinkToApi 契约约束的处理器类型（参数元组 → 返回值） */
 type Api<K extends keyof LinkToApi> = (
@@ -93,6 +100,15 @@ type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
   const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost } = ctx
+
+  // 待办与日历同步（Apple 提醒事项 / 日历、Google、Microsoft）：启动定时同步
+  const todoIntegrations = initTodoIntegrations({
+    store,
+    appStore,
+    oauth,
+    emit: payload => ctx.event(null as never, payload),
+    onDevice: info => ctx.event(null as never, { type: 'oauth-device', userCode: info.userCode, verificationUri: info.verificationUri })
+  })
 
   // 幽灵信信道焚毁：复用永久删除（服务器 + 本地级联）
   ghost.deleteMails = async (ids: string[]) => {
@@ -445,6 +461,7 @@ export function registerIpc(ctx: AppContext) {
       sender.drop(id)
       appStore.deleteSecret(`acct:${id}`)
       appStore.deleteSecret(`oauth:${id}`)
+      todoIntegrations.forgetAccount(id)
       store.deleteAccount(id)
       const valid = store.listAccounts()
       appStore.pruneSecrets(new Set([...valid.map(a => `acct:${a.id}`), ...valid.map(a => `oauth:${a.id}`)]))
@@ -1088,19 +1105,23 @@ export function registerIpc(ctx: AppContext) {
     listInsights: ([kind]: [string]) => store.listInsights(kind),
 
     setInsightStatus: ([id, status]: [string, string]) => {
-      // 待办同步开启时走 updateInsight 刷新 updatedAt，否则这次勾选不会传播到其他设备
-      if (isTodoSyncEnabled() && store.listTodosForSync().some(t => t.id === id)) {
+      // 待办走 updateInsight 刷新 updatedAt：跨设备同步与外部同步都按它判断本地改动
+      if (store.getInsight(id)?.kind === 'todo') {
         store.updateInsight(id, { status })
         notifyLocalChange(id)
       } else store.setInsightStatus(id, status)
     },
 
     deleteInsight: ([id]: [string]) => {
+      todoIntegrations.noteLocalDelete(id)
       // 待办同步开启时删除待办 = 写墓碑（dismissed），硬删会被其他设备的副本同步回来
       if (isTodoSyncEnabled() && store.listTodosForSync().some(t => t.id === id)) {
         store.updateInsight(id, { status: 'dismissed' })
         notifyLocalChange(id)
-      } else store.deleteInsight(id)
+      } else {
+        store.deleteInsight(id)
+        notifyLocalChange()
+      }
     },
 
     saveMemo: ([title, content]: [string, string]) => {
@@ -1519,6 +1540,16 @@ export function registerIpc(ctx: AppContext) {
     todoSyncConfigure: ([input]: [{ enabled: boolean; accountId: string | null; passphrase?: string; encrypt?: boolean; deviceName?: string }]) =>
       ctx.todoSync.configure(input),
     todoSyncNow: () => ctx.todoSync.syncNow(),
+
+    // ================= 待办与日历同步 =================
+
+    todoIntegrationsStatus: (() => todoIntegrations.status()) satisfies Api<'todoIntegrationsStatus'>,
+    todoIntegrationListTargets: (([provider, accountId]) => todoIntegrations.listTargets(provider, accountId)) satisfies Api<'todoIntegrationListTargets'>,
+    todoIntegrationConnect: (([provider, opts]) => todoIntegrations.connect(provider, opts ?? {})) satisfies Api<'todoIntegrationConnect'>,
+    todoIntegrationUpdate: (([provider, patch]) => todoIntegrations.update(provider, patch ?? {})) satisfies Api<'todoIntegrationUpdate'>,
+    todoIntegrationSyncNow: (([provider]) => todoIntegrations.syncNow(provider ?? null)) satisfies Api<'todoIntegrationSyncNow'>,
+    todoIntegrationDisconnect: (([provider]) => todoIntegrations.disconnect(provider)) satisfies Api<'todoIntegrationDisconnect'>,
+    calendarBusyBlocks: (([from, to]) => todoIntegrations.busyBlocks(Number(from), Number(to))) satisfies Api<'calendarBusyBlocks'>,
 
     // ================= 窗口 / 应用 =================
 

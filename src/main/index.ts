@@ -26,6 +26,7 @@ import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-i
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
+import { notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
 import { DEFAULT_AI } from './store'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
@@ -522,6 +523,7 @@ async function bootstrap() {
       if (a || b) {
         broadcast({ type: 'todos-changed' })
         notifyLocalChange()
+        notifyIntegrationChange()
       }
     }
   })

@@ -912,6 +912,13 @@ export class MailStore {
     }))
   }
 
+  /** 按 id 取单条洞察 / 待办（形状同 listInsights） */
+  getInsight(id: string): { id: string; kind: string; title: string; status: string; dueAt: number | null; createdAt: number; data: Record<string, unknown> } | null {
+    const r = this.db.prepare('SELECT * FROM insights WHERE id = ?').get(id) as any
+    if (!r) return null
+    return { id: r.id, kind: r.kind, title: r.title, status: r.status, dueAt: r.due_at, createdAt: r.created_at, data: j<Record<string, unknown>>(r.data_json, {}) }
+  }
+
   /** 只在不存在时插入（自动收集用：不覆盖用户改过的标题 / 时间，也不复活用户删掉的） */
   insertInsightIfAbsent(i: { id: string; kind: string; accountId?: string | null; messageId?: string | null; title: string; data: Record<string, unknown>; dueAt?: number | null }): boolean {
     const res = this.db

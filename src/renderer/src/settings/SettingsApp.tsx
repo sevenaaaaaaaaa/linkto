@@ -6,7 +6,7 @@ import { NotificationsTab } from './tabs/NotificationsTab'
 import { SignaturesTab, TemplatesTab } from './tabs/ContentTabs'
 import { AutomationTab } from './tabs/AutomationTab'
 import { AiTab } from './tabs/AiTab'
-import { IntegrationsTab } from './tabs/IntegrationsTab'
+import { IntegrationsTab, TodoIntegrationsSection } from './tabs/IntegrationsTab'
 import { BackupTab } from './tabs/BackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
 import { TodoSyncSection } from './tabs/TodoSyncSection'
@@ -185,9 +185,23 @@ function NavItem(props: { page: Page; active: boolean; sub?: string; onClick(): 
 
 /** 待办与日历：跨设备同步（自己的邮箱）+ 外部服务打通 */
 function TodoSettingsPage() {
+  const [toast, setToast] = useState('')
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 2200)
+    return () => clearTimeout(t)
+  }, [toast])
   return (
     <div className="max-w-[680px] flex flex-col gap-8">
       <TodoSyncSection />
+      <div className="max-w-[620px]">
+        <TodoIntegrationsSection onToast={setToast} />
+      </div>
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-ink/90 text-app text-sm shadow-[var(--shadow-float)] fade-in">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

@@ -38,6 +38,8 @@ const METHOD_NAMES = [
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
+  'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
+  'todoIntegrationSyncNow', 'todoIntegrationDisconnect', 'calendarBusyBlocks',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
   'openSettings', 'openCompose', 'getVersions', 'quit'
 ] as const

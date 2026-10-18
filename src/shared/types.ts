@@ -515,6 +515,8 @@ export type MailEvent =
   | { type: 'mail-insights'; ids: string[] }
   /** 点击系统通知：主窗口打开指定邮件 */
   | { type: 'open-message'; messageId: string }
+  /** 待办与日历同步的设置 / 状态变化（设置页刷新） */
+  | { type: 'todo-integrations-changed' }
 
 // ---------- 智能洞察 ----------
 
@@ -821,4 +823,52 @@ export interface TodayBrief {
   waitCount: number
   dueToday: number
   source: 'ai' | 'heuristic'
+}
+
+// ---------- 待办与日历同步（Apple 提醒事项 / 日历、Google Tasks / Calendar、Microsoft To Do / Outlook 日历） ----------
+
+/** 同步方向：双向 / 只导出到外部 / 只从外部导入（日历类只支持导出） */
+export type TodoSyncDirection = 'two-way' | 'export' | 'import'
+
+/** 单个外部服务的同步设置（appStore 'todoIntegrations' 里按 provider 存） */
+export interface TodoIntegrationConfig {
+  enabled: boolean
+  /** Google / Microsoft：使用哪个邮箱账户的授权 */
+  accountId?: string | null
+  /** 目标清单 / 日历 */
+  listId?: string | null
+  listName?: string | null
+  direction: TodoSyncDirection
+  /** 日历类：把该服务里其他日历的日程当作忙碌时段给排程用 */
+  busy?: boolean
+  lastSyncAt?: number | null
+  lastError?: string | null
+  /** 上次同步的变更数 */
+  lastStats?: { pushed: number; pulled: number; removed: number } | null
+}
+
+export interface TodoIntegrationStatus {
+  provider: TodoProvider
+  label: string
+  /** tasks：任务清单（可双向）；calendar：日历事件（只导出） */
+  kind: 'tasks' | 'calendar'
+  /** 当前平台 / OAuth 客户端是否可用；不可用时附原因 */
+  available: boolean
+  unavailableReason?: string
+  /** 需要选择邮箱账户（Google / Microsoft） */
+  needsAccount: boolean
+  /** 可选的邮箱账户（authorized：已授予待办 / 日历权限） */
+  accounts: { id: string; email: string; authorized: boolean }[]
+  /** 已连接（Apple：已启用；OAuth：所选账户已授予额外权限） */
+  connected: boolean
+  syncing: boolean
+  config: TodoIntegrationConfig
+}
+
+/** 日历里的忙碌时段（给排程避让） */
+export interface CalendarBusyBlock {
+  start: number
+  end: number
+  title: string
+  provider: TodoProvider
 }

@@ -40,7 +40,12 @@ import type {
   AgentAction,
   MailInsight,
   FolderPref,
-  TodayBrief
+  TodayBrief,
+  TodoProvider,
+  TodoIntegrationStatus,
+  TodoIntegrationConfig,
+  TodoSyncDirection,
+  CalendarBusyBlock
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -298,6 +303,23 @@ export interface LinkToApi {
   /** 保存设置；开启时立即同步一轮，口令不对等错误在 error 中返回 */
   todoSyncConfigure(input: { enabled: boolean; accountId: string | null; passphrase?: string; encrypt?: boolean; deviceName?: string }): Promise<{ ok: boolean; error?: string; status: TodoSyncStatus }>
   todoSyncNow(): Promise<TodoSyncStatus>
+  // ---------- 待办与日历同步（Apple 提醒事项 / 日历、Google Tasks / Calendar、Microsoft To Do / Outlook 日历） ----------
+  /** 各服务的可用性、授权与同步状态 */
+  todoIntegrationsStatus(): Promise<TodoIntegrationStatus[]>
+  /** 列出可选的目标清单 / 日历（Google / Microsoft 需传账户） */
+  todoIntegrationListTargets(provider: TodoProvider, accountId?: string | null): Promise<{ ok: boolean; error?: string; targets: { id: string; name: string }[] }>
+  /** 连接：Apple 检查自动化权限；Google / Microsoft 对所选账户做增量授权（微软设备码通过 'oauth-device' 事件推送） */
+  todoIntegrationConnect(
+    provider: TodoProvider,
+    opts?: { accountId?: string | null; listId?: string | null; listName?: string | null; direction?: TodoSyncDirection }
+  ): Promise<{ ok: boolean; error?: string }>
+  todoIntegrationUpdate(provider: TodoProvider, patch: Partial<TodoIntegrationConfig>): Promise<TodoIntegrationStatus[]>
+  /** 立即同步（不传 = 全部已启用的服务） */
+  todoIntegrationSyncNow(provider?: TodoProvider | null): Promise<{ ok: boolean; error?: string }>
+  /** 断开：停用并清除该服务的额外授权；已同步的待办保留 */
+  todoIntegrationDisconnect(provider: TodoProvider): Promise<TodoIntegrationStatus[]>
+  /** 已启用「忙碌时段」的日历在 [from, to) 内的日程（排程避让用） */
+  calendarBusyBlocks(from: number, to: number): Promise<CalendarBusyBlock[]>
 }
 
 /** 待办同步状态（设置 + 运行态）；进度变化时主进程广播 { type: 'todo-sync-status', status } */
