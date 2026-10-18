@@ -88,6 +88,8 @@ export interface AccountWithStatus extends AccountConfig {
   status: 'connected' | 'syncing' | 'error' | 'disabled'
   statusText: string
   unread: number
+  /** status=error 时的错误类别（auth 需重新登录 / network 网络 / server 服务器 / tls 加密 / unknown） */
+  errorKind?: import('./errors').AccountErrorKind
 }
 
 // ---------- 文件夹 ----------
@@ -501,7 +503,7 @@ export type MailEvent =
   | { type: 'accounts-changed' }
   | { type: 'folders-changed' }
   | { type: 'messages-changed'; accountId?: string }
-  | { type: 'account-status'; accountId: string; status: 'connected' | 'syncing' | 'error' | 'disabled'; text: string }
+  | { type: 'account-status'; accountId: string; status: 'connected' | 'syncing' | 'error' | 'disabled'; text: string; errorKind?: import('./errors').AccountErrorKind }
   | { type: 'sync-progress'; accountId: string; text: string }
   | { type: 'ai-stream'; requestId: string; delta: string; done: boolean; error?: string }
   | { type: 'new-mail'; accountId: string; subject: string; from: string }

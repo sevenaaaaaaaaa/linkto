@@ -41,7 +41,7 @@ const METHOD_NAMES = [
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
   'todoIntegrationSyncNow', 'todoIntegrationDisconnect', 'calendarBusyBlocks',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
-  'openSettings', 'openCompose', 'getVersions', 'quit'
+  'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity'
 ] as const
 
 const api = {} as LinkToApi

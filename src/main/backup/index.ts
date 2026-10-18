@@ -260,7 +260,7 @@ export class BackupService {
           }
           if (!hasCred) {
             pending.push(`${account.email}（请在账户页${account.authType === 'oauth' ? '重新授权' : '输入密码'}完成恢复）`)
-            this.deps.event({ type: 'account-status', accountId: id, status: 'error', text: account.authType === 'oauth' ? '待重新授权' : '待补密码' })
+            this.deps.event({ type: 'account-status', accountId: id, status: 'error', text: account.authType === 'oauth' ? '待重新授权' : '待补密码', errorKind: 'auth' })
           } else if (account.enabled) {
             this.deps.engine.startAccount(account)
           }

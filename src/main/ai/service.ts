@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AISettings, AIChatMessage } from '@shared/types'
+import { AI_ERROR_TEXT, aiKindFromHttp, type AIErrorKind } from '@shared/errors'
 
 export interface AIStreamHandle {
   abort(): void
@@ -25,6 +26,42 @@ export function aiReady(s: AISettings, allowBuiltin = true): boolean {
   return !!s.apiKey || isLocalEndpoint(s.baseURL)
 }
 
+/** 带类别的 AI 错误：message 以 AI_ERROR_TEXT 固定句开头（渲染端据此识别类别），code 供主进程内部判断 */
+export class AIError extends Error {
+  constructor(public readonly kind: Exclude<AIErrorKind, 'unknown'>, detail?: string) {
+    super(detail ? `${AI_ERROR_TEXT[kind]}（${detail}）` : AI_ERROR_TEXT[kind])
+    this.name = 'AIError'
+  }
+  get code() {
+    return `ai:${this.kind}`
+  }
+}
+
+/** 无响应超时：云端 90s、本地 180s（本地首次加载模型较慢）；每收到一段数据重新计时 */
+const IDLE_TIMEOUT_CLOUD = 90_000
+const IDLE_TIMEOUT_LOCAL = 180_000
+
+/** fetch 抛出的网络层错误 → 中文分类错误（undici 把真实原因放在 cause.code） */
+function networkError(err: unknown, isLocal: boolean): AIError {
+  const cause = (err as { cause?: { code?: string; message?: string } })?.cause
+  const code = cause?.code ?? (err as { code?: string })?.code ?? ''
+  const text = `${code} ${cause?.message ?? ''} ${err instanceof Error ? err.message : String(err)}`
+  if (/UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|ETIMEDOUT/i.test(text)) return new AIError('timeout', code || undefined)
+  if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY|certificate/i.test(text)) return new AIError('network', '证书校验失败')
+  return new AIError(isLocal ? 'network-local' : 'network', code || undefined)
+}
+
+/** HTTP 非 2xx → 中文分类错误；无法归类的保留原状态码与片段 */
+function httpError(status: number, body: string, model: string): Error {
+  const snippet = body.replace(/\s+/g, ' ').slice(0, 160)
+  const kind = aiKindFromHttp(status, body)
+  if (kind === 'model') return new AIError('model', status === 404 && !/model/i.test(body) ? `「${model}」，也可能是接口地址填错了` : `「${model}」，在 设置 → AI 中换一个可用的模型`)
+  if (kind === 'auth') return new AIError('auth', `HTTP ${status}`)
+  if (kind === 'quota') return new AIError('quota', status === 429 ? '429，稍后再试或检查账户余额' : `HTTP ${status}，检查账户余额`)
+  if (kind === 'server') return new AIError('server', `HTTP ${status}`)
+  return new Error(`AI 请求失败 (${status})：${snippet}`)
+}
+
 /** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()
@@ -41,14 +78,14 @@ export class AIService {
     const s = this.getSettings()
     // 内置本地引擎：模型推理完全在本机，无需 Key、断网可用
     if (s.baseURL === 'builtin-local') {
-      if (!s.enabled) throw new Error('AI 未启用（请在 设置 → AI 中开启）')
+      if (!s.enabled) throw new AIError('unconfigured', '在 设置 → AI 中开启')
       if (!this.local) throw new Error('本地引擎初始化失败')
       return this.local.stream(s.model, messages, onDelta)
     }
     // 本地推理端点（Ollama / LM Studio / llama.cpp）无需 API Key
     const isLocal = isLocalEndpoint(s.baseURL)
     if (!s.enabled || (!s.apiKey && !isLocal))
-      throw new Error(isLocal ? 'AI 未启用（请在 设置 → AI 中开启）' : 'AI 未启用或未配置 API Key（请在 设置 → AI 中配置）')
+      throw new AIError('unconfigured', isLocal ? '在 设置 → AI 中开启' : '在 设置 → AI 中开启并填写 API Key')
     // 用户自定义咒语：统一追加到首条系统消息（无系统消息则注入一条）
     const prompts = (s.customPrompts ?? []).filter(p => p.enabled && p.text.trim()).map(p => p.text.trim()).join('\n\n')
     const msgs: AIChatMessage[] = prompts
@@ -58,8 +95,27 @@ export class AIService {
       : messages
     const controller = new AbortController()
     this.aborts.set(requestId, controller)
+    // 无响应超时：长时间没有任何数据就主动中断，避免按钮一直转圈
+    let timedOut = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const arm = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, isLocal ? IDLE_TIMEOUT_LOCAL : IDLE_TIMEOUT_CLOUD)
+    }
+    /** 统一转换：已分类的错误原样抛出，其余按超时 / 取消 / 网络归类 */
+    const convert = (err: unknown): Error => {
+      if (err instanceof AIError) return err
+      if (timedOut) return new AIError('timeout', `${Math.round((isLocal ? IDLE_TIMEOUT_LOCAL : IDLE_TIMEOUT_CLOUD) / 1000)} 秒没有响应`)
+      if (controller.signal.aborted) return new Error('已取消')
+      if (err instanceof TypeError || (err as { cause?: unknown })?.cause) return networkError(err, isLocal)
+      return err instanceof Error ? err : new Error(String(err))
+    }
     let full = ''
     try {
+      arm()
       const res = await fetch(`${s.baseURL.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         signal: controller.signal,
@@ -71,12 +127,13 @@ export class AIService {
       })
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
-        throw new Error(`AI 请求失败 (${res.status})：${text.slice(0, 200) || res.statusText}`)
+        throw httpError(res.status, text || res.statusText, s.model)
       }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {
+        arm()
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
@@ -89,7 +146,11 @@ export class AIService {
           if (payload === '[DONE]') continue
           try {
             const part = JSON.parse(payload) as SSEPart
-            if (part.error?.message) throw new Error(part.error.message)
+            if (part.error?.message) {
+              // 流内错误（部分服务商以 200 + error 帧返回额度 / 模型错误）：能归类就归类
+              const kind = aiKindFromHttp(0, part.error.message)
+              throw kind === 'unknown' ? new Error(part.error.message) : new AIError(kind, part.error.message.slice(0, 120))
+            }
             const delta = part.choices?.[0]?.delta?.content ?? ''
             if (delta) {
               full += delta
@@ -101,7 +162,10 @@ export class AIService {
         }
       }
       return full
+    } catch (err) {
+      throw convert(err)
     } finally {
+      if (timer) clearTimeout(timer)
       this.aborts.delete(requestId)
     }
   }

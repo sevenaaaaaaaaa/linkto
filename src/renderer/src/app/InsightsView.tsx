@@ -7,6 +7,8 @@ import {
   IconFileText, IconTrash, IconShield, IconTarget, IconTrendingUp, IconBrain, IconRss, IconSparkles } from '../components/icons'
 import type { CompanyInsight, DailyDigest, InsightRecord, SwipeData } from '@shared/types'
 import { Markdown } from '../components/Markdown'
+import { AIErrorNote } from '../components/AIErrorNote'
+import { openAISettings } from '../lib/ai-error'
 
 type Tab = 'daily' | 'todo' | 'reading' | 'company'
 
@@ -73,6 +75,14 @@ function DailyTab() {
   const [error, setError] = useState('')
   const [memoText, setMemoText] = useState('')
   const [memoLoaded, setMemoLoaded] = useState(false)
+  // AI 未配置：首屏直接给克制的引导，而不是点了「立即生成」再报错
+  const [aiReady, setAiReady] = useState<{ ready: boolean; reason?: string } | null>(null)
+  useEffect(() => {
+    const check = () => void api.aiStatus().then(setAiReady).catch(() => {})
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [])
 
   const load = async () => {
     const rows = (await api.listInsights('daily')) as InsightRecord[]
@@ -112,15 +122,28 @@ function DailyTab() {
           <div className="mt-1.5 text-xs" style={{ color: 'var(--faint)' }}>
             AI 会通读近 36 小时邮件，产出当日重点、主题 digest、备忘录与清理建议（每天自动生成一次）
           </div>
-          <button
-            onClick={generate}
-            disabled={loading}
-            className="mt-4 text-sm font-medium px-5 py-2.5 rounded-[var(--r-sm)] disabled:opacity-50"
-            style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)' }}
-          >
-            {loading ? '正在阅读你的邮件…' : '立即生成'}
-          </button>
-          {error && <div className="mt-2.5 text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
+          {aiReady?.ready === false ? (
+            <div className="mt-4 inline-flex flex-col items-center gap-2">
+              <span className="text-xs" style={{ color: 'var(--muted)' }}>还没有配置 AI（{aiReady.reason}），配置后即可生成</span>
+              <button
+                onClick={openAISettings}
+                className="text-sm font-medium px-5 py-2 rounded-[var(--r-sm)] border border-[var(--border)] hover:bg-[var(--hover)]"
+                style={{ color: 'var(--fg)', background: 'var(--surface-strong)' }}
+              >
+                去设置 AI
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={generate}
+              disabled={loading}
+              className="mt-4 text-sm font-medium px-5 py-2.5 rounded-[var(--r-sm)] disabled:opacity-50"
+              style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)' }}
+            >
+              {loading ? '正在阅读你的邮件…' : '立即生成'}
+            </button>
+          )}
+          {error && <AIErrorNote className="mt-2.5 justify-center" error={error} onRetry={() => void generate()} />}
         </div>
       )}
 
@@ -140,7 +163,7 @@ function DailyTab() {
               {loading ? '生成中…' : '重新生成'}
             </button>
           </div>
-          {error && <div className="text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
+          {error && <AIErrorNote error={error} onRetry={() => void generate()} />}
 
           <Panel title="今日重点" icon={<IconStar width={14} height={14} />}>
             <ul className="space-y-1.5">
@@ -579,7 +602,7 @@ function CompanyTab() {
           </button>
         </div>
         {running && progress && <div className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>{progress}</div>}
-        {error && <div className="mt-2 text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
+        {error && <AIErrorNote className="mt-2" error={error} onRetry={() => void analyze(input)} />}
         {domains.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {domains.slice(0, 10).map(d => (

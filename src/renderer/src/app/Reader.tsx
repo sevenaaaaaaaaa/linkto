@@ -17,6 +17,8 @@ import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest
 import { useInsights, splitKey, dedupeEntities } from '../lib/insights'
 import { noteMouseAction } from './Guidance'
 import { getPrefs } from '../lib/prefs'
+import { AIErrorNote } from '../components/AIErrorNote'
+import { friendlyFailure, isAIError, showToast as globalToast, toastAIError } from '../lib/ai-error'
 import { useTodos } from '../lib/todos'
 import { goView } from '../lib/route'
 import { Markdown, markdownToHtml } from '../components/Markdown'
@@ -188,7 +190,8 @@ export function Reader() {
     setExtracting(true)
     try {
       const res = await api.insightExtract(msg.id)
-      showToast(res.ok ? (res.created.length ? `已加入${res.created.join('、')}` : '这封邮件没有可提炼的待办/文章') : res.error ?? '提炼失败')
+      if (!res.ok && isAIError(res.error)) toastAIError(res.error, () => void runExtract())
+      else showToast(res.ok ? (res.created.length ? `已加入${res.created.join('、')}` : '这封邮件没有可提炼的待办/文章') : res.error ?? '提炼失败')
     } finally {
       setExtracting(false)
     }
@@ -199,7 +202,8 @@ export function Reader() {
     setLearning(true)
     try {
       const res = await api.agentLearn(msg.id)
-      showToast(res.ok ? (res.learned.length ? `Agent 记住了 ${res.learned.length} 条` : '没有值得沉淀的长期信息') : res.error ?? '学习失败')
+      if (!res.ok && isAIError(res.error)) toastAIError(res.error, () => void runAgentLearn())
+      else showToast(res.ok ? (res.learned.length ? `Agent 记住了 ${res.learned.length} 条` : '没有值得沉淀的长期信息') : res.error ?? '学习失败')
     } finally {
       setLearning(false)
     }
@@ -306,10 +310,16 @@ export function Reader() {
 
   const act = async (action: 'archive' | 'trash' | 'flag' | 'unread') => {
     if (!msg) return
-    if (action === 'archive') await api.moveMessages([msg.id], 'archive')
-    if (action === 'trash') await api.deleteMessages([msg.id])
-    if (action === 'flag') await api.markFlagged([msg.id], !msg.flagged)
-    if (action === 'unread') await api.markRead([msg.id], false)
+    try {
+      if (action === 'archive') await api.moveMessages([msg.id], 'archive')
+      if (action === 'trash') await api.deleteMessages([msg.id])
+      if (action === 'flag') await api.markFlagged([msg.id], !msg.flagged)
+      if (action === 'unread') await api.markRead([msg.id], false)
+    } catch (err) {
+      const label = { archive: '归档', trash: '删除', flag: '标记旗标', unread: '标为未读' }[action]
+      globalToast(friendlyFailure(`${label}失败`, err))
+      return
+    }
     if (action !== 'flag') useMail.getState().select(null)
     await loadMessages()
   }
@@ -794,7 +804,7 @@ export function Reader() {
             <div className="px-4 pb-3.5">
               <div className="pt-2 border-t border-[var(--border-soft)]">
                 <div className="selectable mt-2 text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
-                  {ai.error ? <span style={{ color: 'var(--danger)' }}>{ai.error}</span> : <Markdown text={ai.text} />}
+                  {ai.error ? <AIErrorNote error={ai.error} onRetry={aiMode ? () => void runAI(aiMode) : undefined} /> : <Markdown text={ai.text} />}
                   {ai.streaming && <span className="inline-block w-1.5 h-4 ml-0.5 animate-pulse align-middle" style={{ background: 'var(--accent)' }} />}
                 </div>
                 {aiMode === 'draft' && !ai.streaming && ai.text && (
@@ -969,7 +979,15 @@ function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; on
   return (
     <div className="relative group">
       <button
-        onClick={() => void api.saveAttachment(a.id)}
+        onClick={() =>
+          void api
+            .saveAttachment(a.id)
+            .then(r => {
+              const error = (r as { error?: string }).error
+              if (!r.ok && error) globalToast(friendlyFailure('附件保存失败', error))
+            })
+            .catch(err => globalToast(friendlyFailure('附件保存失败', err)))
+        }
         className="flex items-center gap-2.5 px-3 py-2 rounded-[var(--r-sm)] border transition-colors group"
         style={{ background: 'var(--surface-strong)', borderColor: 'var(--border-soft)' }}
         title="点击保存"

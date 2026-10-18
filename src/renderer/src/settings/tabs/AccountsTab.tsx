@@ -4,6 +4,8 @@ import { IconPlus, IconMinus, IconRefresh, IconCheck, IconClose, IconKey, IconSp
 import { SectionTitle } from './GeneralTab'
 import { PROVIDER_PRESETS, presetFor } from '@shared/presets'
 import { ACCOUNT_COLORS } from '@shared/presets'
+import { takeAccountFocus, type AccountFocus } from '../account-focus'
+import { classifyAccountError } from '@shared/errors'
 import type { AccountDraft, AccountWithStatus, OAuthClientConfig, ProviderKey } from '@shared/types'
 
 const STATUS_TEXT: Record<string, { label: string; cls: string }> = {
@@ -17,6 +19,8 @@ export function AccountsTab() {
   const [accounts, setAccounts] = useState<AccountWithStatus[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  // 从主窗口「重新登录 / 查看详情」跳来：定位到该账户，并可直接进入重新授权 / 重输密码
+  const [focus, setFocus] = useState<(AccountFocus & { nonce: number }) | null>(null)
 
   const reload = () => void api.listAccounts().then(as => {
     setAccounts(as)
@@ -24,6 +28,19 @@ export function AccountsTab() {
   })
 
   useEffect(reload, [])
+  useEffect(() => {
+    const apply = (f: AccountFocus | null) => {
+      if (!f) return
+      setAdding(false)
+      setSelected(f.accountId)
+      setFocus({ ...f, nonce: Date.now() })
+    }
+    apply(takeAccountFocus())
+    const onFocus = () => apply(takeAccountFocus())
+    window.addEventListener('ms:settings-focus-account', onFocus)
+    return () => window.removeEventListener('ms:settings-focus-account', onFocus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useMailEvent(ev => {
     const t = (ev as { type: string }).type
     if (t === 'accounts-changed' || t === 'account-status') reload()
@@ -86,19 +103,34 @@ export function AccountsTab() {
       {/* 右侧详情 */}
       <div className="flex-1 min-w-0 overflow-y-auto">
         {adding && <AddAccount onDone={() => { setAdding(false); reload() }} onCancel={() => setAdding(false)} />}
-        {!adding && current && <AccountDetail account={current} onChanged={reload} />}
+        {!adding && current && (
+          <AccountDetail
+            key={`${current.id}:${focus?.accountId === current.id ? focus.nonce : ''}`}
+            account={current}
+            onChanged={reload}
+            autoAction={focus?.accountId === current.id ? focus.action : undefined}
+            onAutoActionDone={() => setFocus(f => (f ? { ...f, action: undefined } : f))}
+          />
+        )}
         {!adding && !current && <div className="text-sm text-zinc-400 mt-10 text-center">点击 + 添加你的第一个邮箱</div>}
       </div>
     </div>
   )
 }
 
-function AccountDetail(props: { account: AccountWithStatus; onChanged(): void }) {
+function AccountDetail(props: { account: AccountWithStatus; onChanged(): void; autoAction?: 'reauth' | 'password'; onAutoActionDone?(): void }) {
   const { account: a } = props
   const status = STATUS_TEXT[a.status] ?? STATUS_TEXT.disabled
   const [password, setPassword] = useState('')
-  const [showPwd, setShowPwd] = useState(false)
+  const [showPwd, setShowPwd] = useState(props.autoAction === 'password' && a.authType !== 'oauth')
   const [reauthorizing, setReauthorizing] = useState(false)
+  // 主窗口点了「重新登录」：OAuth 账户直接发起重新授权（每次定位只触发一次，key 变化才会重新挂载）
+  useEffect(() => {
+    if (props.autoAction === 'reauth' && a.authType === 'oauth') void reauthorize()
+    if (props.autoAction) props.onAutoActionDone?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const authError = a.status === 'error' && (a.errorKind ?? classifyAccountError(a.statusText)) === 'auth'
 
   const update = (patch: Parameters<typeof api.updateAccount>[1]) => {
     void api.updateAccount(a.id, patch).then(props.onChanged)
@@ -134,6 +166,11 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
           <span className="flex-1 text-sm text-zinc-800">状态</span>
           <span className={`text-sm ${status.cls}`}>{status.label}{a.statusText && a.status === 'error' ? ` · ${a.statusText}` : ''}</span>
         </div>
+        {authError && (
+          <div className="py-2.5 border-b border-ink/[0.04] text-xs leading-relaxed" style={{ color: 'var(--danger-ink)' }}>
+            登录已失效：{a.authType === 'oauth' ? '用下方「重新授权」在浏览器里确认，完成后自动恢复同步' : '在下方重新输入授权码 / 应用专用密码，保存后自动恢复同步'}
+          </div>
+        )}
         <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
           <span className="flex-1 text-sm text-zinc-800">名称</span>
           <input
@@ -179,6 +216,7 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void })
               <span className="flex items-center gap-1.5">
                 <input
                   type="password"
+                  autoFocus
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="授权码 / 应用专用密码"

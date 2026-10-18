@@ -7,6 +7,8 @@ import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MailInsight, MessageSummary, TodayBrief } from '@shared/types'
+import { AccountErrorBanner } from './AccountIssues'
+import { toastAIError } from '../lib/ai-error'
 import { goView } from '../lib/route'
 import { noteMouseAction } from './Guidance'
 import { usePrefs, setPrefs } from '../lib/prefs'
@@ -547,8 +549,12 @@ export function MessageList() {
   const aiOrganize = async () => {
     setClassifying(true)
     try {
+      const st = await api.aiStatus()
+      if (!st.ready) return toastAIError('还没有配置 AI')
       await api.aiClassify(messages.map(m => m.id))
       await useMail.getState().loadMessages()
+    } catch (err) {
+      toastAIError(err, () => void aiOrganize())
     } finally {
       setClassifying(false)
     }
@@ -1017,6 +1023,7 @@ export function MessageList() {
         />
       )}
 
+      <AccountErrorBanner />
       <div ref={listRef} className={`flex-1 overflow-y-auto ${multiMode ? 'pb-14' : ''}`}>
         {loading && !messages.length && (
           <div className="p-8 text-center text-sm" style={{ color: 'var(--faint)' }}>加载中…</div>

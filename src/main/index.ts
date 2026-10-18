@@ -28,6 +28,7 @@ import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
 import { notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
 import { DEFAULT_AI } from './store'
+import { classifyAccountError } from '@shared/errors'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -534,7 +535,7 @@ async function bootstrap() {
     {
       status: (accountId, status, text) => {
         statuses.set(accountId, { status, text })
-        broadcast({ type: 'account-status', accountId, status, text })
+        broadcast({ type: 'account-status', accountId, status, text, errorKind: status === 'error' ? classifyAccountError(text) : undefined })
       },
       progress: (accountId, text) => broadcast({ type: 'sync-progress', accountId, text }),
       changed: accountId => {

@@ -3,7 +3,7 @@ import { notifyLocalChange } from '../todo-sync'
 import type { AccountConfig, Address, ComposeDraft, SendResult } from '@shared/types'
 import type { MailStore } from '../db'
 import type { MailSender, MailCreds } from './sender'
-import type { SyncEngine } from './sync-engine'
+import { friendlyError, type SyncEngine } from './sync-engine'
 
 export interface OutboxDraft {
   id: string
@@ -63,8 +63,8 @@ export class Outbox {
     const { store, sender, engine } = this.deps
     const account = this.deps.listAccounts().find(a => a.id === draft.accountId)
     if (!account) return { ok: false, error: '账户不存在' }
-    const creds = await this.deps.getCreds(account)
     try {
+      const creds = await this.deps.getCreds(account)
       const info = await sender.send(account, creds, draft)
       const row = draft.relatedMessageId ? store.getMessageRow(draft.relatedMessageId) : null
       if (row) {
@@ -87,7 +87,7 @@ export class Outbox {
       } catch { /* 存已发送失败不影响发送结果 */ }
       return { ok: true, messageId: info.messageId }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      return { ok: false, error: friendlySendError(err) }
     }
   }
 
@@ -165,4 +165,16 @@ export class Outbox {
       this.ticking = false
     }
   }
+}
+
+/** SMTP 发送错误中文化：先看投递类（收件人 / 大小 / 拒收），再复用账户连接错误的归类（登录 / 超时 / 网络 / TLS） */
+export function friendlySendError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (/[\u4e00-\u9fff]/.test(msg) && !/^[\x00-\x7f]/.test(msg)) return msg
+  if (/No recipients|recipient.*(rejected|invalid|unknown)|mailbox unavailable|User unknown|\b55[03]\b/i.test(msg))
+    return '收件人地址被服务器拒收：检查地址是否填写正确'
+  if (/\b552\b|size|too large|exceeds/i.test(msg)) return '邮件太大被服务器拒收：减少或压缩附件后再试'
+  if (/\b554\b|spam|blocked|rejected/i.test(msg)) return '服务器拒收了这封邮件（可能被判为垃圾邮件），稍后再试或联系邮箱服务商'
+  const friendly = friendlyError(err)
+  return /[\u4e00-\u9fff]/.test(friendly) ? friendly : `发送失败：${friendly}`
 }

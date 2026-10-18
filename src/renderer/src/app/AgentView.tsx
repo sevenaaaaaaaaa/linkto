@@ -5,6 +5,7 @@ import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave, IconPin, IconH
 import type { AgentAction, AgentActionType, AgentMemory, ContactProfile, MemoryScope } from '@shared/types'
 import { Markdown } from '../components/Markdown'
 import { takePendingAsk } from '../lib/agent-ask'
+import { AIErrorNote } from '../components/AIErrorNote'
 
 const SCOPE_META: Record<MemoryScope, { label: string; icon: React.ReactNode; color: string }> = {
   fact: { label: '事实', icon: <IconPin width={11} height={11} />, color: 'var(--info)' },
@@ -152,7 +153,7 @@ export function AgentView() {
         {(profile || profileError) && (
           <div className="mb-4 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] p-4">
             {profileError ? (
-              <div className="text-sm text-zinc-400">{profileError}</div>
+              <AIErrorNote error={profileError} onRetry={() => void runProfile()} />
             ) : profile ? (
               <>
                 <div className="flex items-center gap-2 mb-1.5">
@@ -388,6 +389,9 @@ interface ChatMessage {
   actionResult?: string
   memories?: string[]
   savedMemories?: string[]
+  /** AI 失败：原始错误（渲染成「一句人话 + 动作」）与可重试的问题 */
+  error?: string
+  retryQ?: string
 }
 
 /** 解析回答：剥离动作块并映射 E 编号 → 邮件 id；提取「📌 记住：」建议 */
@@ -444,7 +448,8 @@ export function AgentChat(props: { onClose(): void; panel?: boolean }) {
         if (e.error) {
           setMessages(prev => {
             const next = [...prev]
-            next[next.length - 1] = { role: 'assistant', text: `出错了：${e.error}` }
+            const retryQ = [...next].reverse().find(m => m.role === 'user')?.text
+            next[next.length - 1] = { role: 'assistant', text: '', error: e.error, retryQ }
             return next
           })
           return
@@ -565,7 +570,9 @@ export function AgentChat(props: { onClose(): void; panel?: boolean }) {
                 }`}
               >
                 {/* 流式过程中动作块尚未闭合：先隐藏，避免一闪而过的 JSON；「📌 记住」已有按钮，不在正文重复 */}
-                {m.role === 'assistant' ? (
+                {m.role === 'assistant' && m.error ? (
+                  <AIErrorNote error={m.error} onRetry={m.retryQ && i === messages.length - 1 ? () => askRef.current(m.retryQ!) : undefined} />
+                ) : m.role === 'assistant' ? (
                   <Markdown text={m.text.replace(/```linkto-actions[\s\S]*$/, '').replace(/^.*📌\s*记住[:：].*$/gm, '').trimEnd()} />
                 ) : (
                   m.text

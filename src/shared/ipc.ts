@@ -238,6 +238,8 @@ export interface LinkToApi {
   onEvent(cb: (ev: unknown) => void): () => void
   getVersions(): Promise<{ app: string; electron: string; node: string }>
   quit(): Promise<void>
+  /** 联网状态（主进程 net.isOnline）+ 断网期间暂存、待联网后同步的操作数 */
+  connectivity(): Promise<{ online: boolean; pendingOps: number }>
 
   // ---------- Agent 记忆（个人 Agent 成长系统） ----------
   listMemories(scope?: MemoryScope | 'all'): Promise<AgentMemory[]>

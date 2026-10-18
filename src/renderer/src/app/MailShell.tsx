@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useView, goView, viewFromHash } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
@@ -23,6 +23,8 @@ import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
 import { IconClock } from '../components/icons'
 import type { ScheduledSend } from '@shared/types'
+import { describeAIError, friendlyFailure, isAIError, type ToastPayload } from '../lib/ai-error'
+import { useConnectivity } from '../lib/connectivity'
 
 export function MailShell() {
   const view = useView()
@@ -31,7 +33,22 @@ export function MailShell() {
   usePrefs() // 订阅个性化偏好：设置窗改动后即时应用到根节点
   useInsightEvents()
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toast, setToastState] = useState<ToastPayload | null>(null)
+  const toastTimer = useRef(0)
+  /** 全局 toast：字符串（旧用法）或带动作按钮的对象；字符串若是可识别的 AI 错误，自动附上「去设置 AI」等动作 */
+  const setToast = (detail: string | ToastPayload | null | undefined, fallbackMs = 2200) => {
+    window.clearTimeout(toastTimer.current)
+    if (!detail) return setToastState(null)
+    let payload: ToastPayload = typeof detail === 'string' ? { text: detail } : detail
+    if (typeof detail === 'string' && isAIError(detail)) {
+      const v = describeAIError(detail)
+      payload = { text: v.text, actions: v.action ? [v.action] : undefined, tone: 'danger' }
+    }
+    setToastState(payload)
+    const ms = payload.duration ?? (payload.actions?.length ? 6000 : fallbackMs)
+    toastTimer.current = window.setTimeout(() => setToastState(null), ms)
+  }
+  useConnectivity(setToast)
   const [outbox, setOutbox] = useState<ScheduledSend[]>([])
 
   // Liquid Glass 真折射滤镜（lensing）：Electron/Chromium 下启用，其余环境纯 blur 降级
@@ -43,10 +60,7 @@ export function MailShell() {
 
   // 全局 toast（主题 / 预设 / 命令面板反馈）+ 发件队列事件
   useEffect(() => {
-    const onToast = (e: Event) => {
-      setToast((e as CustomEvent<string>).detail)
-      setTimeout(() => setToast(''), 2200)
-    }
+    const onToast = (e: Event) => setToast((e as CustomEvent<string | ToastPayload>).detail)
     window.addEventListener('ms:toast', onToast)
     return () => window.removeEventListener('ms:toast', onToast)
   }, [])
@@ -66,8 +80,7 @@ export function MailShell() {
         setTimeout(() => window.dispatchEvent(new CustomEvent(e.type === 'open-todo' ? 'ms:todo-open' : 'ms:todo-quick', { detail: id })), 250)
       }
       if (e.type === 'mail-sent') {
-        setToast(`已发送：${e.subject ?? ''}`)
-        setTimeout(() => setToast(''), 2600)
+        setToast(`已发送：${e.subject ?? ''}`, 2600)
       }
       if (e.type === 'account-status') {
         // 同步完成/出错时清除进度条文本
@@ -197,14 +210,14 @@ export function MailShell() {
         const id = state.selectedId
         // Triage：归档后自动跳下一封（单遍清空节奏）
         const next = state.messages[idx + 1] ?? state.messages[idx - 1]
-        void api.moveMessages([id], 'archive').then(() => state.loadMessages())
+        void api.moveMessages([id], 'archive').then(() => state.loadMessages()).catch(err => setToast(friendlyFailure('归档失败', err)))
         if (next) state.select(next.id)
         // 波纹批量：单发归档触发同类邮件涌现建议
         window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'archive' } }))
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && state.selectedId) {
         const id = state.selectedId
         const next = state.messages[idx + 1] ?? state.messages[idx - 1]
-        void api.deleteMessages([id]).then(() => state.loadMessages())
+        void api.deleteMessages([id]).then(() => state.loadMessages()).catch(err => setToast(friendlyFailure('删除失败', err)))
         if (next) state.select(next.id)
         window.dispatchEvent(new CustomEvent('ms:ripple', { detail: { ids: [id], action: 'trash' } }))
       } else if ((e.key === 's' || e.key === 'S') && state.selectedId) {
@@ -271,8 +284,28 @@ export function MailShell() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full liquid-glass text-sm fade-in" style={{ color: 'var(--fg)' }}>
-          {toast}
+        <div
+          role={toast.tone === 'danger' ? 'alert' : 'status'}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[min(560px,calc(100vw-48px))] flex items-center gap-3 liquid-glass text-sm fade-in ${
+            toast.actions?.length ? 'pl-4 pr-1.5 py-1.5 rounded-[var(--r-md)]' : 'px-4 py-2 rounded-full'
+          }`}
+          style={{ color: 'var(--fg)' }}
+        >
+          {toast.tone === 'danger' && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--danger)' }} />}
+          <span className="min-w-0">{toast.text}</span>
+          {toast.actions?.map(a => (
+            <button
+              key={a.label}
+              onClick={() => {
+                a.run()
+                setToast(null)
+              }}
+              className="shrink-0 h-7 px-3 rounded-[var(--r-sm)] text-xs font-medium transition-opacity hover:opacity-90"
+              style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+            >
+              {a.label}
+            </button>
+          ))}
         </div>
       )}
     </div>

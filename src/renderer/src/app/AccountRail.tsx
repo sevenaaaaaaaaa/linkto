@@ -1,6 +1,7 @@
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
 import { IconLayers, IconPlus } from '../components/icons'
+import { accountHoverText } from './AccountIssues'
 
 /** 品牌标「年轮 @」：@ = 邮件，两圈年轮 = Agent 记忆，荧光内核 = AI，向右的尾线 = To */
 export function LogoMark(props: { size?: number; tile?: boolean }) {
@@ -52,7 +53,7 @@ export function AccountRail() {
         {accounts.map((a, i) => (
           <RailButton
             key={a.id}
-            label={`${a.name}（${a.email}）· ${a.status === 'error' ? a.statusText || '连接失败' : a.status === 'syncing' ? '同步中' : '已同步'}${i < 9 ? ` · ⌘${i + 1}` : ''}`}
+            label={accountHoverText(a, i < 9 ? `⌘${i + 1}` : undefined)}
             active={accountCtx === a.id}
             onClick={() => setAccountCtx(a.id)}
             badge={unreadOf(a.id)}

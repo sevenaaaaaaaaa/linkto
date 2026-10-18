@@ -10,6 +10,7 @@ import { IntegrationsTab, TodoIntegrationsSection } from './tabs/IntegrationsTab
 import { BackupTab } from './tabs/BackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
 import { TodoSyncSection } from './tabs/TodoSyncSection'
+import { parseSettingsTab } from './account-focus'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook, IconSearch,
   IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare
@@ -61,20 +62,24 @@ const GROUPS: { title: string; pages: Page[] }[] = [
 const PAGES = GROUPS.flatMap(g => g.pages)
 
 export default function SettingsApp() {
-  const [tab, setTab] = useState<string>(() => location.hash.match(/^#\/(\w+)/)?.[1] ?? 'personal')
+  // hash 可带账户定位：#/accounts:<id>[:reauth|:password]
+  const [tab, setTab] = useState<string>(() => {
+    const m = location.hash.match(/^#\/([\w:-]+)/)
+    return m ? parseSettingsTab(m[1]) : 'personal'
+  })
   const [q, setQ] = useState('')
 
   useEffect(() => {
     const onHash = () => {
-      const m = location.hash.match(/^#\/(\w+)/)
-      if (m) setTab(m[1])
+      const m = location.hash.match(/^#\/([\w:-]+)/)
+      if (m) setTab(parseSettingsTab(m[1]))
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
   useMailEvent(ev => {
-    if ((ev as { type: string }).type === 'settings-navigate') setTab((ev as unknown as { tab: string }).tab)
+    if ((ev as { type: string }).type === 'settings-navigate') setTab(parseSettingsTab((ev as unknown as { tab: string }).tab))
   })
 
   const matches = useMemo(() => {

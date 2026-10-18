@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, dialog, shell, app } from 'electron'
+import { BrowserWindow, ipcMain, dialog, shell, app, net } from 'electron'
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -38,6 +38,7 @@ import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-dri
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
 import { todoFromMessage } from './todo-collect'
+import { classifyAccountError } from '@shared/errors'
 import { aiReady } from './ai/service'
 import { TODO_PLAN } from './ai/prompts'
 import { Outbox } from './mail/outbox'
@@ -339,6 +340,21 @@ export function registerIpc(ctx: AppContext) {
       .join('\n\n———\n\n')
   }
 
+  /**
+   * AI 流式事件的投递目标：发给所有窗口，由各窗口按 requestId 认领。
+   * 之前取「第一个未销毁窗口」，设置窗 / 撰写窗开着时结果（包括错误）会被投到别的窗口，主窗口一直转圈
+   */
+  function aiStreamTarget() {
+    return {
+      isDestroyed: () => false,
+      webContents: {
+        send: (channel: string, payload: unknown) => {
+          for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload)
+        }
+      }
+    }
+  }
+
   async function aiChat(messages: AIChatMessage[]): Promise<string> {
     return ai.complete(messages)
   }
@@ -353,6 +369,7 @@ export function registerIpc(ctx: AppContext) {
         ...a,
         status: ctx.statuses.get(a.id)?.status ?? (a.enabled ? 'connected' : 'disabled'),
         statusText: ctx.statuses.get(a.id)?.text ?? '',
+        errorKind: ctx.statuses.get(a.id)?.status === 'error' ? classifyAccountError(ctx.statuses.get(a.id)?.text ?? '') : undefined,
         unread: unread[a.id] ?? 0
       }))
     },
@@ -909,7 +926,7 @@ export function registerIpc(ctx: AppContext) {
     // ================= AI =================
 
     aiStream: async ([requestId, messages]: [string, { role: string; content: string }[]]) => {
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         await ai.stream(requestId, messages as AIChatMessage[], delta => {
           if (win && !win.isDestroyed()) win.webContents.send('event', { type: 'ai-stream', requestId, delta, done: false })
@@ -962,7 +979,7 @@ export function registerIpc(ctx: AppContext) {
     aiSummarize: async ([messageId, requestId]: [string, string]) => {
       const text = threadTextForAI(messageId)
       store.setAiSummarized(messageId)
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         await ai.stream(requestId, [
           { role: 'system', content: '你是邮件摘要助手。用简体中文输出要点式摘要：先一句话结论，再列出 2-4 个要点（如有行动项请标注）。控制在 150 字内。直接输出内容，不要开头客套。' },
@@ -980,7 +997,7 @@ export function registerIpc(ctx: AppContext) {
     aiDraftReply: async ([messageId, tone, requestId]: [string, string, string]) => {
       const text = threadTextForAI(messageId)
       const row = store.getMessageRow(messageId)
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         const mem = agent.memoryPrompt(`${row?.subject ?? ''} ${row?.from_addr ?? ''}`)
         await ai.stream(requestId, [
@@ -1001,7 +1018,7 @@ export function registerIpc(ctx: AppContext) {
 
     aiExtractTasks: async ([messageId, requestId]: [string, string]) => {
       const text = msgTextForAI(store.getMessageRow(messageId))
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         await ai.stream(requestId, [
           { role: 'system', content: '从邮件中提取待办事项（行动项、截止时间、责任人）。用简体中文 markdown 无序列表输出，每项一行。没有待办则输出「未发现待办事项」。' },
@@ -1022,7 +1039,7 @@ export function registerIpc(ctx: AppContext) {
       const context = scored.length
         ? scored.map((s, i) => `[${i + 1}] ${s.item.title}\n${s.item.content.slice(0, 1500)}`).join('\n\n———\n\n')
         : '（知识库中没有找到相关内容）'
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         const mem = agent.memoryPrompt(question)
         await ai.stream(requestId, [
@@ -1204,7 +1221,7 @@ export function registerIpc(ctx: AppContext) {
     agentProfile: ([addr]: [string]) => agent.profile(addr),
 
     agentChat: async ([question, requestId]: [string, string]) => {
-      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      const win = aiStreamTarget()
       try {
         const { system, user, mailRefs } = await agent.chat(question)
         await ai.stream(requestId, [
@@ -1554,7 +1571,9 @@ export function registerIpc(ctx: AppContext) {
     openCompose: ([prefill]: [Partial<ComposeDraft> | undefined]) => ctx.openCompose(prefill),
 
     getVersions: () => ({ app: app.getVersion(), electron: process.versions.electron, node: process.versions.node }),
-    quit: () => app.quit()
+    quit: () => app.quit(),
+
+    connectivity: () => ({ online: net.isOnline(), pendingOps: store.listPendingOps().length })
   }
 
   for (const [method, handler] of Object.entries(handlers)) {

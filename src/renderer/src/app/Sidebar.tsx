@@ -3,6 +3,7 @@ import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
 import { OnboardingCard } from './Guidance'
+import { SyncStatus } from './AccountIssues'
 import { usePrefs } from '../lib/prefs'
 import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import {
@@ -337,34 +338,9 @@ export function Sidebar() {
   )
 }
 
-/** 同步状态：只在有异常或正在同步时占一行，正常时一行「已同步」，点击立即同步 */
+/** 同步状态：离线 / 账户出错（按类别给出重新登录 / 重试 / 查看详情）/ 同步中 / 全部已同步——实现见 AccountIssues */
 function SyncFooter() {
-  const { accounts, accountCtx, syncProgress } = useMail()
-  const list = accountCtx ? accounts.filter(a => a.id === accountCtx) : accounts
-  if (!list.length) return null
-  const bad = list.filter(a => a.status === 'error')
-  const busy = list.filter(a => a.status === 'syncing')
-  const progress = list.map(a => syncProgress[a.id]).filter(Boolean)[0]
-  const text = bad.length
-    ? `${bad[0].name}：${bad[0].statusText || '连接失败'}`
-    : busy.length
-      ? progress || '同步中…'
-      : '全部已同步'
-  return (
-    <button
-      onClick={() => list.forEach(a => void api.syncAccountNow(a.id))}
-      title={bad.length ? bad.map(a => `${a.name}：${a.statusText}`).join('\n') : '立即同步'}
-      className="mx-2 mb-2 px-2.5 py-2 flex items-center gap-2 rounded-[var(--r-sm)] text-left text-xs hover:bg-[var(--hover)]"
-      style={{ color: bad.length ? 'var(--danger-ink)' : 'var(--faint)' }}
-    >
-      {busy.length && !bad.length ? (
-        <IconRefresh width={12} height={12} className="spinning shrink-0" />
-      ) : (
-        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bad.length ? 'var(--danger)' : 'var(--ok)' }} />
-      )}
-      <span className="flex-1 min-w-0 truncate">{text}</span>
-    </button>
-  )
+  return <SyncStatus />
 }
 
 export type { SpecialFolder }

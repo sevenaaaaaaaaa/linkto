@@ -4,6 +4,7 @@ import { useMail } from '../stores/mail'
 import { goView } from '../lib/route'
 import { askAgent } from '../lib/agent-ask'
 import { useTodos, useTodoEvents } from '../lib/todos'
+import { toastAIError } from '../lib/ai-error'
 import {
   schedule, parseQuickAdd, fmtClock, fmtDue, loadScheduleConfig, saveScheduleConfig, minutesOf,
   type Planned, type Bucket, type ScheduleConfig
@@ -182,12 +183,16 @@ export function TodoView() {
     if (phase !== 'idle' || busy) return
     if (view !== 'list') setView('list')
     const before = plan.items.map(i => i.id)
+    let aiFailed = false
     if (useAi) {
       setBusy('AI 正在估时长、定优先级…')
-      const res = await api.aiPlanTodos(plan.items.map(i => i.id))
+      const res = await api.aiPlanTodos(plan.items.map(i => i.id)).catch(err => ({ ok: false, error: String(err instanceof Error ? err.message : err), plans: [] }))
       setBusy('')
-      if (!res.ok) showToast(res.error === 'AI 未配置' ? 'AI 还没配置，先用规则排布（设置 → AI 模型）' : `AI 排布失败：${res.error}`)
-      else await reload()
+      if (!res.ok) {
+        // AI 失败：一句人话 + 动作（去设置 AI / 重试），并说明已用规则兜底；不再被下面的排布结果提示覆盖
+        aiFailed = true
+        toastAIError(res.error ?? '', () => void runSort(true), { suffix: '，已先按规则排布' })
+      } else await reload()
     }
     setPhase('analyze')
     await new Promise(r => setTimeout(r, reducedMotion() ? 0 : 900))
@@ -206,7 +211,7 @@ export function TodoView() {
     setPhase('settle')
     const moved = Object.keys(d).length
     const hours = (next.items.filter(i => i.start && new Date(i.start).toDateString() === new Date().toDateString()).reduce((s, i) => s + i.minutes, 0) / 60).toFixed(1)
-    showToast(
+    if (!aiFailed) showToast(
       `已按截止 · 重要度 · 时长重新排布 ${next.items.length} 项${moved ? `，调整了 ${moved} 项位置` : '，顺序已是最优'}` +
         `${next.movedToToday ? `，${next.movedToToday} 项逾期挪到今天` : ''}；今天约 ${hours} 小时，还空 ${(next.freeToday / 60).toFixed(1)} 小时`
     )

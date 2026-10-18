@@ -1165,6 +1165,9 @@ export function friendlyError(err: unknown): string {
   if (/ECONNREFUSED/i.test(msg)) return '连接被拒绝，请检查端口与加密方式'
   if (/WRONG_VERSION_NUMBER|WRONG_VERSION|tls|ssl|certificate|handshake/i.test(msg))
     return 'TLS 加密握手失败：服务器端口可能不是 SSL/TLS——请在服务器设置里把加密方式改为 STARTTLS 或无加密'
+  // 网络层中断（断网 / 切换 Wi-Fi / 代理掉线）：与服务器配置无关，联网后自动重连
+  if (/ENETUNREACH|EHOSTUNREACH|ECONNRESET|EPIPE|socket hang up|Connection not available|Connection closed|Unexpected close|network/i.test(msg))
+    return '网络连接中断：联网后会自动重连'
   return msg.slice(0, 120)
 }
 
