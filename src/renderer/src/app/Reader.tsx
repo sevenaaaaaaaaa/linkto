@@ -21,6 +21,8 @@ import { getPrefs } from '../lib/prefs'
 import { AIErrorNote } from '../components/AIErrorNote'
 import { friendlyFailure, isAIError, showToast as globalToast, toastAIError } from '../lib/ai-error'
 import { useTodos } from '../lib/todos'
+import { FinanceStrip } from './finance/FinanceStrip'
+import { addMessageToFinance } from '../lib/finance'
 import { goView } from '../lib/route'
 import { Markdown, markdownToHtml } from '../components/Markdown'
 import { ProjectStrip, projectMenuItems } from './projects/ProjectBits'
@@ -564,6 +566,7 @@ export function Reader() {
       hint: 'T',
       onSelect: () => void api.todoFromMessage(msg.id).then(id => showToast(id ? '已加入待办' : '没能转成待办'))
     },
+    { kind: 'action', label: '加入财务', icon: <IconTask width={13} height={13} />, onSelect: () => void addMessageToFinance(msg.id) },
     { kind: 'sep' },
     { kind: 'action', label: '全部回复', icon: <IconReplyAll width={13} height={13} />, onSelect: () => reply(true) },
     { kind: 'action', label: '转发', icon: <IconForward width={13} height={13} />, onSelect: forward },
@@ -723,6 +726,7 @@ export function Reader() {
       )}
 
       <ProjectStrip msg={msg} />
+      <FinanceStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

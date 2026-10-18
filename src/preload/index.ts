@@ -44,6 +44,8 @@ const METHOD_NAMES = [
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
   'todoIntegrationSyncNow', 'todoIntegrationDisconnect', 'calendarBusyBlocks',
+  'financeList', 'financeCreate', 'financeUpdate', 'financeDelete', 'financeMarkPaid', 'financeMakeTodo', 'financeFromMessage',
+  'financeMessages', 'financePair', 'financeUnpair', 'financeScan', 'financeExportCsv',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
   'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity',
   // 项目 / 时间线

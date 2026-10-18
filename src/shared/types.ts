@@ -709,6 +709,35 @@ export interface FinanceData {
   /** 已生成的提醒待办（insights kind='todo' 的 id） */
   todoId?: string | null
   updatedAt?: number
+  // —— 以下为财务中心追加的可选字段 ——
+  /** 这笔钱的经过（账单 → 催缴 → 付款 → 发票；下单 → 发货 → 签收；每期续费），按时间升序 */
+  events?: FinanceEvent[]
+  /** 电商订单物流进度 */
+  logistics?: FinanceLogistics | null
+  /** 订阅提价前的金额（识别到调价时记下） */
+  previousAmount?: number | null
+  /** 用户手动配对 / 拆开过：自动对账不再改动它的 matchId */
+  matchLocked?: boolean
+  /** 已发过的提醒（键含目标时间，换期后会重新提醒） */
+  reminded?: string[]
+  /** 企业往来（参与对账）；false = 个人消费类的付款 / 发票，不进对账 */
+  business?: boolean
+}
+
+export type FinanceLogistics = 'ordered' | 'shipped' | 'in_transit' | 'delivered'
+
+export type FinanceEventKind =
+  | 'billed' | 'reminder' | 'paid' | 'invoiced' | 'refunded' | 'overdue'
+  | 'ordered' | 'shipped' | 'in_transit' | 'delivered'
+  | 'renewed' | 'trial' | 'price_change' | 'cancelled' | 'received' | 'receipt' | 'note'
+
+/** 款项经过中的一步（每封关联邮件通常对应一步） */
+export interface FinanceEvent {
+  at: number
+  kind: FinanceEventKind
+  amount?: number | null
+  messageId?: string | null
+  label?: string
 }
 
 // ---------- 项目（一件事 / 一段合作的多封邮件） ----------

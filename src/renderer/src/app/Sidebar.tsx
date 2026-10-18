@@ -6,6 +6,7 @@ import { OnboardingCard } from './Guidance'
 import { SyncStatus } from './AccountIssues'
 import { usePrefs } from '../lib/prefs'
 import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
+import { FinanceNavRow, IconWallet } from './finance/FinanceNav'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
@@ -236,6 +237,7 @@ export function Sidebar() {
         <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
         <Row icon={<IconLayers {...ico} />} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
         <PinnedProjects Row={Row} />
+        <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
         {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
         {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
         {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}

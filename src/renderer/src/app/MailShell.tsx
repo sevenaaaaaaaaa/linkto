@@ -6,6 +6,8 @@ import { AccountRail } from './AccountRail'
 import { FolderManager } from './FolderManager'
 import { TriageView } from './TriageView'
 import { TodoView } from './TodoView'
+import { FinanceView } from './finance/FinanceView'
+import { openFinance } from '../lib/finance'
 import { ContextRail } from './ContextRail'
 import { MovePalette } from './MovePalette'
 import { CoachTip } from './Guidance'
@@ -82,6 +84,8 @@ export function MailShell() {
         const id = (e as { id?: string }).id
         setTimeout(() => window.dispatchEvent(new CustomEvent(e.type === 'open-todo' ? 'ms:todo-open' : 'ms:todo-quick', { detail: id })), 250)
       }
+      // 款项提醒点击：打开财务页对应款项
+      if (e.type === 'open-finance') openFinance((e as { id?: string }).id)
       if (e.type === 'mail-sent') {
         setToast(`已发送：${e.subject ?? ''}`, 2600)
       }
@@ -245,7 +249,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />

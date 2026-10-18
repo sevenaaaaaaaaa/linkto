@@ -453,3 +453,66 @@ export interface LinkToApi {
   /** 从最近 N 天的企业往来里发现候选项目（AI 已配置用 AI 聚类，否则按对方聚类） */
   discoverProjects(days?: number): Promise<{ ok: boolean; error?: string; source: 'ai' | 'heuristic'; candidates: import('./projects').ProjectCandidate[] }>
 }
+
+// ---------- 财务中心（账单 / 订阅 / 电商订单 / 企业对账）：insights kind='finance' ----------
+
+/** 财务列表：全部未删除的款项 + 「可能闲置」的订阅 id */
+export interface FinanceListResult {
+  records: InsightRecord[]
+  idle: string[]
+}
+
+/** 手动新增款项 */
+export interface FinanceInput {
+  title?: string
+  dueAt?: number | null
+  accountId?: string | null
+  messageId?: string | null
+  data?: Partial<import('./types').FinanceData>
+}
+
+export interface FinanceScanResult {
+  ok: boolean
+  error?: string
+  scanned: number
+  created: number
+  merged: number
+}
+
+/** 款项详情里的关联邮件摘要 */
+export interface FinanceMessageRef {
+  id: string
+  subject: string
+  from: string
+  date: number
+  accountId: string
+  seen: boolean
+}
+
+/**
+ * 财务中心 API（与上方 LinkToApi 声明合并）。
+ * 事件：'finance-changed'（款项变化）、'finance-scan'（{ done, total, created, merged, finished, error? } 回填进度）、
+ * 'open-finance'（{ id }，提醒通知点击后打开某笔款项）。
+ */
+export interface LinkToApi {
+  financeList(): Promise<FinanceListResult>
+  financeCreate(input: FinanceInput): Promise<string>
+  financeUpdate(id: string, patch: { title?: string; dueAt?: number | null; data?: Partial<import('./types').FinanceData> }): Promise<void>
+  /** 删除（自动收集来的记为墓碑，关联邮件不再被收集） */
+  financeDelete(id: string): Promise<void>
+  /** 标记已付 / 撤销；订阅标记已付 = 本期已续费并顺延到下一期 */
+  financeMarkPaid(id: string, paid: boolean): Promise<void>
+  /** 生成提醒待办（已生成则返回原待办 id） */
+  financeMakeTodo(id: string): Promise<string | null>
+  /** 邮件阅读页「加入财务」：已在某笔款项里则返回它 */
+  financeFromMessage(messageId: string): Promise<{ id: string | null; created: boolean }>
+  financeMessages(ids: string[]): Promise<FinanceMessageRef[]>
+  /** 手动配对（发票 / 付款 / 回单 → 同一 matchId，之后自动对账不再改动） */
+  financePair(ids: string[]): Promise<string | null>
+  /** 拆开配对 */
+  financeUnpair(ids: string[]): Promise<void>
+  /** 扫描最近 N 天邮件回填（进度经 'finance-scan' 事件） */
+  financeScan(days: number): Promise<FinanceScanResult>
+  /** 导出 CSV（系统保存对话框）：按对方 / 期间 / 指定 id 过滤 */
+  financeExportCsv(opts: { counterparty?: string | null; from?: number | null; to?: number | null; ids?: string[] | null; name?: string | null }): Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>
+}

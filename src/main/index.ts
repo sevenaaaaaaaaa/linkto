@@ -32,6 +32,9 @@ import { classifyAccountError } from '@shared/errors'
 import { initAttachments, attachmentService } from './attachments'
 import { ProjectService } from './projects/service'
 import { registerProjectIpc } from './projects/ipc'
+import { FinanceService } from './finance/service'
+import { registerFinanceIpc } from './finance/ipc'
+import { startFinanceReminders } from './finance/reminders'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -131,6 +134,7 @@ let ghost: GhostService
 let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
 let projects: ProjectService | null = null
+let finance: FinanceService | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -527,6 +531,8 @@ async function bootstrap() {
       projects?.onMessage(ins.messageId)
       const a = collectTodoFromInsight(mailStore, ins)
       const b = collectMeetingTodo(mailStore, ins)
+      // 财务中心：账单 / 订阅 / 订单 / 企业往来自动收集（排队异步，幂等）
+      finance?.onInsight(ins)
       if (a || b) {
         broadcast({ type: 'todos-changed' })
         notifyLocalChange()
@@ -663,6 +669,16 @@ async function bootstrap() {
 
   mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload) })
   todoSync = new TodoSyncService({ store: mailStore, appStore, engine, event: payload => broadcast(payload) })
+  finance = new FinanceService({
+    store: mailStore,
+    ai: aiService,
+    getAISettings: () => appStore.getAI(),
+    event: payload => broadcast(payload),
+    onTodosChanged: () => {
+      notifyLocalChange()
+      notifyIntegrationChange()
+    }
+  })
 
   const ctx: AppContext = {
     store: mailStore,
@@ -694,6 +710,7 @@ async function bootstrap() {
   initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   registerProjectIpc(projects)
+  registerFinanceIpc(finance)
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
   // 定期整理：已读的旧订阅 / 通知按设置天数自动归档
@@ -731,6 +748,16 @@ async function bootstrap() {
     openTodo: id => {
       showMainWindow()
       mainWindow?.webContents.send('event', { type: 'open-todo', id })
+    }
+  })
+  // 款项提醒：到期前 3 天 / 当天、续费前 3 天、试用结束前 2 天（跟随通知总开关与免打扰）
+  startFinanceReminders({
+    finance,
+    settings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
+    markReminded: (id, keys) => mailStore.updateInsight(id, { data: { reminded: keys } }),
+    openFinance: id => {
+      showMainWindow()
+      mainWindow?.webContents.send('event', { type: 'open-finance', id })
     }
   })
   // 开机自启（跟随设置；hidden 避免抢占前台）

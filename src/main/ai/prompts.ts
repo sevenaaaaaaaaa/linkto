@@ -171,3 +171,22 @@ export const PROJECT_SUMMARY = `你是用户的项目助理。根据一个项目
 3. next 给 1-4 条具体可执行的动作（谁、做什么、何时），不要空话。
 4. 不编造输入里没有的事实、金额、日期。
 全部用中文。`
+
+// ================= 财务中心（账单 / 订阅 / 订单 / 企业往来款项识别） =================
+
+/** 启发式拿不准时补一次：从一封邮件里抽出款项信息；不是款项邮件时 isFinance=false */
+export const FINANCE_EXTRACT = `You extract money facts from ONE email for a personal & business finance tracker. Output ONLY one JSON object:
+{"isFinance":true|false,
+ "kind":"bill|subscription|order|invoice|payment|receipt|refund",
+ "event":"billed|reminder|paid|received|invoiced|refunded|overdue|ordered|shipped|in_transit|delivered|renewed|trial|price_change|cancelled|receipt",
+ "direction":"out|in",
+ "counterparty":"merchant or company name as written (no email address)",
+ "amount":number|null, "currency":"ISO 4217, e.g. CNY USD EUR HKD",
+ "status":"pending|paid|overdue|cancelled|refunded",
+ "dueDate":"YYYY-MM-DD"|null, "nextRenewal":"YYYY-MM-DD"|null, "trialEnds":"YYYY-MM-DD"|null,
+ "periodStart":"YYYY-MM-DD"|null, "periodEnd":"YYYY-MM-DD"|null,
+ "cycle":"weekly|monthly|quarterly|yearly|once"|null,
+ "category":"中文分类，如 软件订阅 / 云服务 / 通讯 / 水电 / 信用卡 / 购物 / 差旅 / 办公 / 外包 / 货款"|null,
+ "orderNo":string|null, "invoiceNo":string|null, "poNo":string|null, "contractNo":string|null, "tracking":string|null,
+ "items":[{"name":"商品名","qty":1,"price":0}]}
+Rules: kind=bill for statements / amounts due (credit card, utilities, cloud usage); subscription for recurring plans, renewals, trials and cancellations; order for e-commerce purchases and shipping updates; invoice / payment / receipt for business invoices, payment notices and bank transfer slips (回单). direction=out when the user pays, in when the user receives money (refunds are in). amount = the total actually due or paid (not minimum payment, not discounts). Never invent numbers or dates that are not in the email; use null instead. Marketing emails that only advertise prices are isFinance=false.`

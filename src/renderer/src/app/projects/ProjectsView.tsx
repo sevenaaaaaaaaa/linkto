@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { openFinance } from '../../lib/finance'
 import { api } from '../../lib/api'
 import { goView } from '../../lib/route'
 import { useMail } from '../../stores/mail'
@@ -732,9 +733,8 @@ function openEvent(ev: TimelineEvent, openMail: (id: string) => void) {
     return
   }
   if (ev.kind === 'finance') {
-    // 财务入口挂上后由它接管（打开款项详情）；同时就地打开来源邮件
-    window.dispatchEvent(new CustomEvent('ms:finance-open', { detail: ev.financeId }))
-    if (ev.messageId) openMail(ev.messageId)
+    // 跳到财务页并打开这笔款项的详情
+    openFinance(ev.financeId)
     return
   }
   if (ev.messageId) openMail(ev.messageId)
@@ -1252,14 +1252,10 @@ function MoneyCard(props: { detail: ProjectDetail; onOpen(id: string): void; onE
         <div className="mt-3 space-y-1">
           {p.finance.map(f => {
             const d = f.data as unknown as FinanceData
-            const src = d.messageIds?.[0] ?? f.messageId
             return (
               <button
                 key={f.id}
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('ms:finance-open', { detail: f.id }))
-                  if (src) props.onOpen(src)
-                }}
+                onClick={() => openFinance(f.id)}
                 className="w-full flex items-center gap-2 py-0.5 text-left hover:bg-[var(--hover)] rounded-[var(--r-xs)] px-1 -mx-1"
               >
                 <span className="text-2xs w-8 shrink-0" style={{ color: 'var(--warn-ink)', fontWeight: 600 }}>{FINANCE_KIND_LABEL[d.kind] ?? d.kind}</span>
