@@ -35,6 +35,8 @@ import { registerProjectIpc } from './projects/ipc'
 import { FinanceService } from './finance/service'
 import { registerFinanceIpc } from './finance/ipc'
 import { startFinanceReminders } from './finance/reminders'
+import { AgentRuntime } from './agent/runtime'
+import { registerAgentIpc } from './agent/ipc'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -711,6 +713,24 @@ async function bootstrap() {
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   registerProjectIpc(projects)
   registerFinanceIpc(finance)
+  // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
+  const agentRuntime = new AgentRuntime({
+      store: mailStore,
+      appStore,
+      ai: aiService,
+      agent,
+      understand,
+      finance,
+      projects,
+      attachments: () => attachmentService(),
+      call: internal.call,
+      event: payload => broadcast(payload),
+      openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
+      getAISettings: () => appStore.getAI()
+    })
+  registerAgentIpc(agentRuntime)
+  // MCP：外部 Agent 也能用这些只读工具（财务 / 项目 / 附件 / 待跟进…），不覆盖既有工具
+  mcp.attachExtraTools({ list: () => agentRuntime.readTools(), run: (name, args) => agentRuntime.runReadTool(name, args) })
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
   // 定期整理：已读的旧订阅 / 通知按设置天数自动归档

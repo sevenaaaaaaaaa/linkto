@@ -223,12 +223,33 @@ const TOOLS = [
 
 // ---------- 服务 ----------
 
+/** 额外的只读工具（Agent 运行时的注册表）：不覆盖上面的内置工具 */
+export interface McpExtraTools {
+  list(): { name: string; description: string; inputSchema: Record<string, unknown> }[]
+  run(name: string, args: Record<string, unknown>): Promise<unknown>
+}
+
 export class McpService {
   private server: Server | null = null
   private boundPort = 0
   private lastError = ''
+  private extra: McpExtraTools | null = null
 
   constructor(private deps: McpDeps) {}
+
+  /** Agent 运行时就绪后挂上它的只读工具（财务 / 项目 / 附件 / 待跟进等） */
+  attachExtraTools(extra: McpExtraTools | null) {
+    this.extra = extra
+  }
+
+  private extraTools() {
+    if (!this.extra) return []
+    try {
+      return this.extra.list().filter(t => !TOOLS.some(b => b.name === t.name))
+    } catch {
+      return []
+    }
+  }
 
   settings(): McpSettings {
     return this.deps.appStore.get(SETTINGS_KEY, DEFAULT_MCP)
@@ -450,12 +471,20 @@ export class McpService {
       case 'ping':
         return rpcResult(id, {})
       case 'tools/list':
-        return rpcResult(id, { tools: TOOLS })
+        return rpcResult(id, { tools: [...TOOLS, ...this.extraTools()] })
       case 'tools/call': {
         const name = params.name
         if (typeof name !== 'string') return rpcError(id, -32602, 'Invalid params: missing tool name')
-        if (!TOOLS.some(t => t.name === name)) return rpcError(id, -32602, `Unknown tool: ${name}`)
         const args = (params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? params.arguments : {}) as Record<string, unknown>
+        if (!TOOLS.some(t => t.name === name)) {
+          if (!this.extraTools().some(t => t.name === name)) return rpcError(id, -32602, `Unknown tool: ${name}`)
+          try {
+            const data = await this.extra!.run(name, args)
+            return rpcResult(id, { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] })
+          } catch (err) {
+            return rpcResult(id, { content: [{ type: 'text', text: `执行失败（tool failed）：${err instanceof Error ? err.message : String(err)}` }], isError: true })
+          }
+        }
         return rpcResult(id, this.callTool(name, args))
       }
       default:

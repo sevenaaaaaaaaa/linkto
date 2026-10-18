@@ -1096,10 +1096,16 @@ export type AgentStep =
       status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'
       /** 一句话结果，如「找到 12 封」 */
       summary?: string
+      /** 写操作：模型给出的理由（确认卡展示） */
+      reason?: string
+      /** 写操作：影响对象的可读描述（如邮件主题），确认卡展示 */
+      targets?: string[]
+      /** 结果详情（可展开查看；已截断） */
+      detail?: string
     }
   | { kind: 'text'; delta: string }
   | { kind: 'refs'; refs: AgentRef[] }
-  | { kind: 'done'; text: string; refs: AgentRef[] }
+  | { kind: 'done'; text: string; refs: AgentRef[]; /** 用户中途停止 */ cancelled?: boolean }
   | { kind: 'error'; message: string }
 
 export interface AgentTurn {

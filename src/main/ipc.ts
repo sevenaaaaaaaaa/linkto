@@ -1675,6 +1675,12 @@ export function registerIpc(ctx: AppContext) {
   return {
     runRuleActions,
     archive: (messageId: string) => moveOrDelete(messageId, 'archive'),
+    /** Agent 工具调用：直接复用已注册的处理器（与界面操作同一实现） */
+    call: async (method: string, args: unknown[]): Promise<unknown> => {
+      const h = handlers[method]
+      if (!h) throw new Error(`未知的处理器：${method}`)
+      return h(args, undefined as never)
+    },
     aiClassify: async (messageIds: string[]): Promise<void> => {
       await handlers.aiClassify([messageIds], undefined as never)
     }
