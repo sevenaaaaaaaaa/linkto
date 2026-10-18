@@ -8,6 +8,7 @@ import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
+import { Markdown } from '../components/Markdown'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -1413,7 +1414,7 @@ function BulkAskPanel(props: { ids: string[]; onClose(): void }) {
         {error && <div className="mt-2.5 text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
         {answer && (
           <div className="mt-3.5 rounded-[var(--r-sm)] border border-[var(--border-soft)] px-4 py-3" style={{ background: 'var(--bg-soft)' }}>
-            <div className="selectable text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>{answer}</div>
+            <div className="selectable text-sm leading-relaxed" style={{ color: 'var(--fg)' }}><Markdown text={answer} /></div>
           </div>
         )}
         {todos.length > 0 && (

@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave } from '../components/icons'
 import { sanitizeEmailHtml } from '../lib/sanitize'
 import type { KbItem } from '@shared/types'
+import { Markdown } from '../components/Markdown'
 
 /** 知识库视图：浏览 / 检索 / AI 问答 / 手记 */
 export function KbView() {
@@ -226,11 +227,11 @@ function KbChat(props: { onClose(): void }) {
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap selectable ${
-                  m.role === 'user' ? 'bg-blue-600 text-on-accent' : 'bg-zinc-100 text-zinc-800'
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed selectable ${
+                  m.role === 'user' ? 'bg-blue-600 text-on-accent whitespace-pre-wrap' : 'bg-zinc-100 text-zinc-800'
                 }`}
               >
-                {m.text}
+                {m.role === 'assistant' ? <Markdown text={m.text} /> : m.text}
               </div>
             </div>
           ))}
