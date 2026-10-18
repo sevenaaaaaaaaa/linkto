@@ -9,13 +9,14 @@ import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import { FinanceNavRow, IconWallet } from './finance/FinanceNav'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
+  IconChevronDown, IconRefresh, IconPin, IconSparkles, IconClock, IconShield,
   IconReplyAll, IconSave, IconClose, IconSearch, IconCheckSquare, IconAttach
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
 import { PinnedProjects, useProjectBadge, useProjectsRowActive } from './projects/ProjectBits'
 import { IconLayers } from '../components/icons'
+import { AgentNavSection } from './agent/AgentNav'
 
 /**
  * 侧边栏行组件与分组（v3 结构见 Sidebar）
@@ -298,13 +299,7 @@ export function Sidebar() {
             {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
             <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
             <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
-            <Row
-              icon={<IconRobot {...ico} />}
-              label="Agent"
-              active={view === 'agent'}
-              onClick={() => goView('agent')}
-              trailing={<kbd className="text-2xs" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>⌘J</kbd>}
-            />
+            <AgentNavSection Row={Row} ico={ico} />
             {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
             <Row icon={<IconAttach {...ico} />} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />
             <SmartViewsSection />

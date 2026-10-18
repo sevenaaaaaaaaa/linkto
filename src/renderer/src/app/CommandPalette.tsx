@@ -8,6 +8,7 @@ import { useSearch } from '../stores/search'
 import { askAgent } from '../lib/agent-ask'
 import type { MessageSummary } from '@shared/types'
 import { projectCommands } from './projects/ProjectBits'
+import { agentCommands } from './agent/AgentNav'
 
 interface Command {
   id: string
@@ -16,6 +17,8 @@ interface Command {
   hint?: string
   icon?: React.ReactNode
   keywords?: string
+  /** 只在输入文字后出现（如「运行技能：xxx」，避免淹没默认列表） */
+  searchOnly?: boolean
   run(): void
 }
 
@@ -76,7 +79,6 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-noise', group: '前往', label: '噪声', keywords: '分类', run: go({ kind: 'category', category: 'noise' }, '噪声') },
       { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { goView('insights'); props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
-      { id: 'nav-agent', group: '前往', label: 'Agent（记忆 / 对话 / 发件人画像）', run: () => { goView('agent'); props.onClose() } },
       { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
       { id: 'act-finance-scan', group: '前往', label: '财务：扫描最近 90 天邮件', keywords: 'finance scan 账单 订阅 回填', run: () => { goView('finance'); props.onClose(); void api.financeScan(90) } },
@@ -136,12 +138,12 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'act-preset', group: '外观', label: '主题预设…', run: () => { props.onClose(); emit('ms:toggle-theme-menu') } },
       { id: 'act-style', group: '外观', label: '阅读风格…', run: () => { props.onClose(); emit('ms:toggle-style-menu') } }
     ]
-    return [...actions.filter(c => c.group !== '列表'), ...nav, ...projectCommands(props.onClose), ...actions.filter(c => c.group === '列表')]
+    return [...actions.filter(c => c.group !== '列表'), ...nav, ...agentCommands(props.onClose), ...projectCommands(props.onClose), ...actions.filter(c => c.group === '列表')]
   }, [props.open, props.onClose])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return commands
+    if (!q) return commands.filter(c => !c.searchOnly)
     return commands.filter(c => (c.label + ' ' + (c.keywords ?? '')).toLowerCase().includes(q))
   }, [commands, query])
 

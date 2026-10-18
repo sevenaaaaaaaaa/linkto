@@ -476,3 +476,89 @@ export const IconListOrdered = (p: P) => (
     <path d="M6 18H4c0-1 2-2 2-3s-1-1.75-2-1" />
   </svg>
 )
+
+// ---------- Agent 技能库用到的图标（手写 24×24 stroke） ----------
+
+export const IconHourglass = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 3h12" />
+    <path d="M6 21h12" />
+    <path d="M7 3v3a5 5 0 0 0 2.5 4.33L12 12l2.5-1.67A5 5 0 0 0 17 6V3" />
+    <path d="M7 21v-3a5 5 0 0 1 2.5-4.33L12 12l2.5 1.67A5 5 0 0 1 17 18v3" />
+  </svg>
+)
+
+export const IconCalendar = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
+    <path d="M3 9.5h18" />
+    <path d="M8 2.5v4" />
+    <path d="M16 2.5v4" />
+    <path d="M7.5 13.5h3" />
+  </svg>
+)
+
+export const IconReceipt = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 3h14v18l-2.33-1.5L14.33 21 12 19.5 9.67 21l-2.34-1.5L5 21z" />
+    <path d="M9 8h6" />
+    <path d="M9 12h6" />
+    <path d="M9 16h3" />
+  </svg>
+)
+
+export const IconBriefcase = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="7" width="18" height="13" rx="2.5" />
+    <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7" />
+    <path d="M3 12.5h18" />
+  </svg>
+)
+
+export const IconLandmark = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 9.5 12 4l9 5.5" />
+    <path d="M4.5 10v8" />
+    <path d="M9.5 10v8" />
+    <path d="M14.5 10v8" />
+    <path d="M19.5 10v8" />
+    <path d="M3 20.5h18" />
+  </svg>
+)
+
+export const IconPlane = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M10.5 13.5 3 11l1.5-1.5 7.5.5 4.5-4.5a2.12 2.12 0 0 1 3 3L15 13l.5 7.5L14 22l-2.5-7.5" />
+    <path d="M6 17.5 4 20l2.5-2" />
+  </svg>
+)
+
+export const IconPackage = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M21 8 12 3 3 8v8l9 5 9-5z" />
+    <path d="M3 8l9 5 9-5" />
+    <path d="M12 13v8" />
+    <path d="M7.5 5.5l9 5" />
+  </svg>
+)
+
+export const IconGrid = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+  </svg>
+)
+
+export const IconPlay = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" />
+  </svg>
+)
+
+export const IconZap = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+  </svg>
+)

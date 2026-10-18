@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
-import { goView } from '../lib/route'
+import { goAgent } from '../lib/route'
 import { IconClose } from '../components/icons'
 
 const DISMISS_KEY = 'ms_onboard_dismissed'
@@ -51,7 +51,7 @@ export function OnboardingCard() {
     { label: '连接你的邮箱', done: accounts.length > 0, go: () => api.openSettings('accounts') },
     { label: '选择 AI 模型（云端或本地）', done: state.ai, go: () => api.openSettings('ai') },
     { label: '用「逐封处理」清空一次', done: triageDone, go: () => useMail.getState().setTriage(true) },
-    { label: '教 Agent 记住一件事', done: state.memory, go: () => goView('agent') },
+    { label: '教 Agent 记住一件事', done: state.memory, go: () => goAgent('memory') },
     { label: '把 LinkTo 接到 Claude Code（MCP）', done: state.mcp, go: () => api.openSettings('integrations') }
   ]
   const doneCount = steps.filter(s => s.done).length

@@ -29,3 +29,41 @@ export function goView(view: View): void {
   const target = view === 'mail' ? '#/mail' : `#/${view}`
   if (location.hash !== target) location.hash = target
 }
+
+// ---------------------------------------------------------------- Agent 子页（#/agent…）
+
+/** Agent 子页：#/agent（默认对话）· #/agent/chat[/<threadId>] · #/agent/skills · #/agent/auto · #/agent/memory */
+export type AgentTab = 'chat' | 'skills' | 'auto' | 'memory'
+
+export interface AgentRoute {
+  tab: AgentTab
+  /** 对话页打开的会话（#/agent/chat/<threadId>） */
+  threadId: string | null
+}
+
+export function agentRouteFromHash(hash = location.hash): AgentRoute {
+  const m = hash.match(/^#\/agent(?:\/([^/?]+))?(?:\/([^/?]+))?/)
+  const seg = m?.[1]
+  const tab: AgentTab = seg === 'skills' || seg === 'auto' || seg === 'memory' ? seg : 'chat'
+  return { tab, threadId: tab === 'chat' && m?.[2] ? decodeURIComponent(m[2]) : null }
+}
+
+export function useAgentRoute(): AgentRoute {
+  const [r, setR] = useState<AgentRoute>(() => agentRouteFromHash())
+  useEffect(() => {
+    const on = () => setR(agentRouteFromHash())
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  return r
+}
+
+export function agentHash(tab: AgentTab, threadId?: string | null): string {
+  if (tab === 'chat') return threadId ? `#/agent/chat/${encodeURIComponent(threadId)}` : '#/agent/chat'
+  return `#/agent/${tab}`
+}
+
+export function goAgent(tab: AgentTab, threadId?: string | null): void {
+  const target = agentHash(tab, threadId)
+  if (location.hash !== target) location.hash = target
+}

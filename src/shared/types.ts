@@ -1158,6 +1158,8 @@ export interface AgentSkill {
   /** 定时运行；结果写进活动记录 */
   schedule?: { every: 'hour' | 'day' | 'week'; at?: string; weekday?: number } | null
   updatedAt?: number
+  /** 需要的上下文：message = 必须针对一封邮件运行（context.messageId；右侧栏「用技能处理这封邮件」列出） */
+  contextKind?: 'message' | null
 }
 
 /** 后台自动任务（收集 / 学习 / 定时技能） */

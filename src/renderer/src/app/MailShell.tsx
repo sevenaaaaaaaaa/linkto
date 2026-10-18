@@ -21,6 +21,8 @@ import { AgentView } from './AgentView'
 import { AttachmentsView } from './attachments/AttachmentsView'
 import { ProjectsView } from './projects/ProjectsView'
 import { ProjectPickerHost } from './projects/ProjectBits'
+import { OnboardingScanHost } from './agent/AutomationPanel'
+import { SkillRunHost } from './agent/skill-ui'
 import { CommandPalette } from './CommandPalette'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
@@ -261,6 +263,8 @@ export function MailShell() {
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ProjectPickerHost />
+      <SkillRunHost />
+      <OnboardingScanHost />
 
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (

@@ -5,6 +5,7 @@ import { goView } from '../lib/route'
 import { IconBook, IconBrain, IconClose, IconFileText, IconRobot, IconUser } from '../components/icons'
 import { AgentChat } from './AgentView'
 import { ContactTimelineLinks } from './projects/ProjectBits'
+import { RailAgentHost } from './agent/RailSkills'
 
 type SenderContext = NonNullable<Awaited<ReturnType<typeof api.senderContext>>>
 
@@ -72,7 +73,9 @@ export function ContextRail() {
 
       {rail === 'agent' ? (
         <div className="flex-1 min-h-0">
+          <RailAgentHost onClose={() => toggleRail('agent')}>
           <AgentChat panel onClose={() => toggleRail('agent')} />
+          </RailAgentHost>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
