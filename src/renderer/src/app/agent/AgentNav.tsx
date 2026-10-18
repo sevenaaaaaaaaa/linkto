@@ -4,13 +4,13 @@ import { useSkills, useSkillsLoader, sortSkills, requestSkillRun } from '../../l
 import { IconBrain, IconChat, IconChevronDown, IconGrid, IconRobot, IconZap, IconMore } from '../../components/icons'
 import { SkillIcon } from './skill-ui'
 
-/** 侧栏最多直接显示的钉住技能数，超出折叠进「更多技能…」 */
-const MAX_PINNED = 6
+/** 侧栏最多直接显示的钉住技能数，其余从「更多技能」进技能库 */
+const MAX_PINNED = 3
 
 const SUBS: { tab: AgentTab; label: string; icon: React.ReactNode }[] = [
   { tab: 'chat', label: '对话', icon: <IconChat width={13} height={13} /> },
   { tab: 'skills', label: '技能', icon: <IconGrid width={13} height={13} /> },
-  { tab: 'auto', label: '自动任务', icon: <IconZap width={13} height={13} /> },
+  { tab: 'auto', label: '自动', icon: <IconZap width={13} height={13} /> },
   { tab: 'memory', label: '记忆', icon: <IconBrain width={13} height={13} /> }
 ]
 
@@ -56,6 +56,31 @@ function SubRow(props: { icon: React.ReactNode; label: string; active?: boolean;
   )
 }
 
+/** 子页切换：一行四个紧凑按钮（对话 · 技能 · 自动 · 记忆），比逐行列出省三行高度 */
+function SubTabs(props: { active: AgentTab | null }) {
+  return (
+    <div className="flex items-center gap-0.5 pl-[26px] pr-1 py-0.5" role="tablist" aria-label="Agent 子页">
+      {SUBS.map(s => {
+        const on = props.active === s.tab
+        return (
+          <button
+            key={s.tab}
+            role="tab"
+            aria-selected={on}
+            onClick={() => goAgent(s.tab)}
+            title={s.tab === 'auto' ? '自动任务' : s.label}
+            className={`flex-1 min-w-0 h-6 inline-flex items-center justify-center gap-1 rounded-[var(--r-xs)] text-2xs transition-colors ${on ? 'font-medium' : 'hover:bg-[var(--hover)]'}`}
+            style={{ background: on ? 'var(--selected)' : undefined, color: on ? 'var(--accent-ink)' : 'var(--muted)' }}
+          >
+            <span className="inline-flex shrink-0" style={{ color: on ? 'var(--accent)' : 'var(--faint)' }}>{s.icon}</span>
+            <span className="truncate">{s.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 type RowComp = (props: {
   icon?: React.ReactNode
   label: string
@@ -73,10 +98,9 @@ export function AgentNavSection(props: { Row: RowComp; ico: { width: number; hei
   const view = useView()
   const route = useAgentRoute()
   const [open, setOpen] = useAgentOpen()
-  const [more, setMore] = useState(false)
   const skills = useSkills(st => st.skills)
   const pinned = sortSkills(skills.filter(s => s.pinned))
-  const shown = more ? pinned : pinned.slice(0, MAX_PINNED)
+  const shown = pinned.slice(0, MAX_PINNED)
   const inAgent = view === 'agent'
   const { Row } = props
 
@@ -121,10 +145,7 @@ export function AgentNavSection(props: { Row: RowComp; ico: { width: number; hei
       />
       {open && (
         <div className="flex flex-col gap-px pb-1" role="group" aria-label="Agent">
-          {SUBS.map(s => (
-            <SubRow key={s.tab} icon={s.icon} label={s.label} active={inAgent && route.tab === s.tab} onClick={() => goAgent(s.tab)} />
-          ))}
-          {pinned.length > 0 && <div className="mx-[30px] my-1 h-px" style={{ background: 'var(--border-soft)' }} />}
+          <SubTabs active={inAgent ? route.tab : null} />
           {shown.map(s => (
             <SubRow
               key={s.id}
@@ -137,9 +158,9 @@ export function AgentNavSection(props: { Row: RowComp; ico: { width: number; hei
           {pinned.length > MAX_PINNED && (
             <SubRow
               icon={<IconMore width={12} height={12} />}
-              label={more ? '收起' : `更多技能… ${pinned.length - MAX_PINNED}`}
+              label={`更多技能 · ${pinned.length - MAX_PINNED}`}
               muted
-              onClick={() => setMore(m => !m)}
+              onClick={() => goAgent('skills')}
             />
           )}
         </div>

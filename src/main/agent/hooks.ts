@@ -68,3 +68,45 @@ export async function listSkillsForSchedule(): Promise<AgentSkill[]> {
   }
   return (list ?? []).filter(s => !!s?.schedule && !!s.schedule.every)
 }
+
+// ---------- 附件正文读取（附件模块注册；事件触发 / 会后闭环 / 财务核对 / Agent 工具读取） ----------
+
+export type AttachmentTextReader = (attachmentId: string, maxChars?: number) => Promise<string | null>
+
+let textReader: AttachmentTextReader | null = null
+
+export function setAttachmentTextReader(fn: AttachmentTextReader | null) {
+  textReader = fn
+}
+
+/** 读附件正文（PDF 文本层 / 纯文本）；没注册或提取不到时返回 null */
+export function readAttachmentText(attachmentId: string, maxChars = 20000): Promise<string | null> {
+  return textReader ? textReader(attachmentId, maxChars).catch(() => null) : Promise.resolve(null)
+}
+
+// ---------- 跟进登记（跟进模块注册；Agent 工具 / 技能 / 撰写窗发出后调用） ----------
+
+export type FollowupRegistrar = (input: {
+  kind: import('@shared/types').FollowupKind
+  ask: string
+  to: string[]
+  subject: string
+  relatedMessageId?: string | null
+  draftId?: string | null
+  sentMessageId?: string | null
+  waitDays?: number
+  source: 'agent' | 'skill' | 'manual' | 'rule'
+  financeId?: string | null
+  projectId?: string | null
+}) => string | null
+
+let followupRegistrar: FollowupRegistrar | null = null
+
+export function setFollowupRegistrar(fn: FollowupRegistrar | null) {
+  followupRegistrar = fn
+}
+
+/** 登记一条跟进；跟进模块未就绪时返回 null */
+export function registerFollowup(input: Parameters<FollowupRegistrar>[0]): string | null {
+  return followupRegistrar ? followupRegistrar(input) : null
+}

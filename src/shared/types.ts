@@ -578,8 +578,8 @@ export interface TodoData {
   external?: Partial<Record<TodoProvider, { id: string; listId?: string; etag?: string; syncedAt: number }>>
 }
 
-/** swipe：营销灵感收藏（公司洞察挑出的范本邮件）；finance：账单 / 订阅 / 订单 / 企业往来款项；project：项目（一件事的多封邮件） */
-export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project'
+/** swipe：营销灵感收藏（公司洞察挑出的范本邮件）；finance：账单 / 订阅 / 订单 / 企业往来款项；project：项目（一件事的多封邮件）；followup：发出后在等对方的跟进 */
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project' | 'followup'
 
 export interface InsightRecord {
   id: string
@@ -1163,6 +1163,8 @@ export interface AgentSkill {
   pinned?: boolean
   /** 定时运行；结果写进活动记录 */
   schedule?: { every: 'hour' | 'day' | 'week'; at?: string; weekday?: number } | null
+  /** 事件触发：新邮件命中某类事件时以这封邮件为上下文自动运行（无界面，写操作只作为建议） */
+  triggers?: AgentSkillTrigger[]
   updatedAt?: number
   /** 需要的上下文：message = 必须针对一封邮件运行（context.messageId；右侧栏「用技能处理这封邮件」列出） */
   contextKind?: 'message' | null
@@ -1246,4 +1248,94 @@ export interface AgentJobSettings {
   notifySkills: boolean
   /** 只读：今天已用的后台 AI 请求数 */
   aiUsedToday?: number
+}
+
+// ---------- 事件触发技能 ----------
+
+/**
+ * 新邮件里识别出的事件类型。invoice 发票 / 账单；payment-due 付款到期；flight-change 航班 / 行程变更；travel-booking 新的出行预订；
+ * security-alert 异常登录 / 密码重置 / 安全提醒；contract 合同 / 协议待签或已签；meeting-invite 会议邀请；meeting-notes 会议纪要 / 会后邮件；
+ * package-issue 快递异常；job-application 招聘求职进展；custom 仅按 match 条件命中
+ */
+export type AgentEventKind =
+  | 'invoice'
+  | 'payment-due'
+  | 'flight-change'
+  | 'travel-booking'
+  | 'security-alert'
+  | 'contract'
+  | 'meeting-invite'
+  | 'meeting-notes'
+  | 'package-issue'
+  | 'job-application'
+  | 'custom'
+
+export interface AgentSkillTrigger {
+  event: AgentEventKind
+  enabled: boolean
+  /** 额外过滤（全部满足才触发）：发件人 / 主题包含 / 限定账户 */
+  match?: { from?: string | null; subject?: string | null; accountId?: string | null } | null
+  /** 运行完是否发系统通知（受通知设置约束） */
+  notify?: boolean
+}
+
+/** 一封邮件命中的事件（识别结果，供触发与界面展示） */
+export interface AgentEventHit {
+  messageId: string
+  event: AgentEventKind
+  /** 0~1 */
+  confidence: number
+  /** 一句话：为什么判定为这个事件 */
+  reason: string
+}
+
+// ---------- 跟进闭环（发出后在等对方） ----------
+
+/** reply 等回复；invoice 等对方开票；payment 等对方付款；document 等资料 / 文件；unsubscribe 退订确认；general 其他 */
+export type FollowupKind = 'reply' | 'invoice' | 'payment' | 'document' | 'unsubscribe' | 'general'
+
+export type FollowupStatus = 'drafted' | 'waiting' | 'replied' | 'overdue' | 'closed' | 'cancelled'
+
+/**
+ * insights kind='followup' 的 data。生命周期：Agent / 技能起草（drafted）→ 用户确认发出（waiting，记 sentMessageId）→
+ * 线程里收到对方来信（replied）或到期未回（overdue → 提醒 / 再起草一封，attempts+1）→ 用户关闭（closed）。
+ * insights 行的 dueAt = 到期时间，status open = 进行中，done = 已结束。
+ */
+export interface FollowupData {
+  kind: FollowupKind
+  status: FollowupStatus
+  /** 一句话：在等对方做什么（如「对方开 10 月服务费发票」） */
+  ask: string
+  to: string[]
+  subject: string
+  /** 起因邮件（例如需要催开票的那笔款项的来源邮件） */
+  relatedMessageId?: string | null
+  /** 草稿 id（drafted 阶段） */
+  draftId?: string | null
+  /** 实际发出的那封（waiting 起） */
+  sentMessageId?: string | null
+  threadId?: string | null
+  /** 到期未回的等待天数（用于计算 dueAt 与下一次） */
+  waitDays: number
+  attempts: number
+  maxAttempts: number
+  lastNudgeAt?: number | null
+  repliedMessageId?: string | null
+  source: 'agent' | 'skill' | 'manual' | 'rule'
+  financeId?: string | null
+  todoId?: string | null
+  projectId?: string | null
+  updatedAt?: number
+}
+
+// ---------- 附件正文（PDF 等） ----------
+
+export interface AttachmentTextInfo {
+  attachmentId: string
+  /** pdfjs = PDF 文本层；plain = 纯文本类附件直接读取；none = 没有可提取的文字（扫描件等） */
+  method: 'pdfjs' | 'plain' | 'none'
+  pages: number
+  chars: number
+  extractedAt: number
+  error?: string | null
 }

@@ -561,3 +561,21 @@ export interface LinkToApi {
   /** 首次整理「稍后」：本次启动不再提示，下次启动再提醒一次 */
   onboardingScanLater(): Promise<void>
 }
+
+// ---------- 事件触发 / 跟进闭环 / 附件正文（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  /** 一封邮件命中的事件（阅读页展示「已识别：发票 → 已运行 xx 技能」） */
+  agentEventsFor(messageId: string): Promise<{ hits: import('./types').AgentEventHit[]; runs: { skillId: string; at: number; activityId?: string | null }[] }>
+
+  /** 跟进列表（默认进行中的） */
+  followupList(opts?: { includeClosed?: boolean }): Promise<import('./types').InsightRecord[]>
+  /** 手动登记一条跟进（例如对已发出的某封邮件「等对方回复，N 天后提醒我」） */
+  followupCreate(input: { messageId: string; kind?: import('./types').FollowupKind; ask?: string; waitDays?: number }): Promise<string>
+  followupUpdate(id: string, patch: { status?: import('./types').FollowupStatus; waitDays?: number; ask?: string; maxAttempts?: number }): Promise<void>
+  /** 立刻为到期的跟进再起草一封催促（打开撰写窗，不发送） */
+  followupNudge(id: string): Promise<{ ok: boolean; error?: string }>
+
+  /** 附件正文（PDF 文本层 / 纯文本）；未提取过时现取并缓存 */
+  readAttachmentText(attachmentId: string, maxChars?: number): Promise<{ ok: boolean; text?: string; info?: import('./types').AttachmentTextInfo; error?: string }>
+}

@@ -114,7 +114,8 @@ export function ActivityTimeline(props: { items: AgentActivity[] | null; fresh: 
 }
 
 /** 自动任务与活动记录（左侧 Agent「自动任务」页） */
-export function AutomationPanel() {
+/** embedded：挂在 Agent 外壳里时不再重复「自动任务」大标题，只留今日汇总与切换 */
+export function AutomationPanel(props: { embedded?: boolean } = {}) {
   const { settings, saveSettings } = useAgentJobs()
   const { items, fresh } = useAgentActivity(300)
   const [tab, setTab] = useState<'jobs' | 'activity'>('jobs')
@@ -126,13 +127,15 @@ export function AutomationPanel() {
   const summary = items ? todaySummary(items, now) : null
   return (
     <div className="flex-1 min-w-0 h-full flex flex-col" style={{ background: 'var(--bg)' }}>
-      <header className="shrink-0 px-6 pt-4 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-end gap-3 flex-wrap">
+      <header className={`shrink-0 px-6 border-b border-[var(--border)] ${props.embedded ? 'py-2.5' : 'pt-4 pb-3'}`}>
+        <div className={`flex gap-3 flex-wrap ${props.embedded ? 'items-center' : 'items-end'}`}>
           <div className="flex-1 min-w-[220px]">
-            <h1 className="text-lg font-semibold" style={{ color: 'var(--fg)', letterSpacing: 'var(--tracking-tight)' }}>
-              自动任务
-            </h1>
-            <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>
+            {!props.embedded && (
+              <h1 className="text-lg font-semibold" style={{ color: 'var(--fg)', letterSpacing: 'var(--tracking-tight)' }}>
+                自动任务
+              </h1>
+            )}
+            <p className={`text-xs leading-relaxed ${props.embedded ? '' : 'mt-0.5'}`} style={{ color: 'var(--muted)' }}>
               {summary ? (
                 <>
                   今天 Agent 替你：<span style={{ color: 'var(--fg)' }}>{summary}</span>
