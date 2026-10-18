@@ -51,6 +51,7 @@ import { LocalEngine, type DownloadProgress } from './ai/local-engine'
 import type { AccountWorker } from './mail/sync-engine'
 import type { UnderstandService } from './ai/understand'
 import { DEFAULT_FOLDER_PREF, readFolderPrefs, writeFolderPref } from './mail/folder-prefs'
+import { notifyLocalChange, isTodoSyncEnabled, type TodoSyncService } from './todo-sync'
 
 /** 按 LinkToApi 契约约束的处理器类型（参数元组 → 返回值） */
 type Api<K extends keyof LinkToApi> = (
@@ -77,6 +78,7 @@ export interface AppContext {
   backup: BackupService
   ghost: GhostService
   mcp: McpService
+  todoSync: TodoSyncService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openGhost(): void
@@ -196,6 +198,7 @@ export function registerIpc(ctx: AppContext) {
           data: { from: 'Agent' },
           dueAt: a.due ? Date.parse(a.due) || null : null
         })
+        notifyLocalChange()
         return
       }
       case 'draftReply': {
@@ -289,6 +292,7 @@ export function registerIpc(ctx: AppContext) {
               data: { from: '规则' },
               dueAt: null
             })
+            notifyLocalChange()
             break
           // notify 由主进程通知模块处理
         }
@@ -1083,9 +1087,21 @@ export function registerIpc(ctx: AppContext) {
 
     listInsights: ([kind]: [string]) => store.listInsights(kind),
 
-    setInsightStatus: ([id, status]: [string, string]) => store.setInsightStatus(id, status),
+    setInsightStatus: ([id, status]: [string, string]) => {
+      // 待办同步开启时走 updateInsight 刷新 updatedAt，否则这次勾选不会传播到其他设备
+      if (isTodoSyncEnabled() && store.listTodosForSync().some(t => t.id === id)) {
+        store.updateInsight(id, { status })
+        notifyLocalChange(id)
+      } else store.setInsightStatus(id, status)
+    },
 
-    deleteInsight: ([id]: [string]) => store.deleteInsight(id),
+    deleteInsight: ([id]: [string]) => {
+      // 待办同步开启时删除待办 = 写墓碑（dismissed），硬删会被其他设备的副本同步回来
+      if (isTodoSyncEnabled() && store.listTodosForSync().some(t => t.id === id)) {
+        store.updateInsight(id, { status: 'dismissed' })
+        notifyLocalChange(id)
+      } else store.deleteInsight(id)
+    },
 
     saveMemo: ([title, content]: [string, string]) => {
       const id = 'memo-today'
@@ -1213,6 +1229,7 @@ export function registerIpc(ctx: AppContext) {
       const id = `todo-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       store.insertInsight({ id, kind: 'todo', title: input.title.slice(0, 200), data: { from: 'manual', updatedAt: Date.now(), ...(input.data ?? {}) }, dueAt: input.dueAt ?? null })
       ctx.event(null as never, { type: 'todos-changed' })
+      notifyLocalChange(id)
       return id
     },
 
@@ -1245,12 +1262,14 @@ export function registerIpc(ctx: AppContext) {
         })
       }
       ctx.event(null as never, { type: 'todos-changed' })
+      notifyLocalChange(id)
     },
 
     todoFromMessage: ([messageId]: [string]) => {
       const ins = ctx.understand.getInsights([messageId])[messageId]
       const id = todoFromMessage(store, ins, messageId)
       ctx.event(null as never, { type: 'todos-changed' })
+      if (id) notifyLocalChange(id)
       return id
     },
 
@@ -1281,6 +1300,7 @@ export function registerIpc(ctx: AppContext) {
           }))
         for (const p of plans) store.updateInsight(p.id, { data: { minutes: p.minutes, priority: p.priority, aiReason: p.reason } })
         ctx.event(null as never, { type: 'todos-changed' })
+        notifyLocalChange()
         return { ok: true, plans }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err), plans: [] }
@@ -1299,6 +1319,7 @@ export function registerIpc(ctx: AppContext) {
           dueAt: t.due ? Date.parse(t.due) || null : null
         })
       })
+      notifyLocalChange()
     },
 
     // ================= 连接器 =================
@@ -1491,6 +1512,13 @@ export function registerIpc(ctx: AppContext) {
     getMcpStatus: () => ctx.mcp.status(),
     setMcpEnabled: ([enabled, port]: [boolean, number | undefined]) => ctx.mcp.setEnabled(!!enabled, port),
     regenerateMcpToken: () => ctx.mcp.regenerateToken(),
+
+    // ================= 待办跨设备同步 =================
+
+    todoSyncStatus: () => ctx.todoSync.status(),
+    todoSyncConfigure: ([input]: [{ enabled: boolean; accountId: string | null; passphrase?: string; encrypt?: boolean; deviceName?: string }]) =>
+      ctx.todoSync.configure(input),
+    todoSyncNow: () => ctx.todoSync.syncNow(),
 
     // ================= 窗口 / 应用 =================
 

@@ -1,4 +1,5 @@
 import { advanceTodoOnReply } from '../todo-collect'
+import { notifyLocalChange } from '../todo-sync'
 import type { AccountConfig, Address, ComposeDraft, SendResult } from '@shared/types'
 import type { MailStore } from '../db'
 import type { MailSender, MailCreds } from './sender'
@@ -71,7 +72,10 @@ export class Outbox {
         flags.add('\\Answered')
         store.updateMessageFlags(row.id, [...flags])
         // 回信即推进：这封邮件上的「回复类」待办自动完成
-        if (advanceTodoOnReply(store, row.id)) this.deps.event({ type: 'todos-changed' })
+        if (advanceTodoOnReply(store, row.id)) {
+          this.deps.event({ type: 'todos-changed' })
+          notifyLocalChange()
+        }
       }
       // 尝试存入已发送
       try {

@@ -25,6 +25,7 @@ import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
+import { TodoSyncService, notifyLocalChange } from './todo-sync'
 import { DEFAULT_AI } from './store'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
@@ -123,6 +124,7 @@ let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
 let mcp: McpService | null = null
+let todoSync: TodoSyncService | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -517,7 +519,10 @@ async function bootstrap() {
     onInsight: ins => {
       const a = collectTodoFromInsight(mailStore, ins)
       const b = collectMeetingTodo(mailStore, ins)
-      if (a || b) broadcast({ type: 'todos-changed' })
+      if (a || b) {
+        broadcast({ type: 'todos-changed' })
+        notifyLocalChange()
+      }
     }
   })
 
@@ -553,7 +558,9 @@ async function bootstrap() {
         } catch (err) {
           console.error('[understand]', err)
         }
-      }
+      },
+      // 待办同步文件夹有新版本（其他设备写入）
+      todoSyncExists: accountId => todoSync?.onRemoteExists(accountId)
     },
     () => mailStore.listRules(),
     // 账户凭据：OAuth 账户取有效 token（临期自动刷新），密码账户读加密密钥
@@ -644,6 +651,7 @@ async function bootstrap() {
   )
 
   mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload) })
+  todoSync = new TodoSyncService({ store: mailStore, appStore, engine, event: payload => broadcast(payload) })
 
   const ctx: AppContext = {
     store: mailStore,
@@ -661,6 +669,7 @@ async function bootstrap() {
     backup: backupService,
     ghost,
     mcp,
+    todoSync,
     statuses,
     event: (_win, payload) => broadcast(payload),
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
@@ -756,6 +765,8 @@ async function bootstrap() {
   updateDockBadge()
   // 本地 MCP 服务：默认关闭，按设置启动（失败只记录状态，不影响主流程）
   void mcp.apply().catch(err => console.error('[mcp] start failed:', err))
+  // 待办跨设备同步（未开启时只挂定时器、不连网）
+  todoSync.start()
 }
 
 app.whenReady().then(() => {
@@ -774,6 +785,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  todoSync?.stop()
   engine?.stopAll()
   void mcp?.stop()
 })

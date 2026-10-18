@@ -936,6 +936,32 @@ export class MailStore {
     this.db.prepare('UPDATE insights SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), id)
   }
 
+  /** 待办同步：全部待办（不限条数，含已完成 / 已移除的墓碑） */
+  listTodosForSync(): { id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }[] {
+    const rows = this.db.prepare("SELECT * FROM insights WHERE kind = 'todo'").all() as any[]
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      status: r.status ?? 'open',
+      dueAt: r.due_at ?? null,
+      createdAt: Number(r.created_at) || 0,
+      accountId: r.account_id ?? null,
+      messageId: r.message_id ?? null,
+      data: j<Record<string, unknown>>(r.data_json, {})
+    }))
+  }
+
+  /** 待办同步：写入远端版本（保留远端 created_at / status / data.updatedAt，不刷新时间戳；已有行不改关联的账户与邮件） */
+  upsertTodoFromSync(t: { id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }) {
+    this.db
+      .prepare(
+        `INSERT INTO insights (id, kind, account_id, message_id, title, data_json, status, due_at, period, created_at)
+         VALUES (?, 'todo', ?, ?, ?, ?, ?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET title=excluded.title, data_json=excluded.data_json, status=excluded.status, due_at=excluded.due_at`
+      )
+      .run(t.id, t.accountId, t.messageId, t.title, JSON.stringify(t.data), t.status, t.dueAt, t.createdAt)
+  }
+
   setInsightStatus(id: string, status: string) {
     this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(status, id)
   }

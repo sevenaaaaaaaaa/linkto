@@ -11,6 +11,7 @@ import { evalRules } from '../rules/engine'
 import { isNotifiableArrival } from '../notify-policy'
 import { parseEmailRaw } from './parse-pool'
 import type { FolderPref, Rule, RuleAction } from '@shared/types'
+import { isTodoSyncFolder } from '../todo-sync/protocol'
 
 const SEP = '::'
 export const folderIdOf = (accountId: string, path: string) => `${accountId}${SEP}${path}`
@@ -117,6 +118,8 @@ export interface SyncEvents {
   newMail(accountId: string, messageId: string, subject: string, from: string, category: string): void
   /** 新到达的收件箱邮件（不含首次同步/历史回填）：执行规则动作、AI 条件规则 */
   arrived(accountId: string, messageId: string, ruleActions: RuleAction[]): void
+  /** 待办同步文件夹（LinkTo-Sync）在选中期间收到 EXISTS：其他设备写入了新版本 */
+  todoSyncExists?(accountId: string): void
 }
 
 /** 单账户 IMAP 工作线程：连接、文件夹、增量同步、按需正文、命令 */
@@ -292,6 +295,7 @@ export class AccountWorker {
     const isInbox = (path?: string) => path?.toUpperCase() === 'INBOX'
     client.on('exists', (e: { path?: string }) => {
       if (isInbox(e.path) && this.running) this.kickSync()
+      else if (isTodoSyncFolder(e.path) && this.running) this.events.todoSyncExists?.(this.account.id)
     })
     client.on('expunge', (e: { path?: string }) => {
       if (isInbox(e.path) && this.running) {
@@ -414,7 +418,8 @@ export class AccountWorker {
       // Gmail 的 Starred(\\Flagged) / Important 只是标签视图，同步会让邮件重复出现
       const virtual = f.specialUse === '\\Flagged' || f.flags?.has('\\Important')
       if (special === 'all') this.allMailPath = f.path
-      if (special === 'drafts' || special === 'all' || virtual) {
+      // 待办同步的隐藏文件夹：不当邮件同步、不进侧栏 / 文件夹管理（顺带清掉可能存在的旧行）
+      if (special === 'drafts' || special === 'all' || virtual || isTodoSyncFolder(f.path)) {
         // 本地管理草稿；All Mail 与其他文件夹重复，不同步（顺带清掉旧版本误同步的副本）
         this.store.deleteFolder(id)
         continue
@@ -1003,6 +1008,109 @@ export class AccountWorker {
       }
       await client.append(folderPath, raw, ['\\Seen'])
       this.lastFullSync = 0
+    })
+  }
+
+  // ---------- 隐藏文件夹（待办跨设备同步，见 ../todo-sync）：全部经 serialized + mailbox lock，与邮件同步互不穿插 ----------
+
+  private usableClient(): ImapFlow {
+    const client = this.client
+    if (!client?.usable) throw new Error('not connected')
+    return client
+  }
+
+  /**
+   * 确保隐藏文件夹存在并返回服务器上的真实路径：已有则按最后一段名字匹配（兼容 Proton Bridge 的
+   * Folders/、INBOX. 命名空间前缀）；没有则创建（Proton 账户优先建在 Folders/ 下），并取消订阅以便其他客户端少显示它。
+   */
+  async ensureHiddenFolder(name: string): Promise<string> {
+    // 每次都 LIST（每轮一次，开销很小）：用户在网页端删掉文件夹后能自动重建，不会用到过期路径
+    return this.serialized(async () => {
+      const client = this.usableClient()
+      const lower = name.toLowerCase()
+      const find = (list: ListResponse[]) =>
+        list.find(
+          f => (f.path.split(/[/.]/).pop() ?? f.path).toLowerCase() === lower && !f.flags?.has('\\Noselect') && !f.flags?.has('\\NonExistent')
+        )
+      let list = await client.list()
+      let hit = find(list)
+      if (!hit) {
+        const proton = list.some(f => /^Folders([/.]|$)/.test(f.path))
+        const candidates = proton ? [`Folders/${name}`, name] : [name, `Folders/${name}`]
+        let lastErr: unknown = null
+        for (const c of candidates) {
+          try {
+            await client.mailboxCreate(c)
+            break
+          } catch (err) {
+            lastErr = err
+          }
+        }
+        list = await client.list()
+        hit = find(list)
+        if (!hit) throw lastErr instanceof Error ? lastErr : new Error(`无法创建文件夹 ${name}`)
+        try {
+          await client.mailboxUnsubscribe(hit.path)
+        } catch { /* 不支持订阅管理的服务器忽略 */ }
+      }
+      // 若此前被当作普通文件夹登记过，移除本地行
+      this.store.deleteFolder(folderIdOf(this.account.id, hit.path))
+      return hit.path
+    })
+  }
+
+  /** 拉取文件夹内全部邮件的指定头（不下载正文） */
+  async fetchFolderHeaders(path: string, headerNames: string[]): Promise<{ uid: number; headers: Record<string, string> }[]> {
+    return this.serialized(async () => {
+      const client = this.usableClient()
+      const lock = await client.getMailboxLock(path, { acquireTimeout: 30_000 })
+      try {
+        const mailbox = client.mailbox
+        if (!mailbox || typeof mailbox === 'boolean' || !Number(mailbox.exists ?? 0)) return []
+        const out: { uid: number; headers: Record<string, string> }[] = []
+        for await (const msg of client.fetch('1:*', { uid: true, headers: headerNames })) {
+          out.push({ uid: msg.uid, headers: headersToPlain(msg.headers as unknown as Map<string, unknown> | Buffer) })
+        }
+        return out
+      } finally {
+        lock.release()
+      }
+    })
+  }
+
+  /** 下载隐藏文件夹里的一封原文 */
+  async downloadFromFolder(path: string, uid: number): Promise<Buffer | null> {
+    return this.serialized(async () => this.downloadRaw(this.usableClient(), path, uid))
+  }
+
+  /** 追加一封原文（不触发邮件同步刷新）；服务器支持 UIDPLUS 时返回新 UID */
+  async appendToFolder(path: string, raw: Buffer, flags: string[] = ['\\Seen']): Promise<number | null> {
+    return this.serialized(async () => {
+      const res = await this.usableClient().append(path, raw, flags)
+      return res && res.uid ? Number(res.uid) : null
+    })
+  }
+
+  /** 按 UID 删除（\Deleted + EXPUNGE；支持 UIDPLUS 时只清除这些 UID） */
+  async deleteFromFolder(path: string, uids: number[]): Promise<void> {
+    if (!uids.length) return
+    await this.serialized(async () => {
+      const client = this.usableClient()
+      const lock = await client.getMailboxLock(path, { acquireTimeout: 30_000 })
+      try {
+        await client.messageDelete(uids.join(','), { uid: true })
+      } finally {
+        lock.release()
+      }
+    })
+  }
+
+  /** 隐藏文件夹操作结束：重新选中 INBOX，让 IDLE 继续盯新邮件 */
+  async returnToInbox(): Promise<void> {
+    await this.serialized(async () => {
+      try {
+        await this.watchInbox()
+      } catch { /* 下一轮同步会再选中 */ }
     })
   }
 

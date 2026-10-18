@@ -292,4 +292,24 @@ export interface LinkToApi {
   setMcpEnabled(enabled: boolean, port?: number): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
   /** 重新生成 token（旧 token 立即失效） */
   regenerateMcpToken(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+
+  // ---------- 待办跨设备同步（经自己邮箱的隐藏文件夹 LinkTo-Sync） ----------
+  todoSyncStatus(): Promise<TodoSyncStatus>
+  /** 保存设置；开启时立即同步一轮，口令不对等错误在 error 中返回 */
+  todoSyncConfigure(input: { enabled: boolean; accountId: string | null; passphrase?: string; encrypt?: boolean; deviceName?: string }): Promise<{ ok: boolean; error?: string; status: TodoSyncStatus }>
+  todoSyncNow(): Promise<TodoSyncStatus>
+}
+
+/** 待办同步状态（设置 + 运行态）；进度变化时主进程广播 { type: 'todo-sync-status', status } */
+export interface TodoSyncStatus {
+  enabled: boolean
+  accountId: string | null
+  encrypt: boolean
+  lastSyncAt: number | null
+  lastError: string | null
+  deviceName: string
+  hasPassphrase: boolean
+  running: boolean
+  folder: string
+  lastStats: { pulled: number; pushed: number; removed: number; at: number } | null
 }

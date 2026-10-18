@@ -37,6 +37,7 @@ const METHOD_NAMES = [
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
+  'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
   'openSettings', 'openCompose', 'getVersions', 'quit'
 ] as const
