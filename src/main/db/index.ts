@@ -912,6 +912,30 @@ export class MailStore {
     }))
   }
 
+  /** 只在不存在时插入（自动收集用：不覆盖用户改过的标题 / 时间，也不复活用户删掉的） */
+  insertInsightIfAbsent(i: { id: string; kind: string; accountId?: string | null; messageId?: string | null; title: string; data: Record<string, unknown>; dueAt?: number | null }): boolean {
+    const res = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO insights (id, kind, account_id, message_id, title, data_json, status, due_at, period, created_at)
+         VALUES (?,?,?,?,?,?, 'open', ?, NULL, ?)`
+      )
+      .run(i.id, i.kind, i.accountId ?? null, i.messageId ?? null, i.title, JSON.stringify(i.data), i.dueAt ?? null, Date.now())
+    return Number(res.changes) > 0
+  }
+
+  /** 局部更新待办：data 与原值合并（保存排布结果 / 用户编辑） */
+  updateInsight(id: string, patch: { title?: string; dueAt?: number | null; status?: string; data?: Record<string, unknown> }) {
+    const row = this.db.prepare('SELECT data_json FROM insights WHERE id = ?').get(id) as any
+    if (!row) return
+    if (patch.title !== undefined) this.db.prepare('UPDATE insights SET title = ? WHERE id = ?').run(patch.title, id)
+    if (patch.dueAt !== undefined) this.db.prepare('UPDATE insights SET due_at = ? WHERE id = ?').run(patch.dueAt, id)
+    if (patch.status !== undefined) this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(patch.status, id)
+    if (patch.data) {
+      const merged = { ...j<Record<string, unknown>>(row.data_json, {}), ...patch.data }
+      this.db.prepare('UPDATE insights SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), id)
+    }
+  }
+
   setInsightStatus(id: string, status: string) {
     this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(status, id)
   }

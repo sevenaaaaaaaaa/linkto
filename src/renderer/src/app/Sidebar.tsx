@@ -4,10 +4,11 @@ import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
 import { OnboardingCard } from './Guidance'
 import { usePrefs } from '../lib/prefs'
+import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
-  IconReplyAll, IconSave, IconClose, IconSearch
+  IconReplyAll, IconSave, IconClose, IconSearch, IconCheckSquare
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -157,6 +158,8 @@ export function Sidebar() {
   const view = useView()
   const prefs = useFolderPrefs()
   const sb = usePrefs().sidebar
+  useTodoEvents()
+  const todoToday = todayCount(useTodos(st => st.todos))
   const [pendingCount, setPendingCount] = useState(0)
   const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
@@ -194,7 +197,7 @@ export function Sidebar() {
 
   return (
     <div className="relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--bg)' }}>
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
+      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 pl-5 pr-3">
         <div className="flex-1 min-w-0 flex flex-col leading-tight">
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--fg)' }}>{ctxAccount ? ctxAccount.name : '全部账户'}</span>
           <span className="text-2xs truncate" style={{ color: 'var(--faint)' }}>{ctxAccount ? ctxAccount.email : `${accounts.length} 个邮箱`}</span>
@@ -224,6 +227,7 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
+        <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
         {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
         {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
         {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}

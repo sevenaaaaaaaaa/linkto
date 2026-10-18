@@ -9,6 +9,7 @@ import { Outbox } from './mail/outbox'
 import { AIService, aiReady } from './ai/service'
 import { evalAiRules, hasAiCondition } from './rules/engine'
 import { startCleanup } from './mail/cleanup'
+import { collectTodoFromInsight } from './todo-collect'
 import { RULE_AI_JUDGE } from './ai/prompts'
 import type { MailBundle, MailSection, RuleAction } from '@shared/types'
 import { LocalEngine } from './ai/local-engine'
@@ -191,7 +192,7 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 18 },
+    trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#F4F5F7',
     show: false,
     webPreferences: {
@@ -507,7 +508,11 @@ async function bootstrap() {
     event: payload => broadcast(payload),
     getMemoryContext: q => agent?.memoryBlock(q) || null,
     // engine 稍后初始化，闭包延迟求值
-    getWorker: accountId => engine?.getWorker(accountId)
+    getWorker: accountId => engine?.getWorker(accountId),
+    // 自动收集待办：「需要你处理」且有明确事项的邮件进待办（幂等）
+    onInsight: ins => {
+      if (collectTodoFromInsight(mailStore, ins)) broadcast({ type: 'todos-changed' })
+    }
   })
 
   engine = new SyncEngine(

@@ -37,6 +37,7 @@ import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-dri
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
 import { aiReady } from './ai/service'
+import { TODO_PLAN } from './ai/prompts'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
@@ -1187,6 +1188,51 @@ export function registerIpc(ctx: AppContext) {
       if (aiReady(s)) return { ready: true }
       if (!s.enabled) return { ready: false, reason: 'AI 未开启' }
       return { ready: false, reason: '未配置 API Key' }
+    },
+
+    createTodo: ([input]: [{ title: string; dueAt?: number | null; data?: Record<string, unknown> }]) => {
+      const id = `todo-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      store.insertInsight({ id, kind: 'todo', title: input.title.slice(0, 200), data: { from: 'manual', ...(input.data ?? {}) }, dueAt: input.dueAt ?? null })
+      ctx.event(null as never, { type: 'todos-changed' })
+      return id
+    },
+
+    updateTodo: ([id, patch]: [string, { title?: string; dueAt?: number | null; status?: string; data?: Record<string, unknown> }]) => {
+      store.updateInsight(id, patch)
+      ctx.event(null as never, { type: 'todos-changed' })
+    },
+
+    aiPlanTodos: async ([ids]: [string[]]) => {
+      if (!aiReady(appStore.getAI())) return { ok: false, error: 'AI 未配置', plans: [] }
+      const todos = store.listInsights('todo').filter(t => ids.includes(t.id))
+      if (!todos.length) return { ok: true, plans: [] }
+      const lines = todos.map(t => {
+        const row = t.messageId ? store.getMessageRow(t.messageId) : null
+        const due = t.dueAt ? new Date(t.dueAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '无'
+        return `- id=${t.id} | ${t.title} | 截止：${due}${row ? ` | 来自邮件：${row.from_name || row.from_addr} 《${row.subject}》` : ''}`
+      })
+      const mem = agent.memoryPrompt(todos.map(t => t.title).join(' '), 6)
+      try {
+        const answer = await ai.complete([
+          { role: 'system', content: TODO_PLAN + (mem.block ? `\n${mem.block}` : '') },
+          { role: 'user', content: `现在：${new Date().toLocaleString('zh-CN', { weekday: 'long' })}\n待办：\n${lines.join('\n')}` }
+        ])
+        const m = answer.match(/\{[\s\S]*\}/)
+        const parsed = m ? (JSON.parse(m[0]) as { plans?: { id: string; minutes: number; priority: number; reason: string }[] }) : { plans: [] }
+        const plans = (parsed.plans ?? [])
+          .filter(p => ids.includes(p.id))
+          .map(p => ({
+            id: p.id,
+            minutes: Math.min(240, Math.max(5, Math.round(Number(p.minutes) / 5) * 5 || 25)),
+            priority: ([1, 2, 3].includes(Number(p.priority)) ? Number(p.priority) : 2) as 1 | 2 | 3,
+            reason: String(p.reason ?? '').slice(0, 24)
+          }))
+        for (const p of plans) store.updateInsight(p.id, { data: { minutes: p.minutes, priority: p.priority, aiReason: p.reason } })
+        ctx.event(null as never, { type: 'todos-changed' })
+        return { ok: true, plans }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), plans: [] }
+      }
     },
 
     saveTodoSet: ([title, todos, messageId]: [string, { title: string; due?: string | null }[], string | null | undefined]) => {

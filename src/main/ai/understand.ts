@@ -225,6 +225,8 @@ export class UnderstandService {
       /** 可选：Agent 长期记忆注入 */
       getMemoryContext?(query: string): string | null
       getWorker(accountId: string): AccountWorker | undefined
+      /** 可选：理解结果产出后回调（自动收集待办等） */
+      onInsight?(insight: MailInsight): void
     }
   ) {}
 
@@ -374,6 +376,8 @@ export class UnderstandService {
         if (this.worthAi(rows.get(id), h)) this.enqueue(id)
       }
     }
+    // 自动收集待办（幂等）：已有邮件里的截止事项也能进待办，不必等新邮件到达
+    if (this.deps.onInsight) for (const ins of Object.values(insights)) if (ins.section === 'act') this.deps.onInsight(ins)
     return insights
   }
 
@@ -466,6 +470,7 @@ export class UnderstandService {
     if (!this.deps.store.getMessageRow(id)) return null
     this.deps.store.saveMailAi(insight)
     this.deps.event({ type: 'mail-insights', ids: [id] })
+    this.deps.onInsight?.(insight)
     return insight
   }
 
@@ -530,6 +535,11 @@ export class UnderstandService {
 
   /** 新邮件到达（收件箱增量）：符合条件即排队 */
   onArrival(messageId: string) {
+    // 启发式结果立即可用：没有 AI 也能自动收集待办
+    if (this.deps.onInsight) {
+      const now = this.compute([messageId]).heuristics.get(messageId)
+      if (now) this.deps.onInsight(now)
+    }
     if (!this.backgroundReady()) return
     const { heuristics, rows, ai } = this.compute([messageId])
     const h = heuristics.get(messageId)

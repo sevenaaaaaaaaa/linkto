@@ -29,14 +29,16 @@ export function AccountRail() {
   const totalUnread = folders.filter(f => f.special === 'inbox').reduce((s, f) => s + f.unread, 0)
 
   return (
+    /* 外层与侧栏同底色：顶部 52px 是和侧栏连成一体的标题带，红绿灯落在这里（不再受深色栏宽度约束）；
+       深色账户栏从标题带下方开始，四周留边做成圆角柱 */
+    <div className="w-[var(--rail-w)] shrink-0 h-full flex flex-col" style={{ background: 'var(--bg)' }}>
+      <div className="drag-region h-[var(--titlebar-h)] w-full shrink-0" />
     <nav
       aria-label="账户"
-      className="w-[var(--rail-w)] shrink-0 h-full flex flex-col items-center"
+      className="flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-lg)] flex flex-col items-center"
       style={{ background: 'var(--rail-bg)', color: 'var(--rail-fg)' }}
     >
-      {/* 红绿灯区 */}
-      <div className="drag-region h-[var(--titlebar-h)] w-full shrink-0" />
-      <div className="flex flex-col items-center gap-2.5 pt-1">
+      <div className="flex flex-col items-center gap-2.5 pt-3">
         <RailButton
           label={`全部账户 · ${totalUnread} 封未读`}
           active={accountCtx === null}
@@ -71,10 +73,11 @@ export function AccountRail() {
         </button>
       </div>
       <div className="flex-1" />
-      <div className="pb-4" title="LinkTo 林可兔">
-        <LogoMark size={30} />
+      <div className="pb-3" title="LinkTo 林可兔">
+        <LogoMark size={28} />
       </div>
     </nav>
+    </div>
   )
 }
 

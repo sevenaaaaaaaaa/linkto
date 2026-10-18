@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 
 /** 主窗口一级视图（由 location.hash 驱动）—— 侧栏激活态与 MailShell 共用同一来源（审计 IA-1） */
-export type View = 'mail' | 'kb' | 'insights' | 'agent'
+export type View = 'mail' | 'kb' | 'insights' | 'agent' | 'todo'
 
 export function viewFromHash(): View {
   const h = location.hash
   if (h.startsWith('#/kb')) return 'kb'
   if (h.startsWith('#/insights')) return 'insights'
   if (h.startsWith('#/agent')) return 'agent'
+  if (h.startsWith('#/todo')) return 'todo'
   return 'mail'
 }
 

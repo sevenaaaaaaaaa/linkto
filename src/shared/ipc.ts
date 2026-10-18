@@ -153,6 +153,11 @@ export interface LinkToApi {
   listCompanyDomains(): Promise<{ domain: string; name: string; count: number }[]>
   listInsights(kind: InsightKind | 'all'): Promise<InsightRecord[]>
   setInsightStatus(id: string, status: 'open' | 'done'): Promise<void>
+  /** 待办（GTD）：新建 / 局部更新（data 合并，存时长、优先级、排布结果等） */
+  createTodo(input: { title: string; dueAt?: number | null; data?: Record<string, unknown> }): Promise<string>
+  updateTodo(id: string, patch: { title?: string; dueAt?: number | null; status?: 'open' | 'done' | 'dismissed'; data?: Record<string, unknown> }): Promise<void>
+  /** AI 估时长 / 定优先级 / 给理由（排布本身在渲染层确定性完成） */
+  aiPlanTodos(ids: string[]): Promise<{ ok: boolean; error?: string; plans: { id: string; minutes: number; priority: 1 | 2 | 3; reason: string }[] }>
   deleteInsight(id: string): Promise<void>
   saveMemo(title: string, content: string): Promise<void>
 

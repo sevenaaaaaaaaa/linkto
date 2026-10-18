@@ -174,7 +174,7 @@
   --row-py: 10px;
   --reader-size: 14px;
   --reader-max: 760px;
-  --rail-w: 76px; /* 须容纳 macOS 红绿灯（x=14 起约 52px 宽） */
+  --rail-w: 72px; /* 外层宽度；深色柱左右各留 8px。红绿灯在上方标题带，不占深色柱 */
   --sidebar-w: clamp(176px, 15vw, 216px);
   --list-w: clamp(300px, 30vw, 400px);
   --context-w: clamp(240px, 20vw, 300px);
@@ -427,6 +427,48 @@ mark.hl {
 .ai-chip {
   background: var(--ai);
   color: var(--ai-ink);
+}
+
+/* ---------- 待办「科学排布」动画：扫描 → 评分条 → 上升发光 → 时间轴落位 ---------- */
+.todo-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 72px;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--ai-soft) 70%, var(--ai) 100%);
+  opacity: 0.85;
+  animation: todo-scan 900ms var(--ease-out) forwards;
+}
+@keyframes todo-scan {
+  from { transform: translateY(-72px); }
+  to { transform: translateY(calc(100vh - 160px)); opacity: 0; }
+}
+.todo-bar {
+  transform-origin: left center;
+  animation: todo-bar 520ms var(--ease-spring) backwards;
+}
+@keyframes todo-bar {
+  from { transform: scaleX(0); }
+}
+.todo-rise {
+  animation: todo-rise 1600ms var(--ease-out);
+}
+@keyframes todo-rise {
+  0%, 30% { box-shadow: 0 0 0 2px var(--ai), 0 8px 24px -10px var(--ai); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.tl-block {
+  transform-origin: top center;
+  animation: tl-in 460ms var(--ease-spring) backwards;
+}
+@keyframes tl-in {
+  from { transform: scaleY(0.2) translateX(12px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .todo-scan, .todo-bar, .todo-rise, .tl-block { animation: none; }
 }
 
 /* ---------- 基础壳层 ---------- */

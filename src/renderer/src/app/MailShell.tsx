@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { AccountRail } from './AccountRail'
 import { FolderManager } from './FolderManager'
 import { TriageView } from './TriageView'
+import { TodoView } from './TodoView'
 import { ContextRail } from './ContextRail'
 import { MovePalette } from './MovePalette'
 import { CoachTip } from './Guidance'
@@ -216,7 +217,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />

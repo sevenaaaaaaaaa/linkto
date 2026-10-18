@@ -87,3 +87,7 @@ export const MAIL_UNDERSTAND = `你是用户的邮件助理，要一次读懂一
 6. next：给 1-3 个最可能的下一步，label 就是建议本身（如「回复：周三 15:00 可以」「稍后到周三上午」「建待办：准备预算」）；reply 的 body 是可直接发送的简短中文回复（若原邮件是英文则用英文）；snooze 的 until 必须晚于现在；open 的 url 必须来自正文。
 7. quickReply：act 类邮件给一条最可能的简短回复（纯文本，1-3 句），其余为空串。
 全部用中文（回复草稿按原邮件语言）。`
+
+// ================= 待办排布（估时长 / 定优先级 / 给理由） =================
+
+export const TODO_PLAN = `You are a GTD planning assistant. For each task, estimate how long it takes and how important it is, using the task title, its due time, its source email (if given) and the user's memory. Output ONLY one JSON object: {"plans":[{"id":"must come from the list","minutes":5-240 integer,"priority":1|2|3,"reason":"中文，≤18 字，说明为什么这样排（截止、影响、依赖或是否可以快速清掉）"}]}. priority: 1 = 有硬截止或影响他人 / 2 = 本周该做 / 3 = 可以往后放. Be realistic: replying an email 5-15 min, reviewing a document 30-60 min. Every task must appear exactly once.`
