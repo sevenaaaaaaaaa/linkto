@@ -16,6 +16,7 @@ import { Reader } from './Reader'
 import { KbView } from './KbView'
 import { InsightsView } from './InsightsView'
 import { AgentView } from './AgentView'
+import { AttachmentsView } from './attachments/AttachmentsView'
 import { CommandPalette } from './CommandPalette'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
@@ -242,7 +243,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />

@@ -76,6 +76,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { goView('insights'); props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
       { id: 'nav-agent', group: '前往', label: 'Agent（记忆 / 对话 / 发件人画像）', run: () => { goView('agent'); props.onClose() } },
+      { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,
         group: '前往',

@@ -109,6 +109,19 @@ interface EnvelopeData {
   replyTo: Address | null
   headers: Record<string, string>
   attachmentCount: number
+  /** BODYSTRUCTURE 里的附件元数据（附件中心为未下载的附件建索引） */
+  attachmentParts: AttachmentPart[]
+}
+
+/** 附件元数据（来自 IMAP BODYSTRUCTURE，不下载正文） */
+export interface AttachmentPart {
+  part: string
+  filename: string
+  contentType: string
+  /** 估算的解码后大小（base64 按 3/4 折算） */
+  size: number
+  inline: boolean
+  contentId: string | null
 }
 
 export interface SyncEvents {
@@ -120,6 +133,8 @@ export interface SyncEvents {
   arrived(accountId: string, messageId: string, ruleActions: RuleAction[]): void
   /** 待办同步文件夹（LinkTo-Sync）在选中期间收到 EXISTS：其他设备写入了新版本 */
   todoSyncExists?(accountId: string): void
+  /** 新入库邮件的附件元数据（BODYSTRUCTURE）：附件中心据此为尚未下载的附件建索引 */
+  attachmentParts?(accountId: string, messageId: string, parts: AttachmentPart[]): void
 }
 
 /** 单账户 IMAP 工作线程：连接、文件夹、增量同步、按需正文、命令 */
@@ -579,6 +594,7 @@ export class AccountWorker {
         const referencesRaw = headers['references'] ?? ''
         const references = referencesRaw.split(/\s+/).filter(s => /<.+>/.test(s))
         const attachmentCount = countAttachments(msg.bodyStructure)
+        const attachmentParts = attachmentCount ? extractAttachmentParts(msg.bodyStructure) : []
         batch.push({
           uid: msg.uid,
           flags: [...(msg.flags ?? [])].map(String),
@@ -593,7 +609,8 @@ export class AccountWorker {
           cc: addrList(msg.envelope?.cc),
           replyTo: addrList(msg.envelope?.replyTo)[0] ?? null,
           headers,
-          attachmentCount
+          attachmentCount,
+          attachmentParts
         })
       }
       this.touchActivity()
@@ -673,6 +690,11 @@ export class AccountWorker {
       listId
     }
     const inserted = this.store.insertMessage(insert)
+    if (inserted && env.attachmentParts.length) {
+      try {
+        this.events.attachmentParts?.(this.account.id, id, env.attachmentParts)
+      } catch { /* 附件索引失败不影响同步 */ }
+    }
     if (inserted && isNewsletter && env.from) {
       this.store.upsertNewsletterSender(this.account.id, env.from.address)
     }
@@ -1078,6 +1100,24 @@ export class AccountWorker {
     })
   }
 
+  /** 拉取指定邮件的附件元数据（BODYSTRUCTURE，不下载正文）：附件中心为存量邮件补建索引 */
+  async fetchAttachmentParts(path: string, uids: number[]): Promise<{ uid: number; parts: AttachmentPart[] }[]> {
+    if (!uids.length) return []
+    return this.serialized(async () => {
+      const client = this.usableClient()
+      const lock = await client.getMailboxLock(path, { acquireTimeout: 30_000 })
+      try {
+        const out: { uid: number; parts: AttachmentPart[] }[] = []
+        for await (const msg of client.fetch(uids.join(','), { uid: true, bodyStructure: true }, { uid: true })) {
+          out.push({ uid: msg.uid, parts: extractAttachmentParts(msg.bodyStructure) })
+        }
+        return out
+      } finally {
+        lock.release()
+      }
+    })
+  }
+
   /** 下载隐藏文件夹里的一封原文 */
   async downloadFromFolder(path: string, uid: number): Promise<Buffer | null> {
     return this.serialized(async () => this.downloadRaw(this.usableClient(), path, uid))
@@ -1141,6 +1181,30 @@ function countAttachments(node: any): number {
   }
   walk(node)
   return count
+}
+
+/** 从 BODYSTRUCTURE 提取附件元数据（与 countAttachments 同口径，另带 inline 图片供调用方过滤） */
+export function extractAttachmentParts(node: any): AttachmentPart[] {
+  const out: AttachmentPart[] = []
+  const walk = (n: any) => {
+    if (!n) return
+    const filename: string = n.dispositionParameters?.filename || n.parameters?.name || ''
+    const isAttachment = (n.disposition === 'attachment' && filename) || (!n.disposition && n.filename && n.part) || (n.disposition === 'inline' && filename && !String(n.type ?? '').startsWith('text/'))
+    if (isAttachment && n.part) {
+      const raw = Number(n.size ?? 0)
+      out.push({
+        part: String(n.part),
+        filename: filename || String(n.filename ?? ''),
+        contentType: String(n.type ?? 'application/octet-stream'),
+        size: String(n.encoding ?? '').toLowerCase() === 'base64' ? Math.round(raw * 0.75) : raw,
+        inline: n.disposition === 'inline' || !!n.id,
+        contentId: n.id ? String(n.id).replace(/^<|>$/g, '') : null
+      })
+    }
+    for (const child of n.childNodes ?? []) walk(child)
+  }
+  walk(node)
+  return out
 }
 
 function stripHtml(html: string): string {

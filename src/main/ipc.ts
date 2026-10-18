@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, dialog, shell, app, net } from 'electron'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
@@ -56,6 +56,7 @@ import type { UnderstandService } from './ai/understand'
 import { DEFAULT_FOLDER_PREF, readFolderPrefs, writeFolderPref } from './mail/folder-prefs'
 import { notifyLocalChange as notifySyncChange, isTodoSyncEnabled, type TodoSyncService } from './todo-sync'
 import { initTodoIntegrations, notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
+import { attachmentService } from './attachments'
 
 /** 待办有本地改动：通知跨设备同步与外部服务同步 */
 function notifyLocalChange(id?: string) {
@@ -781,9 +782,11 @@ export function registerIpc(ctx: AppContext) {
     // 契约是 MessageSummary[]（命令面板「邮件直达」）；此前返回整页对象导致面板渲染崩溃
     searchMessages: ([q, limit]: [string, number]) => store.getMessages({ scope: 'search', search: q, limit, offset: 0 }).items,
 
-    getAttachment: ([id]: [string]) => {
+    getAttachment: async ([id]: [string]) => {
       const a = store.getAttachment(id)
       if (!a) return null
+      // 本地缓存已被「释放空间」删除：先自动重新下载（eml 镜像 → IMAP → 网盘副本）
+      if (!existsSync(a.path)) await attachmentService()?.ensureLocal(id)
       try {
         const data = readFileSync(a.path)
         return { filename: a.filename, contentType: a.contentType, data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) }
@@ -809,6 +812,10 @@ export function registerIpc(ctx: AppContext) {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
       const res = await dialog.showSaveDialog(win, { defaultPath: a.filename })
       if (res.canceled || !res.filePath) return { ok: false }
+      if (!existsSync(a.path)) {
+        const local = await attachmentService()?.ensureLocal(id)
+        if (local && !local.ok) return { ok: false, error: local.error }
+      }
       try {
         const { copyFileSync } = await import('node:fs')
         copyFileSync(a.path, res.filePath)
@@ -1527,7 +1534,11 @@ export function registerIpc(ctx: AppContext) {
       if (what === 'attachment') {
         const att = full.attachments.find(a => a.id === attachmentId)
         if (!att) return { ok: false, error: '附件不存在' }
-        return uploadAttachment(ctx.appStore, ctx.appStore.attachmentPath(att.id), att.filename, driveId)
+        if (!existsSync(ctx.appStore.attachmentPath(att.id))) await attachmentService()?.ensureLocal(att.id)
+        const res = await uploadAttachment(ctx.appStore, ctx.appStore.attachmentPath(att.id), att.filename, driveId)
+        // 附件中心登记网盘位置（附件卡显示「已在 xx」）
+        if (res.ok) attachmentService()?.recordLegacyUpload(att.id, driveId, `/attachments/${basename(res.path ?? att.filename)}`)
+        return res
       }
       // 全部附件
       const atts = full.attachments.filter(a => !a.inline)
@@ -1535,7 +1546,9 @@ export function registerIpc(ctx: AppContext) {
       let okCount = 0
       let lastErr = ''
       for (const att of atts) {
+        if (!existsSync(ctx.appStore.attachmentPath(att.id))) await attachmentService()?.ensureLocal(att.id)
         const res = await uploadAttachment(ctx.appStore, ctx.appStore.attachmentPath(att.id), att.filename, driveId)
+        if (res.ok) attachmentService()?.recordLegacyUpload(att.id, driveId, `/attachments/${basename(res.path ?? att.filename)}`)
         if (res.ok) okCount++
         else lastErr = res.error ?? '未知错误'
       }

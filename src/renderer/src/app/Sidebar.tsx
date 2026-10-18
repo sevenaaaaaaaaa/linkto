@@ -9,7 +9,7 @@ import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
-  IconReplyAll, IconSave, IconClose, IconSearch, IconCheckSquare
+  IconReplyAll, IconSave, IconClose, IconSearch, IconCheckSquare, IconAttach
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -298,6 +298,7 @@ export function Sidebar() {
               trailing={<kbd className="text-2xs" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>⌘J</kbd>}
             />
             {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
+            <Row icon={<IconAttach {...ico} />} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />
             <SmartViewsSection />
           </>
         )}

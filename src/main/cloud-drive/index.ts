@@ -96,6 +96,11 @@ async function davExists(cfg: CloudDriveConfig, secret: string, path: string): P
 
 // ================= Dropbox 客户端 =================
 
+/** Dropbox-API-Arg 走 HTTP 头，只能是 ASCII：非 ASCII 字符（中文目录 / 文件名）按 Dropbox 要求转成 \uXXXX 转义 */
+function dbxArg(arg: unknown): string {
+  return JSON.stringify(arg).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
+}
+
 async function dbxMkdirp(token: string, dir: string): Promise<void> {
   const parts = dir.split('/').filter(Boolean)
   let cur = ''
@@ -113,7 +118,7 @@ async function dbxMkdirp(token: string, dir: string): Promise<void> {
 
 // ================= 统一上层接口 =================
 
-async function driveUpload(appStore: AppStore, driveId: string, remotePath: string, data: Buffer): Promise<{ ok: boolean; error?: string; path?: string }> {
+export async function driveUpload(appStore: AppStore, driveId: string, remotePath: string, data: Buffer): Promise<{ ok: boolean; error?: string; path?: string }> {
   const cfg = listDrives(appStore).find(d => d.id === driveId)
   if (!cfg) return { ok: false, error: '网盘不存在' }
   const full = rootOf(cfg) + remotePath
@@ -138,7 +143,7 @@ async function driveUpload(appStore: AppStore, driveId: string, remotePath: stri
         method: 'POST',
         headers: {
           Authorization: `Bearer ${secret}`,
-          'Dropbox-API-Arg': JSON.stringify({ path: full, mode: 'overwrite', autorename: false }),
+          'Dropbox-API-Arg': dbxArg({ path: full, mode: 'overwrite', autorename: false }),
           'Content-Type': 'application/octet-stream'
         },
         body: new Uint8Array(data)
@@ -155,7 +160,7 @@ async function driveUpload(appStore: AppStore, driveId: string, remotePath: stri
   }
 }
 
-async function driveExists(appStore: AppStore, driveId: string, remotePath: string): Promise<boolean> {
+export async function driveExists(appStore: AppStore, driveId: string, remotePath: string): Promise<boolean> {
   const cfg = listDrives(appStore).find(d => d.id === driveId)
   if (!cfg) return false
   const full = rootOf(cfg) + remotePath
@@ -237,4 +242,54 @@ export async function syncEmlMirror(appStore: AppStore, driveId: string): Promis
     }
   }
   return { ok: true, uploaded, skipped }
+}
+// ================= 附件中心归档用：定位 / 取回 =================
+
+/** 本地同步目录类网盘：相对路径 → 绝对路径（其他类型返回 null） */
+export function driveLocalPath(appStore: AppStore, driveId: string, remotePath: string): string | null {
+  const cfg = listDrives(appStore).find(d => d.id === driveId)
+  if (!cfg || cfg.kind !== 'local' || !cfg.localPath) return null
+  return localFull(cfg, rootOf(cfg) + remotePath)
+}
+
+/** 网盘根目录的展示文本（本地同步目录为绝对路径，其余为 远端根） */
+export function driveRootLabel(cfg: CloudDriveConfig): string {
+  return cfg.kind === 'local' ? localFull(cfg, rootOf(cfg)) : rootOf(cfg)
+}
+
+/** 网盘上文件的网页 / 访问地址（远端网盘「打开云端位置」用） */
+export function driveWebUrl(appStore: AppStore, driveId: string, remotePath: string): string | null {
+  const cfg = listDrives(appStore).find(d => d.id === driveId)
+  if (!cfg) return null
+  const full = rootOf(cfg) + remotePath
+  const dir = full.split('/').slice(0, -1).join('/')
+  if (cfg.kind === 'dropbox') return 'https://www.dropbox.com/home' + encodeURI(dir)
+  if (cfg.kind === 'webdav') return cfg.url.replace(/\/+$/, '') + encodeURI(dir + '/')
+  return null
+}
+
+/** 从网盘取回文件内容（附件本地缓存被释放后的恢复来源之一） */
+export async function driveDownload(appStore: AppStore, driveId: string, remotePath: string): Promise<Buffer | null> {
+  const cfg = listDrives(appStore).find(d => d.id === driveId)
+  if (!cfg) return null
+  const full = rootOf(cfg) + remotePath
+  try {
+    if (cfg.kind === 'local') {
+      const p = localFull(cfg, full)
+      return existsSync(p) ? readFileSync(p) : null
+    }
+    const secret = secretOf(appStore, driveId)
+    if (!secret) return null
+    if (cfg.kind === 'dropbox') {
+      const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secret}`, 'Dropbox-API-Arg': dbxArg({ path: full }) }
+      })
+      return res.ok ? Buffer.from(await res.arrayBuffer()) : null
+    }
+    const res = await davReq(cfg, secret, full, 'GET')
+    return res.ok ? Buffer.from(await res.arrayBuffer()) : null
+  } catch {
+    return null
+  }
 }

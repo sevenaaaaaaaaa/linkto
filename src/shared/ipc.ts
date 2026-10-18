@@ -47,6 +47,18 @@ import type {
   TodoSyncDirection,
   CalendarBusyBlock
 } from './types'
+import type {
+  ArchiveJobStatus,
+  ArchivePreview,
+  ArchiveSuggestion,
+  AttachmentCategory,
+  AttachmentCloudCopy,
+  AttachmentItem,
+  AttachmentQuery,
+  AttachmentSettings,
+  AttachmentStats,
+  ReleasePlan
+} from './attachments'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
 export interface LinkToApi {
@@ -232,6 +244,44 @@ export interface LinkToApi {
   pickDirectory(title?: string): Promise<string | null>
   /** 检测本机 Proton Drive 同步目录（可能多账户），附带客户端下载地址 */
   detectProtonDrive(): Promise<{ folders: { path: string; account: string }[]; downloadUrl: string }>
+
+  // ---------- 附件中心（索引 / 分类 / 本地缓存策略 / 网盘归档） ----------
+  /** 浏览附件索引（含尚未下载、只有元数据的附件） */
+  attachList(query: AttachmentQuery): Promise<{ items: AttachmentItem[]; total: number }>
+  /** 本地占用统计（按分类 / 账户 / 年份 / 对方）、最大文件、重复文件 */
+  attachStats(): Promise<AttachmentStats>
+  /** 立即增量扫描一次（新附件入索引、算哈希、AI 补充分类） */
+  attachRescan(): Promise<AttachmentStats>
+  /** 按附件 id 取状态（阅读窗附件卡：已在哪些网盘 / 是否已释放） */
+  attachStatus(ids: string[]): Promise<Record<string, { cached: boolean; releasedAt: number | null; cloud: AttachmentCloudCopy[]; category: AttachmentCategory; pinned: boolean }>>
+  attachGetSettings(): Promise<AttachmentSettings>
+  attachSetSettings(patch: Partial<AttachmentSettings>): Promise<AttachmentSettings>
+  attachSetCategory(ids: string[], category: AttachmentCategory): Promise<void>
+  attachPin(ids: string[], pinned: boolean): Promise<void>
+  /** 释放清单：不传 ids = 按策略建议；传 ids = 手动选择（同样过安全判定） */
+  attachReleasePlan(ids?: string[] | null): Promise<ReleasePlan>
+  /** 执行释放（逐个重新做安全判定，只删 LinkTo 附件缓存目录里的文件） */
+  attachRelease(ids: string[]): Promise<{ released: number; bytes: number; skipped: { id: string; filename: string; reason: string }[] }>
+  /** 确保附件在本地（释放 / 未下载的：eml 镜像 → IMAP → 网盘副本） */
+  attachEnsureLocal(id: string): Promise<{ ok: boolean; id?: string; error?: string; via?: 'cache' | 'eml' | 'imap' | 'cloud' }>
+  /** 整理建议：近 N 天未归档的附件与可释放空间、可用的归档目标 */
+  attachSuggest(windowDays?: number): Promise<ArchiveSuggestion>
+  /** 归档预览：目标目录结构与每个附件的动作；template 不传用设置里的模板 */
+  attachArchivePreview(driveId: string, ids: string[], template?: string): Promise<ArchivePreview>
+  /** 开始归档（后台队列；进度通过 { type: 'attachments-job', status } 事件推送） */
+  attachArchiveStart(driveId: string, ids: string[]): Promise<ArchiveJobStatus | null>
+  attachArchiveControl(action: 'pause' | 'resume' | 'cancel' | 'retry'): Promise<ArchiveJobStatus | null>
+  attachArchiveStatus(): Promise<ArchiveJobStatus | null>
+  /** 在 Finder 中显示网盘副本（本地同步目录）或打开云端网页位置 */
+  attachReveal(id: string, driveId?: string): Promise<{ ok: boolean; error?: string }>
+  /** 用系统默认应用打开（需要时先重新下载） */
+  attachOpen(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 多选保存到本地目录 */
+  attachSaveMany(ids: string[]): Promise<{ ok: boolean; count: number; dir?: string; failed: number; error?: string }>
+  /** 图片缩略图（data URL） */
+  attachThumbs(ids: string[]): Promise<Record<string, string>>
+  /** 一键添加 Proton Drive（检测同步目录，复用网盘保存流程）；未安装时返回下载地址 */
+  attachAddProton(): Promise<{ ok: boolean; error?: string; downloadUrl: string; driveId?: string }>
 
   // ---------- Newsletter ----------
   unsubscribe(messageId: string, method: 'http' | 'mailto'): Promise<{ ok: boolean; error?: string }>

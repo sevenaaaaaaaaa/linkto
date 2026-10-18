@@ -10,10 +10,11 @@ import { IntegrationsTab, TodoIntegrationsSection } from './tabs/IntegrationsTab
 import { BackupTab } from './tabs/BackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
 import { TodoSyncSection } from './tabs/TodoSyncSection'
+import { AttachmentsTab } from './tabs/AttachmentsTab'
 import { parseSettingsTab } from './account-focus'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook, IconSearch,
-  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare
+  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare, IconAttach
 } from '../components/icons'
 
 interface Page {
@@ -54,6 +55,7 @@ const GROUPS: { title: string; pages: Page[] }[] = [
   {
     title: '数据与系统',
     pages: [
+      { id: 'attachments', label: '附件与存储', desc: '本地附件占用、缓存释放策略、分门别类归档到网盘', icon: IconAttach, keywords: '附件 存储 空间 占用 缓存 释放 清理 归档 网盘 Proton Drive Dropbox WebDAV 发票 合同 重复文件 目录模板 自动规则' },
       { id: 'backup', label: '备份', desc: '加密备份账户配置，跨设备恢复', icon: IconArchive, keywords: '备份 恢复 迁移 iCloud Dropbox Proton Drive 坚果云 OneDrive 口令 加密' },
       { id: 'general', label: '通用', desc: '外观主题、隐私、开机自启与关于', icon: IconSettings, keywords: '通用 主题 明暗 深色 外观 远程图片 隐私 删除 开机自启 Dock 角标 Screener 新发件人审批 关于 版本' }
     ]
@@ -162,6 +164,7 @@ export default function SettingsApp() {
           {tab === 'integrations' && <IntegrationsTab />}
           {tab === 'backup' && <BackupTab />}
           {tab === 'todo' && <TodoSettingsPage />}
+          {tab === 'attachments' && <AttachmentsTab />}
         </div>
       </main>
     </div>

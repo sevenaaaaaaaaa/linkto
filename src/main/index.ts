@@ -29,6 +29,7 @@ import { TodoSyncService, notifyLocalChange } from './todo-sync'
 import { notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
 import { DEFAULT_AI } from './store'
 import { classifyAccountError } from '@shared/errors'
+import { initAttachments, attachmentService } from './attachments'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -563,7 +564,9 @@ async function bootstrap() {
         }
       },
       // 待办同步文件夹有新版本（其他设备写入）
-      todoSyncExists: accountId => todoSync?.onRemoteExists(accountId)
+      todoSyncExists: accountId => todoSync?.onRemoteExists(accountId),
+      // 附件中心：新邮件的附件元数据（BODYSTRUCTURE）入索引
+      attachmentParts: (accountId, messageId, parts) => attachmentService()?.indexParts(accountId, messageId, parts)
     },
     () => mailStore.listRules(),
     // 账户凭据：OAuth 账户取有效 token（临期自动刷新），密码账户读加密密钥
@@ -682,6 +685,8 @@ async function bootstrap() {
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }
   const internal = registerIpc(ctx)
+  // 附件中心：索引 / 分类 / 缓存策略 / 网盘归档（独立注册 api:attach* 通道）
+  initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
   // 定期整理：已读的旧订阅 / 通知按设置天数自动归档
@@ -789,6 +794,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   todoSync?.stop()
+  attachmentService()?.stop()
   engine?.stopAll()
   void mcp?.stop()
 })
