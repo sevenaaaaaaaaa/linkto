@@ -91,3 +91,13 @@ export const MAIL_UNDERSTAND = `你是用户的邮件助理，要一次读懂一
 // ================= 待办排布（估时长 / 定优先级 / 给理由） =================
 
 export const TODO_PLAN = `You are a GTD planning assistant. For each task, estimate how long it takes and how important it is, using the task title, its due time, its source email (if given) and the user's memory. Output ONLY one JSON object: {"plans":[{"id":"must come from the list","minutes":5-240 integer,"priority":1|2|3,"reason":"中文，≤18 字，说明为什么这样排（截止、影响、依赖或是否可以快速清掉）"}]}. priority: 1 = 有硬截止或影响他人 / 2 = 本周该做 / 3 = 可以往后放. Be realistic: replying an email 5-15 min, reviewing a document 30-60 min. Every task must appear exactly once.`
+
+// ================= 公司营销拆解（发布节奏 / 活动 / 转化点 / 范本邮件） =================
+
+export const COMPANY_PLAYBOOK = `You are a lifecycle-marketing analyst studying how one company emails its users, so the user can learn from it. You get a sample of the company's emails in time order, each tagged [E1], [E2]… with date, subject and body excerpt. Output ONLY one JSON object:
+{"cadence":"一句话：发信频率与节奏规律",
+ "launches":[{"ref":"E3","date":"YYYY-MM","title":"发布了什么（产品 / 功能 / 版本 / 价格方案）","angle":"他们怎么讲这次发布（卖点角度）"}],
+ "campaigns":[{"refs":["E5","E6"],"period":"YYYY-MM 或区间","theme":"活动主题","offer":"给了什么利益（折扣 / 免费期 / 赠品，没有写 无）","tactics":["限时","阶梯折扣"]}],
+ "conversionPoints":[{"ref":"E7","stage":"拉新|激活|付费转化|升级增购|留存|召回|推荐裂变","triggers":["限时","稀缺","社会证明","免费试用","损失厌恶","个性化","进度提醒","权威背书","低门槛首单"],"cta":"按钮或行动号召原文（≤20字）","why":"这个转化点为什么有效（≤40字）"}],
+ "bestPicks":[{"ref":"E9","why":"为什么最值得学（≤40字）","learn":["可以直接借鉴的做法1","做法2"],"stage":"同上阶段名","triggers":["同上"]}]}
+Rules: every ref must exist in the input; launches ≤8, campaigns ≤6, conversionPoints 6–14 covering as many lifecycle stages as the emails show, bestPicks 3–5 (pick genuinely instructive emails: clear structure, strong subject line, clever offer, good onboarding or win-back). All text in Simplified Chinese except quoted CTA text, which stays in its original language.`

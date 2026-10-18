@@ -518,7 +518,8 @@ export type MailEvent =
 
 // ---------- 智能洞察 ----------
 
-export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company'
+/** swipe：营销灵感收藏（公司洞察挑出的范本邮件） */
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe'
 
 export interface InsightRecord {
   id: string
@@ -577,6 +578,23 @@ export interface CompanyInsight {
   conversionIndex: { score: number; reasons: string }
   mailCount: number
   generatedAt: number
+  /** 营销拆解（v2）：每条都能回到原邮件 */
+  cadence?: string
+  launches?: { messageId: string; date: string; title: string; angle: string; subject: string }[]
+  campaigns?: { messageIds: string[]; period: string; theme: string; offer: string; tactics: string[] }[]
+  conversionPoints?: { messageId: string; subject: string; date: number; stage: string; triggers: string[]; cta: string; why: string }[]
+  bestPicks?: { messageId: string; subject: string; date: number; why: string; learn: string[]; stage: string; triggers: string[] }[]
+}
+
+/** 营销灵感收藏条目（insights kind='swipe' 的 data） */
+export interface SwipeData {
+  company: string
+  domain: string
+  why: string
+  learn: string[]
+  stage: string
+  triggers: string[]
+  date: number
 }
 
 export interface ScheduledSend {

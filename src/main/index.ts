@@ -491,7 +491,10 @@ async function bootstrap() {
     event: payload => broadcast(payload),
     // Agent 长期记忆注入（agent 稍后初始化，闭包延迟求值）
     getMemoryContext: q => agent?.memoryBlock(q) || null,
-    onDailyGenerated: ids => void agent?.learnFromMessages(ids, 6)
+    onDailyGenerated: ids => void agent?.learnFromMessages(ids, 6),
+    downloadBody: async (accountId, folderPath, uid) => {
+      await engine?.getWorker(accountId)?.downloadBody(folderPath, uid)
+    }
   })
 
   agent = new AgentService({

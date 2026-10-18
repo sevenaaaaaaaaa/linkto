@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AISettings, CompanyInsight, DailyDigest } from '@shared/types'
 import {
-  EXTRACT_MESSAGE, DAILY_DIGEST, COMPANY_PROFILE, RANK_MESSAGES, ASK_BULK,
+  EXTRACT_MESSAGE, DAILY_DIGEST, COMPANY_PROFILE, COMPANY_PLAYBOOK, RANK_MESSAGES, ASK_BULK,
   SCREEN_SUGGEST, SCREEN_BATCH, COMPOSE_QUERY, SNOOZE_SUGGEST,
   JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE
 } from './prompts'
@@ -49,6 +49,8 @@ export class InsightsService {
       getMemoryContext?(query: string): string | null
       /** 可选：每日商情生成后回调（用于 Agent 自动学习近期邮件） */
       onDailyGenerated?(messageIds: string[]): void
+      /** 可选：按需下载正文（公司营销拆解需要看到正文里的 CTA / 优惠） */
+      downloadBody?(accountId: string, folderPath: string, uid: number): Promise<void>
     }
   ) {}
 
@@ -221,35 +223,87 @@ export class InsightsService {
 
   // ---------- 公司洞察 ----------
 
+  /** 公司洞察分析进度（渲染层显示「正在下载正文 12/36」之类） */
+  private companyProgress(domain: string, text: string) {
+    this.deps.event({ type: 'company-progress', domain, text })
+  }
+
   async companyProfile(domain: string): Promise<{ ok: boolean; error?: string; insight?: CompanyInsight }> {
     if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）' }
-    const d = domain.trim().toLowerCase()
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)) return { ok: false, error: '请输入有效域名（如 stripe.com）' }
+    // 允许直接粘贴邮箱地址：取 @ 后面的域名
+    const d = domain.trim().toLowerCase().replace(/^.*@/, '').replace(/^\.+/, '')
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)) return { ok: false, error: '请输入有效域名或邮箱（如 stripe.com）' }
     if (this.runningCompany.has(d)) return { ok: false, error: '正在分析中' }
     this.runningCompany.add(d)
     try {
-      const rows = this.deps.store.db
+      // 子域名一起算：marketing.example.com、news.example.com 都归 example.com
+      type Row = { id: string; account_id: string; folder_path: string; uid: number; subject: string; snippet: string; text: string; from_name: string; from_addr: string; date: number; body_fetched: number }
+      const all = this.deps.store.db
         .prepare(
-          `SELECT id, subject, snippet, from_name, from_addr, date FROM messages
-           WHERE lower(from_addr) LIKE ? ORDER BY date ASC LIMIT 60`
+          `SELECT id, account_id, folder_path, uid, subject, snippet, text, from_name, from_addr, date, body_fetched FROM messages
+           WHERE lower(from_addr) LIKE ? OR lower(from_addr) LIKE ? ORDER BY date ASC`
         )
-        .all(`%@${d}`) as { id: string; subject: string; snippet: string; from_name: string; from_addr: string; date: number }[]
-      if (rows.length < 2) return { ok: false, error: `来自 ${d} 的邮件太少（${rows.length} 封），至少需要 2 封才能分析` }
+        .all(`%@${d}`, `%.${d}`) as Row[]
+      if (all.length < 2) return { ok: false, error: `来自 ${d} 的邮件太少（${all.length} 封），至少需要 2 封才能分析` }
+      const pick = (n: number) => (all.length <= n ? all : Array.from({ length: n }, (_, i) => all[Math.round((i * (all.length - 1)) / (n - 1))]))
+      const rows = pick(60)
+      const sample = [...new Map(pick(36).map(r => [r.id, r])).values()]
+
+      // 营销拆解要看正文（按钮文案、优惠、结构）：缺正文的先下载，单封失败不影响整体
+      if (this.deps.downloadBody) {
+        const missing = sample.filter(r => !r.body_fetched)
+        let n = 0
+        const deadline = Date.now() + 60_000
+        for (const r of missing) {
+          if (Date.now() > deadline) break
+          this.companyProgress(d, `正在下载正文 ${++n}/${missing.length}`)
+          await Promise.race([this.deps.downloadBody(r.account_id, r.folder_path, r.uid).catch(() => {}), new Promise(res => setTimeout(res, 12_000))])
+        }
+      }
+      const fresh = new Map(
+        (this.deps.store.db
+          .prepare(`SELECT id, text, snippet FROM messages WHERE id IN (${sample.map(() => '?').join(',')})`)
+          .all(...sample.map(r => r.id)) as { id: string; text: string; snippet: string }[]).map(r => [r.id, r])
+      )
+      const excerpt = (r: Row) => {
+        const f = fresh.get(r.id)
+        return String(f?.text || f?.snippet || r.snippet || '').replace(/\s+/g, ' ').trim().slice(0, 520)
+      }
       const lines = rows
-        .map(r => `${new Date(r.date).toLocaleDateString('zh-CN')} · ${r.subject} · ${r.snippet.slice(0, 80)}`)
+        .map(r => `${new Date(r.date).toLocaleDateString('zh-CN')} · ${r.subject} · ${String(r.snippet ?? '').slice(0, 80)}`)
         .join('\n')
+      const playbookInput = sample
+        .map((r, i) => `[E${i + 1}] ${new Date(r.date).toLocaleDateString('zh-CN')} ｜ ${r.subject}\n${excerpt(r)}`)
+        .join('\n\n')
       const company = rows.find(r => r.from_name)?.from_name ?? d
-      const result = await this.json<{
+
+      this.companyProgress(d, 'AI 正在拆解发布节奏、营销活动和转化点…')
+      type Profile = {
         company: string
         summary: string
         timeline: { period: string; event: string }[]
         strategy: string
         credibility: { score: number; reasons: string }
         conversionIndex: { score: number; reasons: string }
-      }>(
-        COMPANY_PROFILE,
-        `公司域名：${d}\n共 ${rows.length} 封邮件（时间正序）：\n${lines}`
-      )
+      }
+      type Playbook = {
+        cadence?: string
+        launches?: { ref: string; date: string; title: string; angle: string }[]
+        campaigns?: { refs: string[]; period: string; theme: string; offer: string; tactics: string[] }[]
+        conversionPoints?: { ref: string; stage: string; triggers: string[]; cta: string; why: string }[]
+        bestPicks?: { ref: string; why: string; learn: string[]; stage: string; triggers: string[] }[]
+      }
+      const [result, play] = await Promise.all([
+        this.json<Profile>(COMPANY_PROFILE, `公司域名：${d}\n共 ${all.length} 封邮件（以下为时间正序抽样 ${rows.length} 封）：\n${lines}`),
+        // 拆解失败不拖垮基础报告
+        this.json<Playbook>(COMPANY_PLAYBOOK, `公司：${company}（${d}），共 ${all.length} 封邮件，以下按时间均匀抽样 ${sample.length} 封：\n\n${playbookInput}`).catch(() => ({}) as Playbook)
+      ])
+      const refRow = (ref: unknown) => {
+        const m = /^E(\d+)$/i.exec(String(ref ?? '').trim())
+        return m ? sample[Number(m[1]) - 1] : undefined
+      }
+      const strs = (v: unknown, max = 6) => (Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, max) : [])
+
       const insight: CompanyInsight = {
         company: String(result.company || company),
         domain: d,
@@ -264,8 +318,28 @@ export class InsightsService {
           score: Math.max(0, Math.min(100, Number(result.conversionIndex?.score ?? 50))),
           reasons: String(result.conversionIndex?.reasons ?? '')
         },
-        mailCount: rows.length,
-        generatedAt: Date.now()
+        mailCount: all.length,
+        generatedAt: Date.now(),
+        cadence: play.cadence ? String(play.cadence) : undefined,
+        launches: (play.launches ?? []).flatMap(l => {
+          const r = refRow(l.ref)
+          return r ? [{ messageId: r.id, subject: r.subject, date: String(l.date ?? ''), title: String(l.title ?? ''), angle: String(l.angle ?? '') }] : []
+        }).slice(0, 8),
+        campaigns: (play.campaigns ?? []).map(c => ({
+          messageIds: strs(c.refs, 8).map(refRow).filter((r): r is Row => !!r).map(r => r.id),
+          period: String(c.period ?? ''),
+          theme: String(c.theme ?? ''),
+          offer: String(c.offer ?? ''),
+          tactics: strs(c.tactics)
+        })).filter(c => c.theme).slice(0, 6),
+        conversionPoints: (play.conversionPoints ?? []).flatMap(c => {
+          const r = refRow(c.ref)
+          return r ? [{ messageId: r.id, subject: r.subject, date: r.date, stage: String(c.stage ?? ''), triggers: strs(c.triggers), cta: String(c.cta ?? '').slice(0, 40), why: String(c.why ?? '') }] : []
+        }).slice(0, 14),
+        bestPicks: (play.bestPicks ?? []).flatMap(b => {
+          const r = refRow(b.ref)
+          return r ? [{ messageId: r.id, subject: r.subject, date: r.date, why: String(b.why ?? ''), learn: strs(b.learn, 5), stage: String(b.stage ?? ''), triggers: strs(b.triggers) }] : []
+        }).slice(0, 5)
       }
       this.deps.store.deleteInsight(`company-${d}`)
       this.deps.store.insertInsight({
@@ -275,6 +349,16 @@ export class InsightsService {
         data: insight as unknown as Record<string, unknown>,
         period: d
       })
+      // 最值得学的邮件 → 阅读清单里的「营销灵感」收藏（幂等；用户移出后不再自动加回）
+      for (const b of insight.bestPicks ?? []) {
+        this.deps.store.insertInsightIfAbsent({
+          id: `swipe-${b.messageId}`.slice(0, 160),
+          kind: 'swipe',
+          messageId: b.messageId,
+          title: b.subject || '（无主题）',
+          data: { company: insight.company, domain: d, why: b.why, learn: b.learn, stage: b.stage, triggers: b.triggers, date: b.date }
+        })
+      }
       this.emitChanged()
       return { ok: true, insight }
     } catch (err) {

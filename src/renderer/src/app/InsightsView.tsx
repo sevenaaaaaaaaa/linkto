@@ -4,8 +4,8 @@ import { useMailEvent } from '../lib/api'
 import { useMail } from '../stores/mail'
 import {
   IconSunrise, IconCheckSquare, IconBook, IconBuilding, IconStar, IconLayers,
-  IconFileText, IconTrash, IconShield, IconTarget, IconTrendingUp, IconBrain, IconRss } from '../components/icons'
-import type { CompanyInsight, DailyDigest, InsightRecord } from '@shared/types'
+  IconFileText, IconTrash, IconShield, IconTarget, IconTrendingUp, IconBrain, IconRss, IconSparkles } from '../components/icons'
+import type { CompanyInsight, DailyDigest, InsightRecord, SwipeData } from '@shared/types'
 import { Markdown } from '../components/Markdown'
 
 type Tab = 'daily' | 'todo' | 'reading' | 'company'
@@ -319,6 +319,135 @@ function TodoTab() {
 // ================= 阅读清单 =================
 
 function ReadingTab() {
+  const [section, setSection] = useState<'articles' | 'swipe'>(() => (localStorage.getItem('ms_reading_section') as 'swipe') || 'articles')
+  const [swipeCount, setSwipeCount] = useState(0)
+  useEffect(() => {
+    const load = () => void api.listInsights('swipe').then(r => setSwipeCount(r.filter(x => x.status !== ('dismissed' as never)).length))
+    load()
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+  }, [])
+  const pick = (v: 'articles' | 'swipe') => {
+    setSection(v)
+    localStorage.setItem('ms_reading_section', v)
+  }
+  return (
+    <div className="max-w-[760px] mx-auto">
+      <div className="mb-4 inline-flex p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="tablist">
+        {(
+          [
+            ['articles', '文章'],
+            ['swipe', `营销灵感${swipeCount ? ` · ${swipeCount}` : ''}`]
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={section === k}
+            onClick={() => pick(k)}
+            className="h-7 px-3 rounded-[var(--r-xs)] text-xs"
+            style={section === k ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 600, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {section === 'articles' ? <ArticlesList /> : <SwipeFile onCount={setSwipeCount} />}
+    </div>
+  )
+}
+
+/** 营销灵感：公司洞察挑出的范本邮件，按公司 / 生命周期阶段 / 手法筛选 */
+function SwipeFile(props: { onCount(n: number): void }) {
+  const [items, setItems] = useState<InsightRecord[]>([])
+  const [stage, setStage] = useState('')
+  const [company, setCompany] = useState('')
+  const load = () =>
+    void api.listInsights('swipe').then(r => {
+      const list = (r as InsightRecord[]).filter(x => (x.status as string) !== 'dismissed')
+      setItems(list)
+      props.onCount(list.length)
+    })
+  useEffect(() => load(), [])
+  useMailEvent(ev => {
+    if (ev.type === 'insights-changed') load()
+  })
+  const data = (i: InsightRecord) => i.data as unknown as SwipeData
+  const companies = [...new Set(items.map(i => data(i).company).filter(Boolean))]
+  const stages = [...new Set(items.map(i => data(i).stage).filter(Boolean))]
+  const shown = items.filter(i => (!stage || data(i).stage === stage) && (!company || data(i).company === company))
+
+  if (!items.length) return <EmptyCard text="还没有营销灵感。在「公司洞察」里分析一家公司，AI 会把最值得学的邮件收到这里。" />
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        <FilterChip on={!company} onClick={() => setCompany('')}>全部公司</FilterChip>
+        {companies.map(c => (
+          <FilterChip key={c} on={company === c} onClick={() => setCompany(company === c ? '' : c)}>{c}</FilterChip>
+        ))}
+      </div>
+      {stages.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          <FilterChip on={!stage} onClick={() => setStage('')}>全部阶段</FilterChip>
+          {stages.map(st => (
+            <FilterChip key={st} on={stage === st} onClick={() => setStage(stage === st ? '' : st)}>{st}</FilterChip>
+          ))}
+        </div>
+      )}
+      {shown.map(i => {
+        const d = data(i)
+        return (
+          <div key={i.id} className="rounded-[var(--r-md)] border border-[var(--border-soft)] surface p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold leading-snug" style={{ color: 'var(--fg)' }}>{i.title}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--faint)' }}>
+                  {d.company} · {d.date ? new Date(d.date).toLocaleDateString('zh-CN') : ''}
+                </div>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                {i.messageId && <SourceBtn id={i.messageId} subject={i.title} />}
+                <button
+                  onClick={() => void api.updateTodo(i.id, { status: 'dismissed' }).then(load)}
+                  className="text-2xs h-6 px-2 rounded-[var(--r-xs)] hover:bg-[var(--hover)]"
+                  style={{ color: 'var(--faint)' }}
+                >
+                  移出
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--fg)' }}>
+              <mark className="hl">{d.why}</mark>
+            </div>
+            {d.learn?.length > 0 && (
+              <ul className="mt-2 pl-4 list-disc text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
+                {d.learn.map((l, j) => <li key={j}>{l}</li>)}
+              </ul>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1">
+              {d.stage && <Tag>{d.stage}</Tag>}
+              {(d.triggers ?? []).map(t => <Tag key={t}>{t}</Tag>)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function FilterChip(props: { on: boolean; onClick(): void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={props.onClick}
+      className="text-xs h-7 px-2.5 rounded-full border"
+      style={props.on ? { background: 'var(--fg)', color: 'var(--surface-strong)', borderColor: 'var(--fg)' } : { borderColor: 'var(--border)', color: 'var(--muted)' }}
+    >
+      {props.children}
+    </button>
+  )
+}
+
+function ArticlesList() {
   const [items, setItems] = useState<InsightRecord[]>([])
 
   const load = () => void api.listInsights('reading').then(r => setItems(r as InsightRecord[]))
@@ -366,7 +495,7 @@ function ReadingTab() {
   }
 
   return (
-    <div className="max-w-[720px] mx-auto space-y-3">
+    <div className="space-y-3">
       {openItems.map(card)}
       {doneItems.length > 0 && (
         <div>
@@ -387,17 +516,24 @@ function CompanyTab() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<CompanyInsight | null>(null)
+  const [progress, setProgress] = useState('')
 
   useEffect(() => {
     void api.listCompanyDomains().then(setDomains)
   }, [])
+  useMailEvent(ev => {
+    const e = ev as unknown as { type: string; text?: string }
+    if (e.type === 'company-progress') setProgress(e.text ?? '')
+  })
 
   const analyze = async (domain: string) => {
     if (!domain || running) return
     setRunning(true)
     setError('')
+    setProgress('')
     const res = await api.companyInsight(domain)
     setRunning(false)
+    setProgress('')
     if (!res.ok) {
       setError(res.error ?? '分析失败')
       return
@@ -416,7 +552,7 @@ function CompanyTab() {
       <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] surface p-4">
         <div className="text-sm font-medium" style={{ color: 'var(--fg)' }}>发件公司分析</div>
         <div className="text-xs mt-0.5" style={{ color: 'var(--faint)' }}>
-          输入或选择一家公司域名，AI 会按时间线剖析其运营策略，并给出品牌价值可信度与你被转化的指数
+          输入公司域名或任一发件邮箱。AI 会读正文，拆出发布节奏、营销活动和每个转化点，并把最值得学的邮件收进阅读清单的「营销灵感」
         </div>
         <div className="mt-3 flex gap-2">
           <input
@@ -442,6 +578,7 @@ function CompanyTab() {
             {running ? '分析中…' : '分析'}
           </button>
         </div>
+        {running && progress && <div className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>{progress}</div>}
         {error && <div className="mt-2 text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
         {domains.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -501,8 +638,115 @@ function CompanyReport(props: { insight: CompanyInsight }) {
 
       <Panel title="运营策略剖析" icon={<IconBrain width={14} height={14} />}>
         <div className="text-sm leading-relaxed" style={{ color: 'var(--fg)' }}><Markdown text={c.strategy} /></div>
+        {c.cadence && <div className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>发信节奏：{c.cadence}</div>}
       </Panel>
+
+      {!!c.launches?.length && (
+        <Panel title={`发布节奏 · ${c.launches.length}`} icon={<IconTrendingUp width={14} height={14} />}>
+          <div className="flex flex-col divide-y divide-[var(--border-soft)]">
+            {c.launches.map((l, i) => (
+              <div key={i} className="py-2.5 flex gap-3 items-start">
+                <span className="w-16 shrink-0 text-xs tnum" style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{l.date}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{l.title}</div>
+                  <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>{l.angle}</div>
+                </div>
+                <SourceBtn id={l.messageId} subject={l.subject} />
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {!!c.campaigns?.length && (
+        <Panel title={`营销活动 · ${c.campaigns.length}`} icon={<IconTarget width={14} height={14} />}>
+          <div className="grid grid-cols-2 gap-2.5">
+            {c.campaigns.map((m, i) => (
+              <div key={i} className="rounded-[var(--r-sm)] border border-[var(--border)] p-3 flex flex-col gap-1.5">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-semibold flex-1" style={{ color: 'var(--fg)' }}>{m.theme}</span>
+                  <span className="text-2xs tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{m.period}</span>
+                </div>
+                {m.offer && m.offer !== '无' && <div className="text-xs" style={{ color: 'var(--muted)' }}>利益点：{m.offer}</div>}
+                <div className="flex flex-wrap gap-1">{m.tactics.map(t => <Tag key={t}>{t}</Tag>)}</div>
+                {m.messageIds.length > 0 && (
+                  <button onClick={() => openMessage(m.messageIds[0])} className="self-start text-2xs underline underline-offset-2" style={{ color: 'var(--muted)' }}>
+                    看邮件（{m.messageIds.length} 封）
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {!!c.conversionPoints?.length && (
+        <Panel title={`转化点 · ${c.conversionPoints.length}`} icon={<IconTarget width={14} height={14} />}>
+          {STAGES.filter(st => c.conversionPoints!.some(p => p.stage === st)).concat(c.conversionPoints.some(p => !STAGES.includes(p.stage)) ? ['其他'] : []).map(st => (
+            <div key={st} className="mb-3 last:mb-0">
+              <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--faint)' }}>{st}</div>
+              <div className="flex flex-col gap-1.5">
+                {c.conversionPoints!.filter(p => (st === '其他' ? !STAGES.includes(p.stage) : p.stage === st)).map((p, i) => (
+                  <div key={i} className="rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2.5 flex gap-3 items-start">
+                    <div className="flex-1 min-w-0">
+                      {p.cta && (
+                        <div className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>
+                          「{p.cta}」
+                        </div>
+                      )}
+                      <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>{p.why}</div>
+                      <div className="mt-1.5 flex flex-wrap gap-1">{p.triggers.map(t => <Tag key={t}>{t}</Tag>)}</div>
+                    </div>
+                    <SourceBtn id={p.messageId} subject={p.subject} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </Panel>
+      )}
+
+      {!!c.bestPicks?.length && (
+        <Panel title="最值得学习的邮件" icon={<IconSparkles width={14} height={14} />}>
+          <div className="text-xs mb-2.5" style={{ color: 'var(--faint)' }}>已收进「阅读清单 → 营销灵感」</div>
+          <div className="flex flex-col gap-2.5">
+            {c.bestPicks.map((b, i) => (
+              <div key={i} className="rounded-[var(--r-sm)] p-3.5" style={{ background: 'var(--ai-soft)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>{b.subject || '（无主题）'}</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{b.why}</div>
+                  </div>
+                  <SourceBtn id={b.messageId} subject={b.subject} />
+                </div>
+                <ul className="mt-2 pl-4 list-disc text-xs leading-relaxed" style={{ color: 'var(--fg)' }}>
+                  {b.learn.map((l, j) => <li key={j}>{l}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
     </div>
+  )
+}
+
+const STAGES = ['拉新', '激活', '付费转化', '升级增购', '留存', '召回', '推荐裂变']
+
+function Tag(props: { children: React.ReactNode }) {
+  return <span className="text-2xs px-1.5 h-5 inline-flex items-center rounded-[var(--r-xs)]" style={{ background: 'var(--hover)', color: 'var(--muted)' }}>{props.children}</span>
+}
+
+function SourceBtn(props: { id: string; subject: string }) {
+  return (
+    <button
+      onClick={() => openMessage(props.id)}
+      title={props.subject}
+      className="shrink-0 text-2xs h-6 px-2 rounded-[var(--r-xs)] border border-[var(--border)] hover:bg-[var(--hover)]"
+      style={{ color: 'var(--muted)' }}
+    >
+      原邮件 ↗
+    </button>
   )
 }
 
