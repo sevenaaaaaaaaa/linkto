@@ -1,18 +1,5 @@
-import type { MailInsight } from '@shared/types'
+import type { MailInsight, TodoData } from '@shared/types'
 import type { MailStore } from './db'
-
-/** 待办元数据（存在 insights.data 里）：排布所需的时长 / 优先级 / 来源等 */
-export interface TodoData {
-  /** 来源：mail 自动收集 / agent / rule / manual / bulk / mcp … */
-  from?: string
-  /** reply：回复类待办，回信后自动完成；task：普通任务 */
-  todoKind?: 'reply' | 'task'
-  /** 预估时长（分钟） */
-  minutes?: number
-  /** 1 高 · 2 中 · 3 低 */
-  priority?: 1 | 2 | 3
-  auto?: boolean
-}
 
 const priorityOf = (urgency: number): 1 | 2 | 3 => (urgency >= 70 ? 1 : urgency >= 40 ? 2 : 3)
 
@@ -39,7 +26,7 @@ export function collectTodoFromInsight(store: MailStore, ins: MailInsight): bool
   } else return false
   const dueRaw = todoNext?.due || deadline?.value || null
   const due = dueRaw ? Date.parse(String(dueRaw).length <= 10 ? `${dueRaw}T18:00:00` : String(dueRaw)) : NaN
-  const data: TodoData = { from: 'mail', todoKind: kind, minutes, priority: priorityOf(ins.urgency), auto: true }
+  const data: TodoData = { from: 'mail', todoKind: kind, minutes, priority: priorityOf(ins.urgency), auto: true, inbox: true, updatedAt: Date.now() }
   return store.insertInsightIfAbsent({
     id: `todo-mail-${ins.messageId}`.slice(0, 160),
     kind: 'todo',

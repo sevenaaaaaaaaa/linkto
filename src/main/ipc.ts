@@ -1192,7 +1192,7 @@ export function registerIpc(ctx: AppContext) {
 
     createTodo: ([input]: [{ title: string; dueAt?: number | null; data?: Record<string, unknown> }]) => {
       const id = `todo-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      store.insertInsight({ id, kind: 'todo', title: input.title.slice(0, 200), data: { from: 'manual', ...(input.data ?? {}) }, dueAt: input.dueAt ?? null })
+      store.insertInsight({ id, kind: 'todo', title: input.title.slice(0, 200), data: { from: 'manual', updatedAt: Date.now(), ...(input.data ?? {}) }, dueAt: input.dueAt ?? null })
       ctx.event(null as never, { type: 'todos-changed' })
       return id
     },

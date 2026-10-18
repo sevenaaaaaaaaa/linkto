@@ -518,6 +518,62 @@ export type MailEvent =
 
 // ---------- 智能洞察 ----------
 
+// ---------- 待办（GTD）：存在 insights 表 kind='todo' 的 data 里 ----------
+
+export type TodoKind = 'reply' | 'task' | 'meeting'
+export type TodoProvider = 'apple-reminders' | 'apple-calendar' | 'google-tasks' | 'google-calendar' | 'ms-todo' | 'ms-calendar'
+
+export interface TodoChecklistItem {
+  id: string
+  text: string
+  done: boolean
+}
+
+export interface TodoMeeting {
+  /** 入会链接（Zoom / Teams / Meet / 腾讯会议 / 飞书会议 / Webex） */
+  url: string
+  provider: 'zoom' | 'teams' | 'meet' | 'tencent' | 'feishu' | 'webex' | 'other'
+  startsAt: number
+  endsAt?: number | null
+  /** 会议号 / 密码（如有） */
+  code?: string
+}
+
+/** 待办的全部维度（insights.data）。所有字段可选，旧数据照常可读 */
+export interface TodoData {
+  /** 来源：mail / agent / rule / manual / bulk / mcp / meeting / 外部服务名 */
+  from?: string
+  todoKind?: TodoKind
+  /** 预估时长（分钟） */
+  minutes?: number
+  /** 1 高 · 2 中 · 3 低 */
+  priority?: 1 | 2 | 3
+  /** 固定开始时间（ms）：会议、约好的电话 */
+  fixedAt?: number | null
+  aiReason?: string
+  auto?: boolean
+  /** 项目 / 清单 */
+  project?: string
+  tags?: string[]
+  /** 情境：@电脑 / @电话 / @外出 / @等待 … */
+  context?: string
+  /** 所需精力 */
+  energy?: 'low' | 'mid' | 'high'
+  notes?: string
+  checklist?: TodoChecklistItem[]
+  /** 重复：完成后按规则生成下一次 */
+  repeat?: { freq: 'daily' | 'weekdays' | 'weekly' | 'monthly'; interval?: number } | null
+  meeting?: TodoMeeting | null
+  /** 还在收集箱（未整理） */
+  inbox?: boolean
+  doneAt?: number
+  doneBy?: string
+  /** 最后修改时间（ms），跨设备同步按它合并 */
+  updatedAt?: number
+  /** 与外部服务的映射：各服务里的 id / 所属清单 / 上次同步 */
+  external?: Partial<Record<TodoProvider, { id: string; listId?: string; etag?: string; syncedAt: number }>>
+}
+
 /** swipe：营销灵感收藏（公司洞察挑出的范本邮件） */
 export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe'
 

@@ -9,16 +9,8 @@ import type { InsightRecord } from '@shared/types'
  * AI 只负责估时长 / 定优先级 / 写理由（aiPlanTodos），排布本身在这里瞬时完成，方便做动画。
  */
 
-export interface TodoData {
-  from?: string
-  todoKind?: 'reply' | 'task'
-  minutes?: number
-  priority?: 1 | 2 | 3
-  /** 固定开始时间（ms）：会议、约好的电话 */
-  fixedAt?: number | null
-  aiReason?: string
-  auto?: boolean
-}
+export type { TodoData } from '@shared/types'
+import type { TodoData } from '@shared/types'
 
 export type Bucket = 'overdue' | 'today' | 'tomorrow' | 'later' | 'someday'
 

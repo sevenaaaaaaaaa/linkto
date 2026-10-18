@@ -930,10 +930,10 @@ export class MailStore {
     if (patch.title !== undefined) this.db.prepare('UPDATE insights SET title = ? WHERE id = ?').run(patch.title, id)
     if (patch.dueAt !== undefined) this.db.prepare('UPDATE insights SET due_at = ? WHERE id = ?').run(patch.dueAt, id)
     if (patch.status !== undefined) this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(patch.status, id)
-    if (patch.data) {
-      const merged = { ...j<Record<string, unknown>>(row.data_json, {}), ...patch.data }
-      this.db.prepare('UPDATE insights SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), id)
-    }
+    // 任何改动都刷新 updatedAt（跨设备同步按它做「后写者胜」合并；同步写入时由调用方带上远端时间）
+    const merged = { ...j<Record<string, unknown>>(row.data_json, {}), ...(patch.data ?? {}) }
+    if (!patch.data || patch.data.updatedAt === undefined) merged.updatedAt = Date.now()
+    this.db.prepare('UPDATE insights SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), id)
   }
 
   setInsightStatus(id: string, status: string) {
