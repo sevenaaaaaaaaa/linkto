@@ -516,3 +516,39 @@ export interface LinkToApi {
   /** 导出 CSV（系统保存对话框）：按对方 / 期间 / 指定 id 过滤 */
   financeExportCsv(opts: { counterparty?: string | null; from?: number | null; to?: number | null; ids?: string[] | null; name?: string | null }): Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>
 }
+
+// ---------- Agent 运行时 / 技能 / 自动任务（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  /** 发起一次运行：步骤经 'agent-step' 事件推送（{ runId, threadId, step }）；skillId 给出时按技能说明与参数执行 */
+  agentRun(input: {
+    runId: string
+    threadId?: string | null
+    text: string
+    skillId?: string | null
+    params?: Record<string, string | number>
+    context?: { messageId?: string | null; projectId?: string | null }
+  }): Promise<{ ok: boolean; threadId: string; error?: string }>
+  /** 确认 / 拒绝一个等待中的写操作；remember=true 时本对话内同类工具不再询问 */
+  agentApprove(runId: string, callId: string, approve: boolean, remember?: boolean): Promise<void>
+  agentCancel(runId: string): Promise<void>
+  agentTools(): Promise<import('./types').AgentToolInfo[]>
+  agentThreads(): Promise<import('./types').AgentThreadSummary[]>
+  agentThread(id: string): Promise<import('./types').AgentThread | null>
+  agentDeleteThread(id: string): Promise<void>
+
+  agentSkills(): Promise<import('./types').AgentSkill[]>
+  /** 新建 / 更新自定义技能，或修改内置技能的 pinned / schedule / autoApprove */
+  agentSaveSkill(skill: import('./types').AgentSkill): Promise<import('./types').AgentSkill>
+  agentDeleteSkill(id: string): Promise<void>
+
+  agentJobs(): Promise<import('./types').AgentJobInfo[]>
+  agentJobSet(id: string, patch: { enabled?: boolean }): Promise<import('./types').AgentJobInfo[]>
+  agentJobRunNow(id: string): Promise<{ ok: boolean; result?: string; error?: string }>
+  agentActivity(limit?: number): Promise<import('./types').AgentActivity[]>
+
+  onboardingScanStatus(): Promise<import('./types').OnboardingScanStatus>
+  /** 开始首次整理：days 天内的邮件，按勾选的步骤依次跑（进度经 'onboarding-scan' 事件推送） */
+  onboardingScanStart(opts: { days: number; accountIds?: string[] | null; steps: ('todo' | 'finance' | 'attachments' | 'kb' | 'projects')[] }): Promise<void>
+  onboardingScanDismiss(): Promise<void>
+}

@@ -1058,3 +1058,140 @@ export interface CalendarBusyBlock {
   title: string
   provider: TodoProvider
 }
+
+// ---------- Agent 运行时（工具调用）· 技能 · 自动任务 ----------
+
+/** read = 只读查询（自动执行）；write = 改本地数据 / 邮件状态（需确认，技能可预授权）；external = 对外动作：发信、上传网盘等（总是需确认） */
+export type AgentToolRisk = 'read' | 'write' | 'external'
+
+export type AgentDomain = 'mail' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'calendar' | 'system'
+
+export interface AgentToolInfo {
+  name: string
+  /** 界面显示用的中文短名，如「搜索邮件」 */
+  title: string
+  description: string
+  risk: AgentToolRisk
+  domain: AgentDomain
+}
+
+/** Agent 回答里引用的对象，界面渲染成可点击的来源胶囊 */
+export interface AgentRef {
+  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact'
+  id: string
+  label: string
+}
+
+/** 一次运行中的步骤（主进程经 { type: 'agent-step', runId, threadId, step } 事件流式推送） */
+export type AgentStep =
+  | { kind: 'plan'; text: string }
+  | {
+      kind: 'tool'
+      callId: string
+      tool: string
+      title: string
+      args: Record<string, unknown>
+      risk: AgentToolRisk
+      /** awaiting = 等用户确认（write / external）；denied = 用户拒绝 */
+      status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'
+      /** 一句话结果，如「找到 12 封」 */
+      summary?: string
+    }
+  | { kind: 'text'; delta: string }
+  | { kind: 'refs'; refs: AgentRef[] }
+  | { kind: 'done'; text: string; refs: AgentRef[] }
+  | { kind: 'error'; message: string }
+
+export interface AgentTurn {
+  role: 'user' | 'assistant'
+  text: string
+  at: number
+  skillId?: string | null
+  steps?: AgentStep[]
+  refs?: AgentRef[]
+}
+
+export interface AgentThreadSummary {
+  id: string
+  title: string
+  skillId?: string | null
+  createdAt: number
+  updatedAt: number
+  turns: number
+}
+
+export interface AgentThread extends AgentThreadSummary {
+  messages: AgentTurn[]
+}
+
+export interface AgentSkillParam {
+  key: string
+  label: string
+  kind: 'text' | 'days' | 'date' | 'contact' | 'project' | 'select'
+  options?: { value: string; label: string }[]
+  default?: string | number
+  required?: boolean
+  placeholder?: string
+}
+
+/** 技能：一段可复用的任务说明 + 参数 + 允许的工具；内置技能 builtin=true（可复制后修改） */
+export interface AgentSkill {
+  id: string
+  name: string
+  /** 分组：每日 / 收件箱 / 人脉 / 项目 / 财务 / 资料 / 写作 / 出行 / 自定义 … */
+  category: string
+  description: string
+  /** 给 Agent 的任务说明，可含 {{param}} 占位 */
+  instructions: string
+  params?: AgentSkillParam[]
+  /** 允许使用的工具名；不填 = 全部只读工具 + 需确认的写工具 */
+  tools?: string[]
+  /** 用户预授权、无需逐条确认的写工具（external 永远需要确认） */
+  autoApprove?: string[]
+  /** report = 报告；actions = 待确认动作清单；draft = 邮件草稿 */
+  output?: 'report' | 'actions' | 'draft'
+  /** 图标名（icons.tsx 里的组件名去掉 Icon 前缀，如 Sparkles） */
+  icon?: string
+  builtin: boolean
+  /** 钉在左侧导航 Agent 下 */
+  pinned?: boolean
+  /** 定时运行；结果写进活动记录 */
+  schedule?: { every: 'hour' | 'day' | 'week'; at?: string; weekday?: number } | null
+  updatedAt?: number
+}
+
+/** 后台自动任务（收集 / 学习 / 定时技能） */
+export interface AgentJobInfo {
+  id: string
+  name: string
+  description: string
+  category: 'collect' | 'learn' | 'skill'
+  /** 人话描述的频率，如「每小时」「每天 08:00」 */
+  cadence: string
+  enabled: boolean
+  running: boolean
+  lastRunAt: number | null
+  nextRunAt: number | null
+  lastResult: string | null
+  lastError: string | null
+}
+
+/** 活动记录：Agent 在后台 / 技能 / 对话里替用户做了什么 */
+export interface AgentActivity {
+  id: string
+  at: number
+  source: 'job' | 'skill' | 'chat' | 'onboarding'
+  title: string
+  detail?: string | null
+  refs?: AgentRef[]
+}
+
+/** 首次整理（添加账户后的引导扫描）状态 */
+export interface OnboardingScanStatus {
+  running: boolean
+  /** 需要引导的账户（新加且尚未整理过） */
+  pendingAccounts: string[]
+  steps: { key: 'todo' | 'finance' | 'attachments' | 'kb' | 'projects'; label: string; status: 'idle' | 'running' | 'done' | 'error' | 'skipped'; result?: string }[]
+  startedAt: number | null
+  finishedAt: number | null
+}
