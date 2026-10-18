@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { LinkToApi } from '@shared/ipc'
 import type { ComposeDraft } from '@shared/types'
 
@@ -18,6 +18,7 @@ const METHOD_NAMES = [
   'moveMessages', 'moveToFolder', 'deleteMessages', 'searchMessages', 'getAttachment', 'getInlineImage', 'saveAttachment',
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
   'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
+  'suggestRecipients', 'aiComposeAssist',
   'getGeneralSettings', 'setGeneralSettings', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'notifyTestResult', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove',
   'listSignatures', 'saveSignature', 'deleteSignature',
   'listTemplates', 'saveTemplate', 'deleteTemplate',
@@ -51,6 +52,14 @@ for (const method of METHOD_NAMES) {
 ;(api as unknown as { onEvent: (cb: (ev: unknown) => void) => () => void }).onEvent = (cb: (ev: unknown) => void) => {
   listeners.add(cb)
   return () => listeners.delete(cb)
+}
+// 拖入撰写窗的文件 → 本地路径（沙箱下 File.path 已移除，需经 webUtils）
+;(api as unknown as { pathForFile: (file: File) => string }).pathForFile = (file: File) => {
+  try {
+    return webUtils.getPathForFile(file)
+  } catch {
+    return ''
+  }
 }
 
 /** 撰写窗口从 URL hash 中解析预填内容 */

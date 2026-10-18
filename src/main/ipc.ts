@@ -41,6 +41,8 @@ import { todoFromMessage } from './todo-collect'
 import { classifyAccountError } from '@shared/errors'
 import { aiReady } from './ai/service'
 import { TODO_PLAN } from './ai/prompts'
+import { COMPOSE_FROM_POINTS, COMPOSE_REWRITE, COMPOSE_SUBJECT } from './ai/prompts'
+import type { ComposeAssistInput, RecipientSuggestion } from '@shared/ipc'
 import { Outbox } from './mail/outbox'
 import { InsightsService } from './ai/insights'
 import type { AgentService } from './ai/agent'
@@ -357,6 +359,59 @@ export function registerIpc(ctx: AppContext) {
 
   async function aiChat(messages: AIChatMessage[]): Promise<string> {
     return ai.complete(messages)
+  }
+
+  // ---------- 撰写窗：收件人联想（往来统计缓存 60s，逐键过滤在内存里完成） ----------
+
+  let contactCache: { at: number; list: ReturnType<MailStore['contactStats']> } | null = null
+  const ROBOT_ADDR = /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?)([+.-]|@)/i
+
+  function suggestRecipients(query: string, limit = 8): RecipientSuggestion[] {
+    if (!contactCache || Date.now() - contactCache.at > 60_000) contactCache = { at: Date.now(), list: store.contactStats() }
+    const self = new Set(store.listAccounts().map(a => a.email.toLowerCase()))
+    const q = (query ?? '').trim().toLowerCase()
+    return contactCache.list
+      .filter(c => !self.has(c.address) && !ROBOT_ADDR.test(c.address))
+      .filter(c => !q || c.address.includes(q) || c.name.toLowerCase().includes(q))
+      .sort(
+        (a, b) =>
+          Number(b.sentByMe > 0) - Number(a.sentByMe > 0) ||
+          b.sentByMe + b.total - (a.sentByMe + a.total) ||
+          b.lastAt - a.lastAt
+      )
+      .slice(0, Math.max(1, Math.min(limit ?? 8, 20)))
+  }
+
+  // ---------- 撰写窗 AI：组装提示词（提示词本体在 prompts.ts） ----------
+
+  function composeAssistMessages(input: ComposeAssistInput): AIChatMessage[] {
+    const text = (input.text ?? '').slice(0, 8000)
+    const who = (input.recipients ?? []).filter(Boolean).slice(0, 6).join('、')
+    if (input.task === 'rewrite') {
+      return [
+        { role: 'system', content: COMPOSE_REWRITE(input.style ?? 'polish') },
+        { role: 'user', content: text }
+      ]
+    }
+    if (input.task === 'subject') {
+      return [
+        { role: 'system', content: COMPOSE_SUBJECT },
+        { role: 'user', content: `${who ? `收件人：${who}\n` : ''}正文：\n${text.slice(0, 4000)}` }
+      ]
+    }
+    const thread = input.relatedMessageId ? threadTextForAI(input.relatedMessageId).slice(0, 6000) : ''
+    const mem = agent.memoryPrompt(`${input.subject ?? ''} ${who} ${text.slice(0, 200)}`)
+    const lines = [
+      who ? `收件人：${who}` : '收件人：（未填写，不写具体称呼）',
+      input.fromName ? `我的名字：${input.fromName}` : '',
+      `主题：${input.subject?.trim() || '（未定）'}`,
+      thread ? `正在回复的原邮件：\n${thread}\n———` : '',
+      `要点：\n${text}`
+    ].filter(Boolean)
+    return [
+      { role: 'system', content: `${COMPOSE_FROM_POINTS}${mem.block}` },
+      { role: 'user', content: lines.join('\n') }
+    ]
   }
 
   const handlers: Record<string, ApiHandler> = {
@@ -816,6 +871,22 @@ export function registerIpc(ctx: AppContext) {
         })()
         return { path: p, name: basename(p), size: stat.size ?? 0 }
       })
+    },
+
+    suggestRecipients: ([query, limit]: [string, number | undefined]) => suggestRecipients(query, limit),
+
+    // 撰写窗 AI：事件只推给发起请求的窗口（aiStream 推给首个窗口，撰写窗收不到）
+    aiComposeAssist: async ([requestId, input]: [string, ComposeAssistInput], win: BrowserWindow) => {
+      const wc = win as unknown as Electron.WebContents
+      const emit = (p: { delta: string; done: boolean; error?: string }) => {
+        if (!wc.isDestroyed()) wc.send('event', { type: 'ai-stream', requestId, ...p })
+      }
+      try {
+        await ai.stream(requestId, composeAssistMessages(input), delta => emit({ delta, done: false }))
+        emit({ delta: '', done: true })
+      } catch (err) {
+        emit({ delta: '', done: true, error: err instanceof Error ? err.message : String(err) })
+      }
     },
 
     openExternal: ([url]: [string]) => {

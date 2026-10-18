@@ -884,6 +884,41 @@ export class MailStore {
     this.db.prepare('DELETE FROM drafts WHERE id = ?').run(id)
   }
 
+  /**
+   * 收件人联想的往来统计（撰写窗用）：发件人 + 收件人 / 抄送，按地址聚合。
+   * sent = 出现在已发送文件夹的收件人 / 抄送里（我发给 TA）；姓名取最近一次出现的非空名字。
+   */
+  contactStats(): { address: string; name: string; sentByMe: number; total: number; lastAt: number }[] {
+    const recips = (col: 'to_json' | 'cc_json') => `
+      SELECT lower(json_extract(je.value, '$.address')) AS addr, json_extract(je.value, '$.name') AS name,
+             CASE WHEN f.special = 'sent' THEN 1 ELSE 0 END AS sent, m.date AS d
+      FROM messages m JOIN folders f ON f.id = m.folder_id,
+           json_each(CASE WHEN json_valid(m.${col}) THEN m.${col} ELSE '[]' END) je`
+    const rows = this.db
+      .prepare(
+        `SELECT addr, COALESCE(name, '') AS name, SUM(sent) AS sent, COUNT(*) AS n, MAX(d) AS last FROM (
+           SELECT lower(m.from_addr) AS addr, m.from_name AS name, 0 AS sent, m.date AS d FROM messages m WHERE m.from_addr LIKE '%@%'
+           UNION ALL ${recips('to_json')}
+           UNION ALL ${recips('cc_json')}
+         ) WHERE addr LIKE '%@%' GROUP BY addr, COALESCE(name, '')`
+      )
+      .all() as { addr: string; name: string; sent: number; n: number; last: number }[]
+    const byAddr = new Map<string, { address: string; name: string; nameAt: number; sentByMe: number; total: number; lastAt: number }>()
+    for (const r of rows) {
+      const cur = byAddr.get(r.addr) ?? { address: r.addr, name: '', nameAt: -1, sentByMe: 0, total: 0, lastAt: 0 }
+      cur.sentByMe += r.sent ?? 0
+      cur.total += r.n ?? 0
+      cur.lastAt = Math.max(cur.lastAt, r.last ?? 0)
+      const nm = (r.name ?? '').trim().replace(/^["']|["']$/g, '')
+      if (nm && nm.toLowerCase() !== r.addr && (r.last ?? 0) > cur.nameAt) {
+        cur.name = nm
+        cur.nameAt = r.last ?? 0
+      }
+      byAddr.set(r.addr, cur)
+    }
+    return [...byAddr.values()].map(({ nameAt: _n, ...c }) => c)
+  }
+
   // ================= 发件队列（延迟 / 定时发送） =================
 
   private draftRowToScheduled(r: any): { id: string; accountId: string; to: Address[]; cc: Address[]; bcc: Address[]; subject: string; html: string; sendAt: number } {

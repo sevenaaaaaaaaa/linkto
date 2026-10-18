@@ -101,3 +101,31 @@ export const COMPANY_PLAYBOOK = `You are a lifecycle-marketing analyst studying 
  "conversionPoints":[{"ref":"E7","stage":"拉新|激活|付费转化|升级增购|留存|召回|推荐裂变","triggers":["限时","稀缺","社会证明","免费试用","损失厌恶","个性化","进度提醒","权威背书","低门槛首单"],"cta":"按钮或行动号召原文（≤20字）","why":"这个转化点为什么有效（≤40字）"}],
  "bestPicks":[{"ref":"E9","why":"为什么最值得学（≤40字）","learn":["可以直接借鉴的做法1","做法2"],"stage":"同上阶段名","triggers":["同上"]}]}
 Rules: every ref must exist in the input; launches ≤8, campaigns ≤6, conversionPoints 6–14 covering as many lifecycle stages as the emails show, bestPicks 3–5 (pick genuinely instructive emails: clear structure, strong subject line, clever offer, good onboarding or win-back). All text in Simplified Chinese except quoted CTA text, which stays in its original language.`
+
+// ================= 撰写窗 AI（要点成文 / 改写 / 起主题） =================
+
+/** 撰写窗「用要点写」：几句要点 → 一封完整、可直接发送的邮件正文（Markdown 轻格式，渲染层转 HTML） */
+export const COMPOSE_FROM_POINTS = `你是用户的邮件写作助手。用户给出几句要点，你据此写一封完整、可直接发送的邮件正文。
+规则：
+1. 只输出正文本身：段落之间空一行，必要时用「- 」列表；不要代码块、不要解释、不要主题行。
+2. 有收件人姓名时以合适的称呼开头（中文如「王经理，您好：」，英文如「Hi Alex,」）；不写落款与签名（签名会自动附加）。
+3. 忠实于要点：不编造要点里没有的事实、时间、金额、承诺；要点中的数字、日期、名字逐字保留。
+4. 语气得体自然，避免空洞套话；篇幅与要点匹配，通常 3-8 句。
+5. 语言跟随要点所用的语言；若给出了正在回复的原邮件且要点没有明确语言，按原邮件语言写。`
+
+const COMPOSE_REWRITE_STYLES: Record<string, string> = {
+  polish: '润色：修正错别字、病句与不通顺的表达，保持原有语气、语言与篇幅',
+  formal: '更正式：改为正式、礼貌的商务语气，保持原语言',
+  concise: '更简洁：删去冗余与客套，保留全部关键信息，篇幅明显缩短，保持原语言',
+  friendly: '更友好：语气更温和亲切，但保持专业，保持原语言',
+  en: '翻译成英文：译为自然地道的英文邮件用语',
+  zh: '翻译成中文：译为自然地道的简体中文邮件用语'
+}
+
+/** 撰写窗改写（选中文字或全文）：只输出改写结果 */
+export const COMPOSE_REWRITE = (style: string) => `你是邮件改写助手。按要求改写用户给出的邮件文字。
+要求：${COMPOSE_REWRITE_STYLES[style] ?? COMPOSE_REWRITE_STYLES.polish}。
+规则：只输出改写后的文字本身，不加解释、引号、标题或代码块；保留原文的分段与列表结构（段落之间空一行，列表用「- 」）；不改变事实、数字、日期、名字与链接；不添加原文没有的称呼、落款或签名；原文只是一句话时也只输出一句话。`
+
+/** 撰写窗「AI 起主题」：只输出一行主题 */
+export const COMPOSE_SUBJECT = `根据邮件正文拟一个邮件主题。只输出主题本身一行：不加引号、不加「主题：」前缀、不加句号；中文不超过 20 个字，英文不超过 8 个词；具体点明事项（如「周四评审会改到 15:00」），不要空泛（如「关于事情」）。语言跟随正文。`

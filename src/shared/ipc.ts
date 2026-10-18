@@ -99,6 +99,12 @@ export interface LinkToApi {
   listDrafts(): Promise<ComposeDraft[]>
   deleteDraft(id: string): Promise<void>
   pickFiles(): Promise<{ path: string; name: string; size: number }[]>
+  /** 收件人联想：按「我发过的 > 往来频次 > 最近」排序，子串匹配姓名 / 地址（不含本机账户地址） */
+  suggestRecipients(query: string, limit?: number): Promise<RecipientSuggestion[]>
+  /** 撰写窗 AI（要点成文 / 改写 / 起主题）：结果以 'ai-stream' 事件只推给发起请求的窗口 */
+  aiComposeAssist(requestId: string, input: ComposeAssistInput): Promise<void>
+  /** 拖入窗口的文件 → 本地路径（webUtils.getPathForFile；非本地文件返回空串） */
+  pathForFile(file: File): string
   openExternal(url: string): Promise<void>
 
   // ---------- 设置 ----------
@@ -336,4 +342,34 @@ export interface TodoSyncStatus {
   running: boolean
   folder: string
   lastStats: { pulled: number; pushed: number; removed: number; at: number } | null
+}
+
+/** 收件人联想条目 */
+export interface RecipientSuggestion {
+  name: string
+  address: string
+  /** 我发给 TA 的次数（已发送文件夹） */
+  sentByMe: number
+  /** 往来总次数 */
+  total: number
+  lastAt: number
+}
+
+/** 撰写窗 AI 改写风格 */
+export type ComposeRewriteStyle = 'polish' | 'formal' | 'concise' | 'friendly' | 'en' | 'zh'
+
+/** 撰写窗 AI 请求 */
+export interface ComposeAssistInput {
+  /** points：用要点写完整邮件；rewrite：改写选中文字或全文；subject：根据正文起主题 */
+  task: 'points' | 'rewrite' | 'subject'
+  /** points 为要点；rewrite 为待改写文本；subject 为正文 */
+  text: string
+  style?: ComposeRewriteStyle
+  subject?: string
+  /** 收件人显示名（或地址） */
+  recipients?: string[]
+  /** 发件人名字（用于语气 / 自称） */
+  fromName?: string
+  /** 正在回复 / 转发的原邮件（作为上下文） */
+  relatedMessageId?: string
 }
