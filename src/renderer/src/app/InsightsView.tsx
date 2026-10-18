@@ -6,6 +6,7 @@ import {
   IconSunrise, IconCheckSquare, IconBook, IconBuilding, IconStar, IconLayers,
   IconFileText, IconTrash, IconShield, IconTarget, IconTrendingUp, IconBrain, IconRss } from '../components/icons'
 import type { CompanyInsight, DailyDigest, InsightRecord } from '@shared/types'
+import { Markdown } from '../components/Markdown'
 
 type Tab = 'daily' | 'todo' | 'reading' | 'company'
 
@@ -499,7 +500,7 @@ function CompanyReport(props: { insight: CompanyInsight }) {
       </Panel>
 
       <Panel title="运营策略剖析" icon={<IconBrain width={14} height={14} />}>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>{c.strategy}</p>
+        <div className="text-sm leading-relaxed" style={{ color: 'var(--fg)' }}><Markdown text={c.strategy} /></div>
       </Panel>
     </div>
   )

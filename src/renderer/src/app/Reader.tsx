@@ -15,6 +15,7 @@ import {
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
+import { Markdown, markdownToHtml } from '../components/Markdown'
 
 interface AIState {
   text: string
@@ -278,7 +279,8 @@ export function Reader() {
       subject: /^回复[:：]/i.test(msg.subject) ? msg.subject : `回复：${msg.subject}`,
       inReplyToMessageId: msg.messageId ?? undefined,
       relatedMessageId: msg.id,
-      html: ai.text
+      // 模型常输出 Markdown：转成邮件 HTML，保留分段与列表，去掉 ** 等标记
+      html: markdownToHtml(ai.text)
     } as never)
   }
 
@@ -651,8 +653,8 @@ export function Reader() {
           {(ai.text || ai.streaming || ai.error) && (
             <div className="px-4 pb-3.5">
               <div className="pt-2 border-t border-[var(--border-soft)]">
-                <div className="selectable mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
-                  {ai.error ? <span style={{ color: 'var(--danger)' }}>{ai.error}</span> : ai.text}
+                <div className="selectable mt-2 text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+                  {ai.error ? <span style={{ color: 'var(--danger)' }}>{ai.error}</span> : <Markdown text={ai.text} />}
                   {ai.streaming && <span className="inline-block w-1.5 h-4 ml-0.5 animate-pulse align-middle" style={{ background: 'var(--accent)' }} />}
                 </div>
                 {aiMode === 'draft' && !ai.streaming && ai.text && (

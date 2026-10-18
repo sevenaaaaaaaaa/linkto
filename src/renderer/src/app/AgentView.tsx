@@ -3,6 +3,7 @@ import { useAsync, fmtFullDate } from '../lib/api'
 import { api } from '../lib/api'
 import { IconSearch, IconClose, IconSparkles, IconPlus, IconSave, IconPin, IconHeart, IconUsers, IconBellRing, IconRefresh } from '../components/icons'
 import type { AgentAction, AgentActionType, AgentMemory, ContactProfile, MemoryScope } from '@shared/types'
+import { Markdown } from '../components/Markdown'
 
 const SCOPE_META: Record<MemoryScope, { label: string; icon: React.ReactNode; color: string }> = {
   fact: { label: '事实', icon: <IconPin width={11} height={11} />, color: 'var(--info)' },
@@ -535,12 +536,16 @@ function AgentChat(props: { onClose(): void }) {
           {messages.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap selectable ${
-                  m.role === 'user' ? 'bg-accent text-on-accent' : 'bg-zinc-100 text-zinc-800'
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed selectable ${
+                  m.role === 'user' ? 'bg-accent text-on-accent whitespace-pre-wrap' : 'bg-zinc-100 text-zinc-800'
                 }`}
               >
-                {/* 流式过程中动作块尚未闭合：先隐藏，避免一闪而过的 JSON */}
-                {m.role === 'assistant' ? m.text.replace(/```linkto-actions[\s\S]*$/, '').trimEnd() : m.text}
+                {/* 流式过程中动作块尚未闭合：先隐藏，避免一闪而过的 JSON；「📌 记住」已有按钮，不在正文重复 */}
+                {m.role === 'assistant' ? (
+                  <Markdown text={m.text.replace(/```linkto-actions[\s\S]*$/, '').replace(/^.*📌\s*记住[:：].*$/gm, '').trimEnd()} />
+                ) : (
+                  m.text
+                )}
               </div>
               {m.actions && (
                 <div className="mt-2 w-[85%] rounded-2xl border border-ink/[0.08] bg-white px-3.5 py-3">
