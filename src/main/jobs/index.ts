@@ -16,6 +16,7 @@ import {
   aiBlockedReason, financeBreakdown, fmtBytes, kbRefs, learnKnowledge, organizeAttachments, organizeFinance, organizeProjects, projectLabel, sweepTodos,
   type WorkDeps
 } from './tasks'
+import { followupJob } from '../followups/job'
 
 export interface JobsDeps extends Omit<WorkDeps, 'activity'> {
   db: DatabaseSync
@@ -68,6 +69,7 @@ export function initJobs(input: JobsDeps) {
   scheduler.register(meetingFollowupJob({ ...deps, log }))
   // 事件触发技能：新邮件命中发票 / 行程变更 / 安全提醒等事件时自动运行技能（index.ts 的到达与 onInsight 回调调用）
   const events = initEventTriggers({ ...deps, log })
+  scheduler.register(followupJob())
 
   // ---------------- 定时技能 ----------------
 

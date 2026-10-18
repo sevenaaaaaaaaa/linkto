@@ -73,7 +73,8 @@ export const REF_LABEL: Record<AgentRef['type'], string> = {
   attachment: '附件',
   kb: '知识',
   memory: '记忆',
-  contact: '联系人'
+  contact: '联系人',
+  followup: '跟进'
 }
 
 const startOfDay = (t: number) => {

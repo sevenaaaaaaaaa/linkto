@@ -29,6 +29,7 @@ import { Markdown, markdownToHtml } from '../components/Markdown'
 import { ProjectStrip, projectMenuItems } from './projects/ProjectBits'
 import { EventStrip } from './agent/EventStrip'
 import { useProjectIndex } from '../lib/projects'
+import { FollowupStrip } from './followups/FollowupStrip'
 
 interface AIState {
   text: string
@@ -730,6 +731,7 @@ export function Reader() {
       <ProjectStrip msg={msg} />
       <FinanceStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
       <EventStrip messageId={msg.id} />
+      <FollowupStrip msg={msg} />
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

@@ -1094,7 +1094,7 @@ export interface AgentToolInfo {
 
 /** Agent 回答里引用的对象，界面渲染成可点击的来源胶囊 */
 export interface AgentRef {
-  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact'
+  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'followup'
   id: string
   label: string
 }
@@ -1382,4 +1382,43 @@ export interface AttachmentInvoiceFields {
 export interface AgentActivity {
   /** 活动记录上的一键动作：以某封邮件为上下文打开 Agent 对话运行技能（如「刚结束的会：整理成待办」） */
   action?: { label: string; skillId: string; messageId?: string | null } | null
+}
+
+// ---------- 跟进闭环：追加的可选字段（接口声明合并） ----------
+
+export interface FollowupData {
+  /** 发出那封的 Message-ID 头（发送时即知；本地邮件 id 等「已发送」同步回来后再补 sentMessageId） */
+  sentHeaderId?: string | null
+  /** 实际发出的时间（回复匹配只看这之后的来信） */
+  sentAt?: number | null
+  accountId?: string | null
+  /** 到期后起草的催促草稿（本地草稿 id，未发送；发出后清空） */
+  nudgeDraftId?: string | null
+  /** 已经发出的催促封数（「催了几次」） */
+  nudgesSent?: number
+  /** 已为哪一次到期发过系统通知（= 当时的 dueAt），同一次到期只提醒一次 */
+  notifiedDueAt?: number | null
+  repliedAt?: number | null
+  /** 判定为回复的依据：header = In-Reply-To / References；thread = 同一会话；subject = 同主题且来自对方 */
+  matchedBy?: 'header' | 'thread' | 'subject' | null
+  /** kind=invoice 时回信像发票（带 PDF / 提到发票），界面提示可关联财务 */
+  invoiceHint?: boolean
+  closedAt?: number | null
+}
+
+/** 撰写窗「发出后跟进」：随 sendMail / scheduleSend 的 draft 传给主进程，真正发出后登记为「等待对方」 */
+export interface ComposeFollowup {
+  /** 已登记的跟进（Agent / 技能起草时登记的 drafted，或「再催一封」的那条） */
+  id?: string | null
+  /** false 且带 id：用户关掉了开关，取消那条跟进 */
+  enabled: boolean
+  kind?: FollowupKind
+  /** 在等对方做什么；留空由规则从正文推断 */
+  ask?: string
+  waitDays?: number
+}
+
+export interface ComposeDraft {
+  /** 发出后跟进（可选） */
+  followup?: ComposeFollowup | null
 }

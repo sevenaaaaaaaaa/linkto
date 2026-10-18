@@ -27,6 +27,29 @@ export interface OutboxDeps {
   event(payload: unknown): void
 }
 
+/** 发件队列事件（跟进闭环订阅：真正发出后才把跟进转为「等待对方」；定时 / 延迟发送登记、撤销取消） */
+export type OutboxEvent =
+  | { type: 'sent'; draft: ComposeDraft; messageId?: string }
+  | { type: 'scheduled'; draft: ComposeDraft; sendAt: number }
+  | { type: 'cancelled'; id: string }
+
+const outboxListeners = new Set<(e: OutboxEvent) => void>()
+
+export function onOutboxEvent(fn: (e: OutboxEvent) => void): () => void {
+  outboxListeners.add(fn)
+  return () => outboxListeners.delete(fn)
+}
+
+function emitOutbox(e: OutboxEvent) {
+  for (const fn of outboxListeners) {
+    try {
+      fn(e)
+    } catch (err) {
+      console.error('[outbox] listener failed:', err)
+    }
+  }
+}
+
 /**
  * SMTP 服务器会自动把发出的邮件存入「已发送」的服务商：再 APPEND 会出现两封。
  * Proton Bridge（本机回环地址）同样由 Proton 服务端保存。
@@ -85,6 +108,7 @@ export class Outbox {
           if (sentPath) await worker.appendRaw(sentPath, info.raw, info.messageId)
         }
       } catch { /* 存已发送失败不影响发送结果 */ }
+      emitOutbox({ type: 'sent', draft, messageId: info.messageId })
       return { ok: true, messageId: info.messageId }
     } catch (err) {
       return { ok: false, error: friendlySendError(err) }
@@ -105,6 +129,7 @@ export class Outbox {
       sendAt
     })
     this.attempts.delete(draft.id)
+    emitOutbox({ type: 'scheduled', draft, sendAt })
     this.deps.event({ type: 'outbox-changed' })
     void this.tick()
   }
@@ -112,6 +137,7 @@ export class Outbox {
   cancel(id: string) {
     this.deps.store.deleteDraft(id)
     this.attempts.delete(id)
+    emitOutbox({ type: 'cancelled', id })
     this.deps.event({ type: 'outbox-changed' })
   }
 

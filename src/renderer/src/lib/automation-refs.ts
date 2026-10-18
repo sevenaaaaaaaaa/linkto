@@ -3,6 +3,7 @@ import { goView } from './route'
 import { openFinance } from './finance'
 import { openContactTimeline, openProject } from './projects'
 import { useMail } from '../stores/mail'
+import { openFollowups } from './followups'
 
 const toast = (detail: string) => window.dispatchEvent(new CustomEvent('ms:toast', { detail }))
 
@@ -38,6 +39,9 @@ export function openAgentRef(ref: AgentRef) {
       return
     case 'memory':
       goView('agent')
+      return
+    case 'followup':
+      openFollowups(ref.id)
       return
     default:
       toast('暂时打不开这个对象')

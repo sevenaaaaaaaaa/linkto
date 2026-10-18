@@ -4,6 +4,7 @@ import { useMail } from '../../stores/mail'
 import { goView, viewFromHash } from '../../lib/route'
 import { openFinance } from '../../lib/finance'
 import { openContactTimeline, openProject } from '../../lib/projects'
+import { openFollowups } from '../../lib/followups'
 import { IconAttach, IconBook, IconBrain, IconCheck, IconCheckSquare, IconChevronRight, IconClock, IconClose, IconFileText, IconFolder, IconSearch, IconSparkles, IconUser } from '../../components/icons'
 
 /**
@@ -64,6 +65,7 @@ const DOMAIN_ICON: Record<string, (p: P) => ReactNode> = {
 /** 工具名 → 领域（界面只拿到工具名时用；与主进程注册表一致即可） */
 export function domainOfTool(tool: string): string {
   if (/^(search_mail|read_message|read_thread|list_recent|mail_understanding|find_waiting|list_folders|archive_mail|trash_mail|mark_read|mark_unread|flag_mail|snooze_mail|move_to_folder|create_rule|draft_reply|save_draft|send_mail)$/.test(tool)) return 'mail'
+  if (/^followup_/.test(tool)) return 'mail'
   if (/todo/.test(tool)) return 'todo'
   if (/^finance/.test(tool)) return 'finance'
   if (/project/.test(tool)) return 'project'
@@ -89,7 +91,8 @@ const REF_ICON: Record<AgentRef['type'], (p: P) => ReactNode> = {
   attachment: IconAttach,
   kb: IconBook,
   memory: IconBrain,
-  contact: IconUser
+  contact: IconUser,
+  followup: IconClock
 }
 
 // ---------------------------------------------------------------- 参数要点
@@ -322,6 +325,9 @@ export function openRef(r: AgentRef) {
       return
     case 'contact':
       openContactTimeline(r.id)
+      return
+    case 'followup':
+      openFollowups(r.id)
       return
   }
 }

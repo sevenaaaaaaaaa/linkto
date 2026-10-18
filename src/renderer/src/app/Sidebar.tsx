@@ -17,6 +17,7 @@ import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
 import { PinnedProjects, useProjectBadge, useProjectsRowActive } from './projects/ProjectBits'
 import { IconLayers } from '../components/icons'
 import { AgentNavSection } from './agent/AgentNav'
+import { useOverdueCount } from '../lib/followups'
 
 /**
  * 侧边栏行组件与分组（v3 结构见 Sidebar）
@@ -167,6 +168,7 @@ export function Sidebar() {
   const todoToday = todayCount(useTodos(st => st.todos))
   const projectBadge = useProjectBadge()
   const projectsActive = useProjectsRowActive()
+  const followupOverdue = useOverdueCount()
   const [pendingCount, setPendingCount] = useState(0)
   const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
@@ -237,7 +239,7 @@ export function Sidebar() {
         <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
         <Row icon={<IconLayers {...ico} />} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
         <PinnedProjects Row={Row} />
-        {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
+        {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" unread={followupOverdue} active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
         {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
         {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}
         {sb.pinned && <Row icon={<IconPin {...ico} />} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />}

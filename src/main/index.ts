@@ -39,6 +39,7 @@ import { AgentRuntime } from './agent/runtime'
 import { registerAgentIpc } from './agent/ipc'
 import { initJobs } from './jobs'
 import { AiBudget } from './jobs/budget'
+import { initFollowups, followupService } from './followups'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -578,6 +579,8 @@ async function bootstrap() {
         void handleArrival(accountId, messageId, ruleActions).catch(err => console.error('[rules]', err))
         // 事件触发技能：登记「实时到达」（回填 / 初始同步不走这里，不会触发）；须在 understand.onArrival 之前
         jobs?.events.markArrival(messageId)
+        // 跟进闭环：对方回信 → 结束对应的跟进
+        followupService()?.onArrival(messageId)
         // 邮件理解：新到收件箱邮件排入后台 AI 队列（启发式结果按需即时计算）
         try {
           understand.onArrival(messageId)
@@ -722,6 +725,19 @@ async function bootstrap() {
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   registerProjectIpc(projects)
   registerFinanceIpc(finance)
+  // 跟进闭环：发出后在等对方（IPC followup* · 登记钩子 · 发件队列订阅；到期检查由自动任务「跟进检查」驱动）
+  initFollowups({
+    store: mailStore,
+    appStore,
+    ai: aiService,
+    getAISettings: () => appStore.getAI(),
+    event: payload => broadcast(payload),
+    openCompose: prefill => createComposeWindow(prefill),
+    showFollowups: () => {
+      focusMainForNotification()
+      mainWindow?.webContents.send('event', { type: 'open-followups' })
+    }
+  })
   // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
   const agentRuntime = new AgentRuntime({
       store: mailStore,

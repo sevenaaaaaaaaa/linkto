@@ -17,6 +17,7 @@ import { Markdown } from '../components/Markdown'
 import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './MailSearch'
 import { useSearch } from '../stores/search'
 import { ProjectTag } from './projects/ProjectBits'
+import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -149,6 +150,7 @@ function MessageRow(props: {
   const multi = useMultiMode()
   const checked = multi && props.checked
   const terms = useSearchTerms()
+  const followupScope = useMail(st => st.scope.kind === 'followup')
   return (
     <div
       onClick={props.onSelect}
@@ -190,6 +192,7 @@ function MessageRow(props: {
       {/* 悬停快捷操作 */}
       {hover && !multi && (
         <div className="absolute right-2 top-1.5 flex items-center gap-0.5 p-0.5 rounded-[var(--r-sm)] liquid-glass fade-in">
+          {followupScope && <FollowQuickBtn msg={msg} />}
           <QuickBtn title={msg.pinned ? '取消置顶' : '置顶'} onClick={e => quick(e, 'pin')} active={msg.pinned}>
             <IconPin width={13} height={13} />
           </QuickBtn>
@@ -1052,6 +1055,7 @@ export function MessageList() {
             </div>
           </div>
         )}
+        {scope.kind === 'followup' && <FollowupBoard passiveCount={total} />}
         {scope.kind === 'screener' && screenerSenders.length > 0 && (
           <div className="px-3 py-2 space-y-1.5 fade-in">
             <div className="flex items-center gap-2">

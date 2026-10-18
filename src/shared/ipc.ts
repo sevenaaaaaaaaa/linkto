@@ -572,7 +572,7 @@ export interface LinkToApi {
   followupList(opts?: { includeClosed?: boolean }): Promise<import('./types').InsightRecord[]>
   /** 手动登记一条跟进（例如对已发出的某封邮件「等对方回复，N 天后提醒我」） */
   followupCreate(input: { messageId: string; kind?: import('./types').FollowupKind; ask?: string; waitDays?: number }): Promise<string>
-  followupUpdate(id: string, patch: { status?: import('./types').FollowupStatus; waitDays?: number; ask?: string; maxAttempts?: number }): Promise<void>
+  followupUpdate(id: string, patch: { status?: import('./types').FollowupStatus; waitDays?: number; ask?: string; maxAttempts?: number; kind?: import('./types').FollowupKind; snoozeDays?: number }): Promise<void>
   /** 立刻为到期的跟进再起草一封催促（打开撰写窗，不发送） */
   followupNudge(id: string): Promise<{ ok: boolean; error?: string }>
 

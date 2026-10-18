@@ -17,6 +17,9 @@ import { searchTerms, rankByTerms } from '../search-terms'
 import { notifyLocalChange as notifySyncChange } from '../todo-sync'
 import { notifyLocalChange as notifyIntegrationChange } from '../todo-integrations'
 import { htmlToText, parseMailQuery, parseWhen, resolveDate, textToHtml, ymd, type JsonSchema } from './protocol'
+import { registerFollowup } from './hooks'
+import { followupService } from '../followups'
+import { clampWaitDays, FOLLOWUP_KIND_LABEL, FOLLOWUP_STATUS_LABEL, isFollowupKind, waitedDays } from '@shared/followups'
 
 /**
  * Agent 工具注册表：每个工具 = 名称 / 中文标题 / 说明 / JSON Schema 参数 / 风险 / 领域 / 执行函数。
@@ -91,6 +94,17 @@ const fmtSums = (o: Record<string, number>) => Object.entries(o).map(([c, n]) =>
 const LIMIT = (def: number, max: number): JsonSchema => ({ type: 'integer', minimum: 1, maximum: max, default: def, description: `最多返回几条（默认 ${def}，最多 ${max}）` })
 const IDS = (desc: string): JsonSchema => ({ type: 'array', items: { type: 'string' }, description: desc })
 const REASON: JsonSchema = { type: 'string', description: '一句话说明为什么要这样做（会展示给用户确认）' }
+/** 起草时一并登记跟进（draft_reply / save_draft 的可选参数） */
+const FOLLOWUP_ARG: JsonSchema = {
+  type: 'object',
+  description: '可选：这封是在等对方做事的邮件（催开票 / 催回复 / 要资料 / 退订…）时带上，发出后 waitDays 天对方没回会提醒用户并起草下一封催促',
+  properties: {
+    kind: { type: 'string', enum: ['reply', 'invoice', 'payment', 'document', 'unsubscribe', 'general'], description: 'reply 等回复；invoice 等开票；payment 等付款；document 等资料；unsubscribe 等退订确认' },
+    ask: { type: 'string', description: '一句话：在等对方做什么（如「对方开 10 月服务费发票」）' },
+    waitDays: { type: 'integer', minimum: 1, maximum: 60, default: 3, description: '发出后几天没回算逾期' }
+  }
+}
+const followupLine = (f: any) => (f && typeof f === 'object' ? [`发出后 ${clampWaitDays(f.waitDays)} 天未回会提醒你${f.ask ? `（在等：${String(f.ask).slice(0, 40)}）` : ''}`] : [])
 
 // ---------------------------------------------------------------- 注册表
 
@@ -682,11 +696,12 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
           message_id: { type: 'string', description: '要回复的邮件 id' },
           body: { type: 'string', description: '回复正文（纯文本，段落之间空一行）' },
           reply_all: { type: 'boolean', default: false },
+          followup: FOLLOWUP_ARG,
           reason: REASON
         },
         required: ['message_id', 'body']
       },
-      preview: a => [...subjectsOf([a.message_id]).map(s => `回复 ${s}`), String(a.body ?? '').slice(0, 400)],
+      preview: a => [...subjectsOf([a.message_id]).map(s => `回复 ${s}`), String(a.body ?? '').slice(0, 400), ...followupLine(a.followup)],
       run(a, ctx) {
         const m = store.getMessageFull(a.message_id)
         if (!m) throw new ToolError(`找不到邮件 ${a.message_id}`)
@@ -695,14 +710,31 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const cc = a.reply_all ? [...m.to, ...m.cc].filter(x => !mine.has(x.address.toLowerCase()) && !to.some(t => t.address === x.address)) : []
         const subject = /^(回复|re)\s*[:：]/i.test(m.subject) ? m.subject : `回复：${m.subject}`
         const html = textToHtml(a.body)
+        const draftId = randomUUID()
+        const fu = a.followup && typeof a.followup === 'object' ? a.followup : null
+        // 起草即登记跟进（drafted）：用户在撰写窗发出后才开始计时
+        const followupId = fu
+          ? registerFollowup({ kind: isFollowupKind(fu.kind) ? fu.kind : 'reply', ask: String(fu.ask ?? ''), to: to.map(x => x.address), subject, relatedMessageId: m.id, draftId, waitDays: clampWaitDays(fu.waitDays), source: ctx.headless ? 'skill' : 'agent' })
+          : null
+        const fuNote = followupId ? `；已登记跟进，发出后 ${clampWaitDays(fu.waitDays)} 天未回会提醒` : ''
+        const fuRefs: AgentRef[] = followupId ? [{ type: 'followup', id: followupId, label: subj(subject) }] : []
         if (ctx.headless) {
-          const id = randomUUID()
-          store.saveDraft({ id, accountId: m.accountId, to, cc, bcc: [], subject, html, updatedAt: Date.now() })
+          store.saveDraft({ id: draftId, accountId: m.accountId, to, cc, bcc: [], subject, html, updatedAt: Date.now() })
           deps.event({ type: 'outbox-changed' })
-          return { data: { ok: true, draft_id: id, note: '已存为本地草稿，未发送' }, summary: '已存草稿（未发送）', refs: [mailRef(m.id, m.subject)] }
+          return { data: { ok: true, draft_id: draftId, ...(followupId ? { followup_id: followupId } : {}), note: `已存为本地草稿，未发送${fuNote}` }, summary: `已存草稿（未发送）${followupId ? ' · 已登记跟进' : ''}`, refs: [mailRef(m.id, m.subject), ...fuRefs] }
         }
-        deps.openCompose({ accountId: m.accountId, relatedMessageId: m.id, inReplyToMessageId: m.id, to, cc, subject, html })
-        return { data: { ok: true, note: '已打开撰写窗，等待用户检查后发送；没有自动发送' }, summary: '已打开撰写窗（未发送）', refs: [mailRef(m.id, m.subject)] }
+        deps.openCompose({
+          id: draftId,
+          accountId: m.accountId,
+          relatedMessageId: m.id,
+          inReplyToMessageId: m.messageId ?? undefined,
+          to,
+          cc,
+          subject,
+          html,
+          ...(followupId ? { followup: { id: followupId, enabled: true, kind: isFollowupKind(fu.kind) ? fu.kind : 'reply', ask: String(fu.ask ?? ''), waitDays: clampWaitDays(fu.waitDays) } } : {})
+        })
+        return { data: { ok: true, ...(followupId ? { followup_id: followupId } : {}), note: `已打开撰写窗，等待用户检查后发送；没有自动发送${fuNote}` }, summary: `已打开撰写窗（未发送）${followupId ? ' · 已登记跟进' : ''}`, refs: [mailRef(m.id, m.subject), ...fuRefs] }
       }
     },
     {
@@ -720,12 +752,13 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
           body: { type: 'string', description: '纯文本正文' },
           account: { type: 'string', description: '发件账户（名称或邮箱，默认第一个账户）' },
           reply_to_message_id: { type: 'string', description: '若是回复，原邮件 id' },
+          followup: FOLLOWUP_ARG,
           reason: REASON
         },
         required: ['to', 'subject', 'body']
       },
-      preview: a => [`收件人：${ids(a.to).join('、')}`, `主题：${a.subject}`, String(a.body ?? '').slice(0, 400)],
-      run(a) {
+      preview: a => [`收件人：${ids(a.to).join('、')}`, `主题：${a.subject}`, String(a.body ?? '').slice(0, 400), ...followupLine(a.followup)],
+      run(a, ctx) {
         const parse = (list: string[]) =>
           list.map(raw => {
             const s = raw.trim()
@@ -743,7 +776,15 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const id = randomUUID()
         store.saveDraft({ id, accountId: account.id, to, cc, bcc: [], subject: String(a.subject), html: textToHtml(a.body), updatedAt: Date.now() })
         deps.event({ type: 'outbox-changed' })
-        return { data: { ok: true, draft_id: id, account: account.email, note: '已存为本地草稿，未发送' }, summary: `已存草稿《${a.subject}》（未发送）` }
+        const fu = a.followup && typeof a.followup === 'object' ? a.followup : null
+        const followupId = fu
+          ? registerFollowup({ kind: isFollowupKind(fu.kind) ? fu.kind : 'reply', ask: String(fu.ask ?? ''), to: to.map(x => x.address), subject: String(a.subject), relatedMessageId: reply?.id ?? null, draftId: id, waitDays: clampWaitDays(fu.waitDays), source: ctx.headless ? 'skill' : 'agent' })
+          : null
+        return {
+          data: { ok: true, draft_id: id, account: account.email, ...(followupId ? { followup_id: followupId } : {}), note: `已存为本地草稿，未发送${followupId ? `；已登记跟进，发出后 ${clampWaitDays(fu.waitDays)} 天未回会提醒（在「等待对方」里打开草稿）` : ''}` },
+          summary: `已存草稿《${a.subject}》（未发送）${followupId ? ' · 已登记跟进' : ''}`,
+          ...(followupId ? { refs: [{ type: 'followup' as const, id: followupId, label: subj(a.subject) }] } : {})
+        }
       }
     },
     {
@@ -791,6 +832,102 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const res = (await deps.call('sendMail', [draft])) as { ok: boolean; error?: string }
         if (!res.ok) throw new ToolError(`发送失败：${res.error ?? '未知原因'}`)
         return { data: { ok: true, from: account.email }, summary: `已发送《${a.subject}》` }
+      }
+    },
+
+    // ======================================================== 跟进闭环
+    {
+      name: 'followup_list',
+      title: '查跟进',
+      domain: 'mail',
+      risk: 'read',
+      description: '列出登记过的跟进（发出后在等对方的事）：状态（待发出 / 等待中 / 已逾期 / 已回复）、在等什么、到期日、催了几次。include_closed=true 连已解决的也列出。',
+      params: { type: 'object', properties: { include_closed: { type: 'boolean', default: false }, limit: LIMIT(20, 60) } },
+      run(a) {
+        const svc = followupService()
+        if (!svc) throw new ToolError('跟进模块尚未就绪')
+        const now = Date.now()
+        const list = svc.list(!!a.include_closed).slice(0, a.limit ?? 20)
+        const overdue = list.filter(f => f.data.status === 'overdue').length
+        return {
+          data: {
+            count: list.length,
+            followups: list.map(f => ({
+              id: f.id,
+              status: FOLLOWUP_STATUS_LABEL[f.data.status],
+              kind: FOLLOWUP_KIND_LABEL[f.data.kind],
+              ask: f.data.ask,
+              to: f.data.to.join('、'),
+              subject: subj(f.data.subject),
+              ...(f.data.sentAt ? { sent: fmtDay(f.data.sentAt), waited_days: waitedDays(f.data.sentAt, now) } : {}),
+              ...(f.dueAt ? { due: fmtDay(f.dueAt) } : {}),
+              nudges_sent: f.data.nudgesSent ?? 0,
+              nudge_drafts: `${f.data.attempts}/${f.data.maxAttempts}`,
+              ...(f.data.sentMessageId ? { message_id: f.data.sentMessageId } : {}),
+              ...(f.data.repliedMessageId ? { replied_message_id: f.data.repliedMessageId } : {})
+            }))
+          },
+          summary: list.length ? `${list.length} 条跟进${overdue ? `，${overdue} 条已逾期` : ''}` : '没有进行中的跟进',
+          refs: list.slice(0, 8).map(f => ({ type: 'followup' as const, id: f.id, label: subj(f.data.subject) }))
+        }
+      }
+    },
+    {
+      name: 'followup_create',
+      title: '登记跟进',
+      domain: 'mail',
+      risk: 'write',
+      description: '为一封已经发出的邮件（message_id）或一封本地草稿（draft_id）登记跟进：对方 wait_days 天没回就提醒用户并起草下一封催促（只起草不发送）。',
+      params: {
+        type: 'object',
+        properties: {
+          message_id: { type: 'string', description: '已发出的那封邮件 id（与 draft_id 二选一）' },
+          draft_id: { type: 'string', description: 'save_draft / draft_reply 返回的草稿 id' },
+          kind: { type: 'string', enum: ['reply', 'invoice', 'payment', 'document', 'unsubscribe', 'general'] },
+          ask: { type: 'string', description: '一句话：在等对方做什么' },
+          wait_days: { type: 'integer', minimum: 1, maximum: 60, default: 3 },
+          reason: REASON
+        }
+      },
+      preview: a => [...(a.message_id ? subjectsOf([a.message_id]) : [`草稿 ${a.draft_id ?? ''}`]), `${clampWaitDays(a.wait_days)} 天未回会提醒你${a.ask ? `（在等：${a.ask}）` : ''}`],
+      run(a, ctx) {
+        const svc = followupService()
+        if (!svc) throw new ToolError('跟进模块尚未就绪')
+        const kind = isFollowupKind(a.kind) ? a.kind : undefined
+        if (a.message_id) {
+          const row = store.getMessageRow(a.message_id)
+          if (!row) throw new ToolError(`找不到邮件 ${a.message_id}`)
+          const id = svc.createFromMessage({ messageId: a.message_id, kind, ask: a.ask, waitDays: a.wait_days })
+          return { data: { ok: true, followup_id: id }, summary: `已登记跟进（${clampWaitDays(a.wait_days)} 天未回提醒）`, refs: [{ type: 'followup', id, label: subj(row.subject) }] }
+        }
+        if (a.draft_id) {
+          const d = store.listDrafts().find(x => x.id === a.draft_id)
+          if (!d) throw new ToolError(`找不到草稿 ${a.draft_id}`)
+          const id = registerFollowup({ kind: kind ?? 'reply', ask: String(a.ask ?? ''), to: (d.to ?? []).map((x: Address) => x.address), subject: d.subject ?? '', draftId: d.id, waitDays: clampWaitDays(a.wait_days), source: ctx.headless ? 'skill' : 'agent' })
+          if (!id) throw new ToolError('登记失败')
+          return { data: { ok: true, followup_id: id, note: '草稿发出后开始计时' }, summary: '已登记跟进（发出后开始计时）', refs: [{ type: 'followup', id, label: subj(d.subject) }] }
+        }
+        throw new ToolError('需要 message_id（已发出的邮件）或 draft_id（草稿）')
+      }
+    },
+    {
+      name: 'followup_close',
+      title: '结束跟进',
+      domain: 'mail',
+      risk: 'write',
+      description: '结束一条跟进：resolved=已解决（对方办完了），cancel=不再跟进。',
+      params: { type: 'object', properties: { id: { type: 'string', description: '跟进 id（followup_list 返回）' }, outcome: { type: 'string', enum: ['resolved', 'cancel'], default: 'resolved' }, reason: REASON }, required: ['id'] },
+      preview: a => {
+        const f = followupService()?.get(String(a.id))
+        return [f ? `${subj(f.data.subject)} · ${f.data.ask}` : String(a.id), a.outcome === 'cancel' ? '不再跟进' : '标记为已解决']
+      },
+      run(a) {
+        const svc = followupService()
+        if (!svc) throw new ToolError('跟进模块尚未就绪')
+        const f = svc.get(String(a.id))
+        if (!f) throw new ToolError(`找不到跟进 ${a.id}；先用 followup_list 查看`)
+        svc.update(f.id, { status: a.outcome === 'cancel' ? 'cancelled' : 'closed' })
+        return { data: { ok: true }, summary: a.outcome === 'cancel' ? '已取消跟进' : '已标记为已解决', refs: [{ type: 'followup', id: f.id, label: subj(f.data.subject) }] }
       }
     },
 

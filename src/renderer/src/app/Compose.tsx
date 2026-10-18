@@ -9,12 +9,13 @@ import { sanitizeEmailHtml } from '../lib/sanitize'
 import { buildAutoVars, fillPlaceholders, sortTemplateCategories, UNCATEGORIZED } from '../lib/template-presets'
 import { markdownToHtml } from '../components/Markdown'
 import { IconSend, IconAttach, IconSave, IconLink, IconQuote, IconList, IconListOrdered, IconSparkles } from '../components/icons'
-import type { Address, ComposeDraft, MailTemplate, MessageFull, Signature } from '@shared/types'
+import type { Address, ComposeDraft, ComposeFollowup, FollowupData, MailTemplate, MessageFull, Signature } from '@shared/types'
 import { RecipientField, type RecipientFieldHandle } from './compose/RecipientField'
 import { collectSendIssues, type SendIssue } from './compose/send-check'
 import { cleanAiText, cleanSubject, editorPlainText, REWRITE_STYLES, useComposeAi } from './compose/ai'
 import { AiMenu, AiResult, AiUnavailable, AttachmentChips, ClosePrompt, PointsPanel, SendCheckDialog, ShortcutHelp, Toast } from './compose/parts'
 import type { ComposeRewriteStyle } from '@shared/ipc'
+import { FollowupToggle } from './compose/FollowupToggle'
 import './compose/compose.css'
 
 type Prefill = Partial<ComposeDraft> & { cc?: Address[]; forwardOf?: string; quoteMessageId?: string }
@@ -59,6 +60,26 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
   const subjectRef = useRef<HTMLInputElement>(null)
 
   const draftId = useMemo(() => prefill?.id ?? `draft-${Date.now()}`, [prefill?.id])
+
+  // ---------- 发出后跟进：Agent / 技能起草时带 followup 默认开；打开已登记跟进的草稿时也预填 ----------
+  const [followup, setFollowup] = useState<ComposeFollowup>(() =>
+    prefill?.followup ? { ...prefill.followup, enabled: prefill.followup.enabled !== false } : { enabled: false, waitDays: 3 }
+  )
+  useEffect(() => {
+    if (prefill?.followup || !prefill?.id) return
+    void api
+      .followupList()
+      .then(list => {
+        const hit = list.find(r => {
+          const d = r.data as unknown as FollowupData
+          return d.draftId === prefill.id || d.nudgeDraftId === prefill.id
+        })
+        if (!hit) return
+        const d = hit.data as unknown as FollowupData
+        setFollowup({ id: hit.id, enabled: true, kind: d.kind, ask: d.ask, waitDays: d.waitDays })
+      })
+      .catch(() => undefined)
+  }, [prefill?.id, prefill?.followup])
   const isForward = !!prefill?.forwardOf || /^(转发|fwd?)[:：]/i.test(prefill?.subject ?? '')
   const isReply = !!prefill?.relatedMessageId && !isForward
   const account = accounts?.find(a => a.id === accountId)
@@ -236,7 +257,9 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
     html,
     inReplyToMessageId: prefill?.inReplyToMessageId,
     relatedMessageId: prefill?.relatedMessageId,
-    attachmentPaths: attachments.map(a => a.path)
+    attachmentPaths: attachments.map(a => a.path),
+    // 开着，或关掉了一条已登记的（主进程据此取消）；真正发出后由主进程登记为「等待对方」
+    ...(followup.enabled || followup.id ? { followup } : {})
   })
 
   const isBlank = (lists = { to, cc, bcc }) =>
@@ -871,6 +894,7 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
         <button type="button" onClick={() => void pick()} className="cmp-icon-btn" title="添加附件 ⌘⇧A" aria-label="添加附件">
           <IconAttach width={15} height={15} />
         </button>
+        <FollowupToggle value={followup} onChange={setFollowup} />
         <span className="cmp-status" data-state={save.state}>{saveText}</span>
         <div className="flex-1" />
         <button type="button" className="cmp-kbd-btn" onClick={() => setHelp(true)} title="快捷键 ⌘/">
