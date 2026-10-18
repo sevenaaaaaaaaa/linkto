@@ -1,4 +1,3 @@
-import { avatarStyle } from '../lib/avatar'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, useMailEvent, fmtFullDate, displayName, fmtSize } from '../lib/api'
 import { useMail } from '../stores/mail'
@@ -11,10 +10,12 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot
+  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
-import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MessageFull } from '@shared/types'
+import type { Attachment, CloudDriveConfig, ConnectorInstance, ConnectorManifest, GeneralSettings, MailEntity, MailInsight, MailNextAction, MessageFull } from '@shared/types'
+import { useInsights, splitKey, dedupeEntities } from '../lib/insights'
+import { noteMouseAction } from './Guidance'
 import { Markdown, markdownToHtml } from '../components/Markdown'
 
 interface AIState {
@@ -149,6 +150,14 @@ export function Reader() {
     if (!msg) return null
     return detectAuth(msg.subject, msg.text ?? '', msg.html, msg.from?.address)
   }, [msg])
+  // 邮件理解：打开即请求（用户主动打开 = 允许跑一次 AI），结果供要点卡 / 划重点 / 下一步 / 快速回复使用
+  const insight = useInsights(st => (msg ? st.byId[msg.id] : undefined))
+  useEffect(() => {
+    if (msg) void useInsights.getState().understand(msg.id)
+  }, [msg?.id])
+  const accounts = useMail(st => st.accounts)
+  const railMode = useMail(st => st.rail)
+  const account = msg ? accounts.find(a => a.id === msg.accountId) : undefined
   const [authDismissed, setAuthDismissed] = useState(false)
   useEffect(() => setAuthDismissed(false), [selectedId])
 
@@ -222,6 +231,7 @@ export function Reader() {
       a { color: var(--accent-ink); }
       table { border-collapse: collapse; }
       p { margin: 0.5em 0; }
+      mark.ms-hl { background: var(--hl); color: inherit; border-radius: 3px; padding: 0 1px; }
     </style><div id="ms-body">${html}</div>`
     // 阅读皮肤：编译元组注入 Shadow DOM（只影响邮件内容，不动应用外壳）
     if (skin) {
@@ -239,7 +249,9 @@ export function Reader() {
         void api.openExternal(target.href)
       }
     })
-  }, [msg, settings, showRemote, cidMap, skin])
+    // AI 划重点：把理解结果里的原句片段在正文中用荧光标出（只包裹文本节点，不改动邮件结构）
+    if (insight?.highlights.length) highlightPhrases(root, insight.highlights)
+  }, [msg, settings, showRemote, cidMap, skin, insight?.highlights.join('\u0001')])
 
   const showBlocked = () => setShowRemote(true)
 
@@ -320,6 +332,62 @@ export function Reader() {
       quoteMessageId: msg.id,
       forwardOf: msg.id
     } as never)
+  }
+
+  /** 打开撰写窗并预填（AI 草稿为纯文本 / Markdown） */
+  const openReplyWith = (body: string) => {
+    if (!msg) return
+    const to = msg.replyTo ? [msg.replyTo] : msg.from ? [msg.from] : []
+    void api.openCompose({
+      accountId: msg.accountId,
+      to,
+      subject: /^回复[:：]/i.test(msg.subject) ? msg.subject : `回复：${msg.subject}`,
+      inReplyToMessageId: msg.messageId ?? undefined,
+      relatedMessageId: msg.id,
+      quoteMessageId: msg.id,
+      html: markdownToHtml(body)
+    } as never)
+  }
+
+  /** 执行 AI 建议的下一步（按钮文字即建议；时间 / 草稿 / 标题来自理解结果） */
+  const runNext = async (n: MailNextAction) => {
+    if (!msg) return
+    if (n.kind === 'reply' || n.kind === 'forward') {
+      if (n.kind === 'forward') forward()
+      else openReplyWith(n.body ?? '')
+    } else if (n.kind === 'archive') {
+      await act('archive')
+    } else if (n.kind === 'open' && n.url) {
+      void api.openExternal(n.url)
+    } else if (n.kind === 'snooze') {
+      const at = n.until ? Date.parse(n.until.replace(' ', 'T')) : NaN
+      if (!Number.isFinite(at) || at <= Date.now()) {
+        setSnoozeOpen(true)
+        return
+      }
+      await api.snoozeMessages([msg.id], at)
+      showToast(`已稍后处理，${fmtSnooze(at)} 回到收件箱`)
+      useMail.getState().select(null)
+      await loadMessages()
+    } else if (n.kind === 'todo') {
+      const res = await api.agentExecuteActions([{ type: 'todo', messageId: msg.id, title: n.title || n.label.replace(/^建待办[:：]\s*/, ''), due: n.due ?? undefined }])
+      showToast(res.ok ? '已加入待办' : `建待办失败：${res.failed[0]?.error ?? ''}`)
+    }
+  }
+
+  /** 实体卡：验证码复制 / 时间加待办提醒 / 链接打开 */
+  const runEntity = async (e: MailEntity) => {
+    if (!msg) return
+    if (e.action === 'copy') {
+      void navigator.clipboard.writeText(e.value)
+      showToast(`${e.label} 已复制`)
+    } else if (e.action === 'open') {
+      void api.openExternal(e.value)
+    } else if (e.action === 'calendar' || e.action === 'todo') {
+      const due = /^\d{4}-\d{2}-\d{2}/.test(e.value) ? e.value.slice(0, 10) : undefined
+      const res = await api.agentExecuteActions([{ type: 'todo', messageId: msg.id, title: `${msg.subject || '邮件'}：${e.label}`, due }])
+      showToast(res.ok ? `已加入待办（${e.label}）` : `添加失败：${res.failed[0]?.error ?? ''}`)
+    }
   }
 
   const saveToKb = async () => {
@@ -467,6 +535,9 @@ export function Reader() {
   const atts = msg.attachments.filter(a => !a.inline)
   const canUnsub = !!msg.listUnsubscribe
   const moreItems: MenuItem[] = [
+    { kind: 'action', label: '全部回复', icon: <IconReplyAll width={13} height={13} />, onSelect: () => reply(true) },
+    { kind: 'action', label: '转发', icon: <IconForward width={13} height={13} />, onSelect: forward },
+    { kind: 'sep' },
     { kind: 'action', label: msg.pinned ? '取消置顶' : '置顶', icon: <IconPin width={13} height={13} />, onSelect: () => void useMail.getState().setPinned([msg.id], !msg.pinned) },
     { kind: 'action', label: msg.flagged ? '取消旗标' : '加旗标', icon: <IconFlag width={13} height={13} />, onSelect: () => void act('flag') },
     { kind: 'action', label: msg.unread ? '标为已读' : '标为未读', icon: <IconMailDot width={13} height={13} />, onSelect: () => void (msg.unread ? api.markRead([msg.id], true).then(() => loadMessages()) : act('unread')) },
@@ -485,16 +556,21 @@ export function Reader() {
       {/* 顶部工具栏：并入 52px 标题栏，与侧栏「写邮件」、列表搜索同一基线（审计 T-4 / IA-6）
           主动作：回复 · 全部回复 · 转发 | 归档 · 稍后 · 删除；其余进「⋯」；窄宽度自动只留图标 */}
       <div ref={toolbarRef} className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-0.5 px-4 border-b border-[var(--border-soft)]">
-        <button onClick={() => reply(false)} title="回复（R）" className="no-drag btn-liquid h-7 px-2.5 rounded-[var(--r-sm)] inline-flex items-center gap-1.5 text-xs font-semibold mr-1">
+        <button
+          onClick={() => {
+            noteMouseAction('reply')
+            reply(false)
+          }}
+          title="回复（R）"
+          className="no-drag h-8 px-3 rounded-[var(--r-sm)] inline-flex items-center gap-1.5 text-xs font-semibold mr-1.5 transition-transform active:scale-95"
+          style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+        >
           <IconReply width={13} height={13} />
           {!compact && '回复'}
         </button>
-        <ToolButton onClick={() => reply(true)} icon={<IconReplyAll width={14} height={14} />} label="全部回复" compact={compact} />
-        <ToolButton onClick={forward} icon={<IconForward width={14} height={14} />} label="转发" compact={compact} />
-        <span className="w-px h-4 mx-1.5 shrink-0" style={{ background: 'var(--border)' }} />
-        <ToolButton onClick={() => act('archive')} icon={<IconArchive width={14} height={14} />} label="归档" hint="A" compact={compact} />
+        <ToolButton onClick={() => { noteMouseAction('archive'); void act('archive') }} icon={<IconArchive width={14} height={14} />} label="归档" hint="E" compact={compact} />
         <div ref={snoozeRef} className="relative no-drag">
-          <ToolButton onClick={() => setSnoozeOpen(o => !o)} icon={<IconClock width={14} height={14} />} label="稍后" hint="S" compact={compact} active={snoozeOpen || !!msg.snoozedUntil} />
+          <ToolButton onClick={() => { if (!snoozeOpen) noteMouseAction('snooze'); setSnoozeOpen(o => !o) }} icon={<IconClock width={14} height={14} />} label="稍后" hint="S" compact={compact} active={snoozeOpen || !!msg.snoozedUntil} />
           {snoozeOpen && (
             <div className="absolute top-full mt-1.5 left-0 z-30">
               <SnoozeMenu
@@ -518,8 +594,31 @@ export function Reader() {
             </div>
           )}
         </div>
-        <ToolButton onClick={() => act('trash')} icon={<IconTrash width={14} height={14} />} label="删除" hint="⌫" compact danger />
+        <ToolButton
+          onClick={() => {
+            noteMouseAction('move')
+            window.dispatchEvent(new CustomEvent('ms:move', { detail: [msg.id] }))
+          }}
+          icon={<IconFolder width={14} height={14} />}
+          label="移动"
+          hint="V"
+          compact={compact}
+        />
         <div className="flex-1" />
+        <ToolButton
+          onClick={() => useMail.getState().toggleRail('context')}
+          icon={<IconUser width={14} height={14} />}
+          label="上下文"
+          compact
+          active={railMode === 'context'}
+        />
+        <ToolButton
+          onClick={() => useMail.getState().toggleRail('agent')}
+          icon={<IconRobot width={14} height={14} />}
+          label="Agent（⌘J）"
+          compact
+          active={railMode === 'agent'}
+        />
         {/* 阅读风格（上下文锚定的风格选择器） */}
         <div ref={styleRootRef} className="relative no-drag">
           <ToolButton onClick={() => setStyleMenu(m => !m)} icon={<IconPalette width={14} height={14} />} label={skin ? skin[1] : '阅读风格'} compact active={!!skin} />
@@ -542,20 +641,19 @@ export function Reader() {
 
       {/* 头部信息 */}
       <div className="shrink-0 px-6 pt-5 pb-4 border-b border-[var(--border-soft)]">
-        <h1 className="selectable text-lg font-semibold leading-snug" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>{msg.subject || '（无主题）'}</h1>
+        <h1 className="selectable text-lg font-semibold leading-snug" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}>{msg.subject || '（无主题）'}</h1>
         <div className="mt-2.5 flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-base font-medium shrink-0"
-            style={avatarStyle(displayName(msg.from))}
-          >
-            {[...displayName(msg.from)][0]?.toUpperCase() ?? '?'}
-          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
               {/* 窄阅读区（放大显示 / 小窗）只留姓名，地址进 tooltip，避免姓名被挤成单字 */}
               <span className="text-sm font-medium selectable truncate" title={msg.from?.address} style={{ color: 'var(--fg)' }}>{displayName(msg.from)}</span>
               {!compact && <span className="text-xs truncate min-w-0 shrink-[2]" style={{ color: 'var(--faint)' }}>{msg.from?.address}</span>}
-              <span className="ml-auto text-xs shrink-0" style={{ color: 'var(--faint)' }}>{fmtFullDate(msg.date)}</span>
+              {account && accounts.length > 1 && (
+                <span className="text-2xs px-1.5 h-5 inline-flex items-center rounded-[var(--r-xs)] shrink-0" style={{ border: `1px solid ${account.color}`, color: 'var(--fg)' }} title={account.email}>
+                  收于 {account.name}
+                </span>
+              )}
+              <span className="ml-auto text-xs shrink-0 tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{fmtFullDate(msg.date)}</span>
             </div>
             <div className="text-xs selectable truncate" style={{ color: 'var(--faint)' }}>
               收件人：{msg.to.map(displayName).join('，') || '—'}
@@ -626,14 +724,22 @@ export function Reader() {
         </div>
       )}
 
-      {/* AI 面板 */}
-      <div className="shrink-0 px-6 pt-3">
+      {/* AI 要点卡：一句话要点 + 识别出的时间 / 金额 / 验证码 + AI 建议的下一步 */}
+      {insight && (insight.gist || insight.next.length > 0) && (
+        <InsightCard
+          insight={insight}
+          hideKinds={auth && !authDismissed ? ['code', 'link'] : []}
+          onNext={runNext}
+          onEntity={runEntity}
+        />
+      )}
+
+      {/* AI 工具（原 AI 助手：全文摘要 / 起草 / 提取待办 / 提炼 / 学习） */}
+      <div className="shrink-0 px-6 pt-2">
         <div className="rounded-[var(--r-md)] border border-[var(--border-soft)] overflow-hidden surface">
-          <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-3 py-2">
-            <span className="w-5 h-5 mr-1 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
-              <IconSparkles width={11} height={11} />
-            </span>
-            <span className="text-sm font-medium whitespace-nowrap" style={{ color: 'var(--fg)' }}>AI 助手</span>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-3 py-1.5">
+            <IconSparkles width={13} height={13} style={{ color: 'var(--ai-line)' }} />
+            <span className="text-xs font-medium whitespace-nowrap ml-1" style={{ color: 'var(--muted)' }}>AI 工具</span>
             <div className="flex-1 min-w-2" />
             {aiReady?.ready === false ? (
               <button onClick={() => api.openSettings('ai')} className="h-6 px-2 rounded-[var(--r-sm)] text-xs whitespace-nowrap hover:bg-[var(--hover-strong)]" style={{ color: 'var(--accent-ink)' }}>
@@ -735,6 +841,21 @@ export function Reader() {
           />
         </div>
       </div>
+
+      {insight?.quickReply && (
+        <div className="shrink-0 px-6 pb-4 pt-1">
+          <button
+            onClick={() => openReplyWith(insight.quickReply)}
+            title="用 AI 草稿回复（可在撰写窗修改）"
+            className="w-full flex items-center gap-3 px-3.5 h-11 rounded-[var(--r-md)] border border-[var(--border)] text-left hover:border-[var(--border-strong)] transition-colors"
+            style={{ background: 'var(--surface-strong)' }}
+          >
+            <span className="text-2xs font-bold px-1.5 py-0.5 rounded-[var(--r-xs)] ai-chip shrink-0">AI 草稿</span>
+            <span className="flex-1 min-w-0 truncate text-sm" style={{ color: 'var(--muted)' }}>{insight.quickReply}</span>
+            <span className="text-2xs shrink-0" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>用它回复 ↵</span>
+          </button>
+        </div>
+      )}
 
       {toast && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full liquid-glass text-sm fade-in" style={{ color: 'var(--fg)' }}>
@@ -871,4 +992,108 @@ function AttachmentCard(props: { att: Attachment; drives: CloudDriveConfig[]; on
 
 function escapeHtmlMinor(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** AI 要点卡：要点（关键短语荧光）+ 实体卡 + 下一步按钮（第一个为 AI 首选，荧光底） */
+function InsightCard(props: {
+  insight: MailInsight
+  hideKinds: MailEntity['kind'][]
+  onNext(n: MailNextAction): void
+  onEntity(e: MailEntity): void
+}) {
+  const { insight } = props
+  const [pre, key, post] = splitKey(insight.gist, insight.gistKey)
+  const entities = dedupeEntities(insight.entities.filter(e => !props.hideKinds.includes(e.kind)))
+    .slice(0, 5)
+  const ACTION_LABEL: Record<string, string> = { calendar: '提醒我', todo: '建待办', copy: '复制', open: '打开' }
+  return (
+    <div className="shrink-0 px-6 pt-3">
+      <div className="rounded-[var(--r-md)] border border-[var(--border)] px-4 py-3.5 flex flex-col gap-3" style={{ background: 'var(--bg-soft)' }}>
+        {insight.gist && (
+          <div className="flex gap-2.5 items-start">
+            <span className="shrink-0 mt-px text-2xs font-bold px-1.5 py-0.5 rounded-[var(--r-xs)] ai-chip" title={insight.source === 'ai' ? '由 AI 理解生成' : '由本地规则生成（配置 AI 后更准）'}>
+              {insight.source === 'ai' ? 'AI 要点' : '要点'}
+            </span>
+            <span className="selectable text-sm leading-relaxed" style={{ color: 'var(--fg)' }}>
+              {pre}
+              {key && <mark className="hl">{key}</mark>}
+              {post}
+            </span>
+          </div>
+        )}
+        {entities.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {entities.map((e, i) => (
+              <button
+                key={i}
+                onClick={() => e.action && props.onEntity(e)}
+                disabled={!e.action}
+                className="h-8 pl-2.5 pr-1 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--border)] text-xs hover:border-[var(--border-strong)] transition-colors disabled:pr-2.5"
+                style={{ background: 'var(--surface-strong)', color: 'var(--fg)' }}
+              >
+                <span style={{ color: 'var(--muted)' }}>{ENTITY_KIND[e.kind]}</span>
+                <span className="font-semibold tnum" style={{ fontFamily: e.kind === 'code' ? 'var(--font-mono)' : undefined, letterSpacing: e.kind === 'code' ? '0.12em' : undefined }}>{e.label}</span>
+                {e.action && (
+                  <span className="h-6 px-2 inline-flex items-center rounded-[var(--r-xs)]" style={{ background: 'var(--hover-strong)' }}>
+                    {ACTION_LABEL[e.action]}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        {insight.next.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {insight.next.slice(0, 4).map((n, i) => (
+              <button
+                key={i}
+                onClick={() => props.onNext(n)}
+                className={`h-8 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] text-xs transition-transform active:scale-[0.97] ${i === 0 ? 'ai-chip font-semibold' : 'border border-[var(--border)] hover:bg-[var(--hover)]'}`}
+                style={i === 0 ? { boxShadow: 'inset 0 0 0 1px var(--ai-ink)' } : { color: 'var(--fg)', background: 'var(--surface-strong)' }}
+              >
+                <span className="truncate max-w-[280px]">{n.label}</span>
+                {NEXT_KEY[n.kind] && <kbd className="text-2xs" style={{ fontFamily: 'var(--font-mono)', opacity: 0.6 }}>{NEXT_KEY[n.kind]}</kbd>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const ENTITY_KIND: Record<MailEntity['kind'], string> = {
+  time: '时间',
+  deadline: '截止',
+  money: '金额',
+  code: '验证码',
+  link: '链接',
+  tracking: '单号'
+}
+const NEXT_KEY: Partial<Record<MailNextAction['kind'], string>> = { reply: 'R', snooze: 'S', archive: 'E' }
+
+/** 在 Shadow DOM 正文里用 <mark> 包裹 AI 给出的原句片段（逐字匹配文本节点，跨节点的片段跳过） */
+function highlightPhrases(root: HTMLElement, phrases: string[]) {
+  // 片段几乎就是整封邮件时不划：满屏荧光等于没有重点
+  const total = (root.textContent ?? '').replace(/\s+/g, '').length
+  const wanted = phrases.map(p => p.trim()).filter(p => p.length >= 4 && p.replace(/\s+/g, '').length < total * 0.6)
+  if (!wanted.length) return
+  for (const phrase of wanted) {
+    // 每个片段重新收集文本节点：上一个片段包裹后原节点已被拆分
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const nodes: Text[] = []
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+    for (const node of nodes) {
+      const text = node.nodeValue ?? ''
+      const i = text.indexOf(phrase)
+      if (i < 0 || node.parentElement?.closest('mark.ms-hl, style, script')) continue
+      const range = document.createRange()
+      range.setStart(node, i)
+      range.setEnd(node, i + phrase.length)
+      const mark = document.createElement('mark')
+      mark.className = 'ms-hl'
+      range.surroundContents(mark)
+      break
+    }
+  }
 }

@@ -20,7 +20,8 @@ import type {
   ProviderKey,
   OAuthTokens,
   AgentAction,
-  RuleAction
+  RuleAction,
+  FolderPref
 } from '@shared/types'
 import type { LinkToApi } from '@shared/ipc'
 import type { MailStore } from './db'
@@ -44,6 +45,14 @@ import type { Notifier } from './notify'
 import { applyLoginItem } from './native-integration'
 import { LocalEngine, type DownloadProgress } from './ai/local-engine'
 import type { AccountWorker } from './mail/sync-engine'
+import type { UnderstandService } from './ai/understand'
+import { DEFAULT_FOLDER_PREF, readFolderPrefs, writeFolderPref } from './mail/folder-prefs'
+
+/** 按 LinkToApi 契约约束的处理器类型（参数元组 → 返回值） */
+type Api<K extends keyof LinkToApi> = (
+  args: Parameters<LinkToApi[K]>,
+  win: BrowserWindow
+) => Awaited<ReturnType<LinkToApi[K]>> | ReturnType<LinkToApi[K]>
 
 const SEP = '::'
 const messageIdOf = (accountId: string, folderPath: string, uid: number) => `${accountId}${SEP}${folderPath}${SEP}${uid}`
@@ -59,6 +68,7 @@ export interface AppContext {
   outbox: Outbox
   insights: InsightsService
   agent: AgentService
+  understand: UnderstandService
   oauth: OAuthService
   backup: BackupService
   ghost: GhostService
@@ -193,7 +203,8 @@ export function registerIpc(ctx: AppContext) {
     const row = store.getMessageRow(messageId)
     if (!row) return
     // 移动类动作放最后，避免先移走后其他动作找不到邮件
-    const ordered = [...actions].sort((x, y) => Number(x.type === 'moveTrash') - Number(y.type === 'moveTrash'))
+    const isMove = (t: string) => t === 'moveTrash' || t === 'moveFolder'
+    const ordered = [...actions].sort((x, y) => Number(isMove(x.type)) - Number(isMove(y.type)))
     for (const action of ordered) {
       try {
         switch (action.type) {
@@ -233,6 +244,9 @@ export function registerIpc(ctx: AppContext) {
           }
           case 'moveTrash':
             await moveOrDelete(messageId, 'trash')
+            break
+          case 'moveFolder':
+            if (action.value) await handlers.moveToFolder([[messageId], action.value] as never, undefined as never)
             break
           // notify 由主进程通知模块处理
         }
@@ -1315,6 +1329,37 @@ export function registerIpc(ctx: AppContext) {
 
     setNewsletterSender: ([snd, subscribed]: [string, boolean]) => store.setNewsletterSubscribed(snd, subscribed),
     listNewsletterSenders: () => store.listNewsletterSenders(),
+
+    // ================= 邮件理解 =================
+
+    getMailInsights: (([ids]) => ctx.understand.getInsights(Array.isArray(ids) ? ids : [])) satisfies Api<'getMailInsights'>,
+
+    understandMessage: (([id, force]) => ctx.understand.understand(id, !!force)) satisfies Api<'understandMessage'>,
+
+    todayBrief: (([accountId]) => ctx.understand.todayBrief(accountId ?? null)) satisfies Api<'todayBrief'>,
+
+    getFolderPrefs: (() => {
+      const stored = readFolderPrefs(appStore)
+      const out: Record<string, FolderPref> = {}
+      for (const f of store.listFolders()) out[f.id] = stored[f.id] ?? { ...DEFAULT_FOLDER_PREF }
+      return { ...stored, ...out }
+    }) satisfies Api<'getFolderPrefs'>,
+
+    setFolderPref: (([folderId, patch]) => {
+      if (!folderId) return
+      const before = readFolderPrefs(appStore)[folderId] ?? DEFAULT_FOLDER_PREF
+      const after = writeFolderPref(appStore, folderId, patch ?? {})
+      // 重新开启同步：立即触发一轮完整同步把该文件夹补上
+      if (!before.sync && after.sync) {
+        const folder = store.listFolders().find(f => f.id === folderId)
+        if (folder) engine.getWorker(folder.accountId)?.syncNow()
+      }
+      ctx.event(null as never, { type: 'folders-changed' })
+    }) satisfies Api<'setFolderPref'>,
+
+    suggestMoveTarget: (([messageId]) => ctx.understand.suggestMoveTarget(messageId)) satisfies Api<'suggestMoveTarget'>,
+
+    senderContext: (([messageId]) => ctx.understand.senderContext(messageId)) satisfies Api<'senderContext'>,
 
     // ================= MCP 服务 =================
 

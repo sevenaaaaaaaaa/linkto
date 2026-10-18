@@ -414,7 +414,8 @@ async function finalizeAnswer(text: string, refs: string[]): Promise<Pick<ChatMe
   return { text, actions, memories: memories.length ? memories : undefined }
 }
 
-function AgentChat(props: { onClose(): void }) {
+/** panel=true：嵌在阅读页右侧栏（⌘J）；否则为居中弹窗 */
+export function AgentChat(props: { onClose(): void; panel?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -501,23 +502,26 @@ function AgentChat(props: { onClose(): void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 bg-black/30 flex items-center justify-center" onClick={props.onClose}>
+    <div
+      className={props.panel ? 'h-full flex flex-col min-h-0' : 'fixed inset-0 z-30 bg-black/30 flex items-center justify-center'}
+      onClick={props.panel ? undefined : props.onClose}
+    >
       <div
-        className="w-[600px] h-[74vh] bg-white rounded-2xl shadow-[var(--shadow-float)] flex flex-col overflow-hidden fade-in"
+        className={props.panel ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : 'w-[600px] h-[74vh] bg-white rounded-2xl shadow-[var(--shadow-float)] flex flex-col overflow-hidden fade-in'}
         onClick={e => e.stopPropagation()}
       >
-        <div className="px-5 py-3.5 border-b border-ink/5 flex items-center gap-2">
+        <div className={`border-b border-ink/5 flex items-center gap-2 ${props.panel ? 'px-4 h-11 shrink-0' : 'px-5 py-3.5'}`}>
           <span className="w-5 h-5 rounded-full bg-accent flex items-center justify-center text-on-accent">
             <IconSparkles width={11} height={11} />
           </span>
           <span className="text-base font-semibold text-zinc-800">LinkTo Agent</span>
-          <span className="text-xs text-zinc-400">基于长期记忆 + 知识库 + 你的邮件</span>
+          {!props.panel && <span className="text-xs text-zinc-400">基于长期记忆 + 知识库 + 你的邮件</span>}
           <div className="flex-1" />
           <button onClick={props.onClose} className="text-zinc-400 hover:text-zinc-600">
             <IconClose width={14} height={14} />
           </button>
         </div>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div ref={scrollRef} className={`flex-1 overflow-y-auto space-y-3 ${props.panel ? 'px-3 py-3' : 'px-5 py-4'}`}>
           {aiState?.ready === false && (
             <div className="rounded-xl border border-ink/[0.08] px-3.5 py-3 text-sm text-zinc-600 flex items-center gap-3">
               <span className="flex-1">Agent 需要 AI 模型才能工作（{aiState.reason}）。支持云端 API，也支持 Ollama / LM Studio 本地模型。</span>
@@ -536,7 +540,7 @@ function AgentChat(props: { onClose(): void }) {
           {messages.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed selectable ${
+                className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed selectable ${
                   m.role === 'user' ? 'bg-accent text-on-accent whitespace-pre-wrap' : 'bg-zinc-100 text-zinc-800'
                 }`}
               >
@@ -548,7 +552,7 @@ function AgentChat(props: { onClose(): void }) {
                 )}
               </div>
               {m.actions && (
-                <div className="mt-2 w-[85%] rounded-2xl border border-ink/[0.08] bg-white px-3.5 py-3">
+                <div className="mt-2 w-[92%] rounded-2xl border border-ink/[0.08] bg-white px-3.5 py-3">
                   <div className="text-xs font-semibold text-zinc-500 mb-2">Agent 建议执行（确认后才会生效）</div>
                   <ul className="space-y-1.5">
                     {m.actions.map((a, k) => (
@@ -578,7 +582,7 @@ function AgentChat(props: { onClose(): void }) {
                 </div>
               )}
               {m.memories && (
-                <div className="mt-2 w-[85%] flex flex-wrap gap-1.5">
+                <div className="mt-2 w-[92%] flex flex-wrap gap-1.5">
                   {m.memories.map(mem =>
                     m.savedMemories?.includes(mem) ? (
                       <span key={mem} className="text-xs px-2 py-1 rounded-lg text-zinc-400">已记住：{mem}</span>
@@ -593,7 +597,7 @@ function AgentChat(props: { onClose(): void }) {
             </div>
           ))}
         </div>
-        <div className="px-4 py-3 border-t border-ink/5 flex items-center gap-2">
+        <div className={`border-t border-ink/5 flex items-center gap-2 ${props.panel ? 'px-3 py-2.5' : 'px-4 py-3'}`}>
           <input
             value={input}
             onChange={e => setInput(e.target.value)}

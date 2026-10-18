@@ -5,7 +5,7 @@ import type { AISettings, CustomPrompt } from '@shared/types'
 
 const PRESETS = [
   { label: '智谱 GLM（推荐）', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7' },
-  { label: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { label: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
   { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Ollama 本地部署（隐私优先）', baseURL: 'http://localhost:11434/v1', model: '' },
   { label: 'LM Studio 本地部署', baseURL: 'http://localhost:1234/v1', model: '' }
@@ -312,20 +312,9 @@ export function AiTab() {
       </button>
 
       <SectionTitle>自动化</SectionTitle>
-      {!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(s.baseURL) && s.baseURL !== 'builtin-local' && (
-        <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-2.5 mb-2">
-          以下自动化开启后，新邮件内容会在你不操作时自动发送给当前的云端 AI 服务（{s.baseURL.replace(/^https?:\/\//, '').split('/')[0]}）。介意的话保持关闭，或改用本地模型。
-        </div>
-      )}
-      <SettingRow label="自动分类新邮件" desc="新邮件入库后自动标记：个人 / 通知 / 订阅 / 噪声">
-        <Toggle checked={s.autoClassify} onChange={v => update({ autoClassify: v })} />
-      </SettingRow>
-      <SettingRow label="自动提炼" desc="账单 / 会议邮件自动进待办，Newsletter 自动进阅读清单（智能洞察）">
-        <Toggle checked={s.autoInsights} onChange={v => update({ autoInsights: v })} />
-      </SettingRow>
-      <SettingRow label="每日商情" desc="每天自动整理：当日重点、主题 digest、备忘录、清理建议">
-        <Toggle checked={s.autoDigest} onChange={v => update({ autoDigest: v })} />
-      </SettingRow>
+      <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">
+        自动理解新邮件、自动分类、自动提炼、每日简报，以及规则与 AI 条件，已合并到「自动化」页统一管理，并会写清每一项会把什么发给 AI。
+      </div>
 
       <SectionTitle>隐私说明</SectionTitle>
       <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3">

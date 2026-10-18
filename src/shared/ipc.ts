@@ -37,7 +37,10 @@ import type {
   SmartView,
   NLQuery,
   FollowupJudgement,
-  AgentAction
+  AgentAction,
+  MailInsight,
+  FolderPref,
+  TodayBrief
 } from './types'
 
 /** 渲染进程可调用的全部 API（经 contextBridge 暴露） */
@@ -236,6 +239,7 @@ export interface LinkToApi {
   /** AI 是否可用（未配置时 UI 置灰并引导去设置） */
   aiStatus(): Promise<{ ready: boolean; reason?: string }>
 
+
   // ---------- 幽灵信（端到端加密 · 阅后即焚） ----------
   /** 本机幽灵身份（公钥即幽灵 ID + 短指纹），首次调用自动生成并入钥匙串 */
   ghostIdentity(): Promise<{ ghostId: string; fingerprint: string }>
@@ -255,6 +259,19 @@ export interface LinkToApi {
   openGhost(): Promise<void>
   /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */
   openGhostReader(id: string): Promise<void>
+
+  // ---------- 邮件理解（每封一次理解，列表 / 阅读页 / 简报 / Agent 共用） ----------
+  /** 批量取邮件理解结果（缺失的立即用启发式补齐并返回；AI 结果异步到达后发 'mail-insights' 事件） */
+  getMailInsights(ids: string[]): Promise<Record<string, MailInsight>>
+  /** 立即对一封邮件跑 AI 理解（用户打开邮件时调用；AI 未就绪则返回启发式结果） */
+  understandMessage(id: string, force?: boolean): Promise<MailInsight | null>
+  todayBrief(accountId?: string | null): Promise<TodayBrief>
+  getFolderPrefs(): Promise<Record<string, FolderPref>>
+  setFolderPref(folderId: string, patch: Partial<FolderPref>): Promise<void>
+  /** 移动建议：同一发件人历史邮件最常在的非收件箱文件夹 */
+  suggestMoveTarget(messageId: string): Promise<{ folderId: string; reason: string } | null>
+  /** 发件人上下文（右侧栏）：往来统计、Agent 记忆、你答应过的事、相关知识库条目 */
+  senderContext(messageId: string): Promise<{ addr: string; name: string; total: number; lastAt: number | null; sentByMe: number; memories: string[]; promises: string[]; related: { id: string; title: string; kind: 'kb' | 'message' }[] } | null>
 
   // ---------- MCP 服务（外部 AI Agent 访问本地邮件） ----------
   getMcpStatus(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>

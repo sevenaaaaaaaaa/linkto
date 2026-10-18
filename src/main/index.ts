@@ -13,6 +13,8 @@ import type { RuleAction } from '@shared/types'
 import { LocalEngine } from './ai/local-engine'
 import { InsightsService } from './ai/insights'
 import { AgentService } from './ai/agent'
+import { UnderstandService } from './ai/understand'
+import { readFolderPrefs } from './mail/folder-prefs'
 import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
@@ -113,6 +115,7 @@ let notifier: Notifier
 let outbox: Outbox
 let insights: InsightsService
 let agent: AgentService
+let understand: UnderstandService
 let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
@@ -454,6 +457,16 @@ async function bootstrap() {
     event: payload => broadcast(payload)
   })
 
+  understand = new UnderstandService({
+    ai: aiService,
+    store: mailStore,
+    getAISettings: () => appStore.getAI(),
+    event: payload => broadcast(payload),
+    getMemoryContext: q => agent?.memoryBlock(q) || null,
+    // engine 稍后初始化，闭包延迟求值
+    getWorker: accountId => engine?.getWorker(accountId)
+  })
+
   engine = new SyncEngine(
     mailStore,
     appStore,
@@ -481,6 +494,12 @@ async function bootstrap() {
       },
       arrived: (accountId, messageId, ruleActions) => {
         void handleArrival(accountId, messageId, ruleActions).catch(err => console.error('[rules]', err))
+        // 邮件理解：新到收件箱邮件排入后台 AI 队列（启发式结果按需即时计算）
+        try {
+          understand.onArrival(messageId)
+        } catch (err) {
+          console.error('[understand]', err)
+        }
       }
     },
     () => mailStore.listRules(),
@@ -490,7 +509,9 @@ async function bootstrap() {
         return { accessToken: await oauth.validToken(account.id, account.provider, force) }
       }
       return { pass: appStore.loadSecret(`acct:${account.id}`) }
-    }
+    },
+    // 文件夹偏好：每轮完整同步读取，关闭同步的文件夹跳过拉取
+    () => readFolderPrefs(appStore)
   )
 
   backupService = new BackupService({
@@ -561,6 +582,7 @@ async function bootstrap() {
     outbox,
     insights,
     agent,
+    understand,
     oauth,
     backup: backupService,
     ghost,
@@ -617,6 +639,14 @@ async function bootstrap() {
   // 睡眠唤醒后旧 IMAP socket 多半已失效：立即重连，而不是等 socket 超时才发现
   powerMonitor.on('resume', () => engine.reconnectAll())
   outbox.start()
+  // 邮件理解：启动后补跑最新 30 封未读收件箱邮件（等首轮同步与正文预取先跑一会儿）
+  setTimeout(() => {
+    try {
+      understand.startupScan()
+    } catch (err) {
+      console.error('[understand] startup scan failed:', err)
+    }
+  }, 20_000)
   // 定期学习：每 30 分钟检查一次是否该生成当日商情
   setInterval(() => void insights.maybeAutoDaily().catch(() => {}), 30 * 60_000)
   void insights.maybeAutoDaily().catch(() => {})

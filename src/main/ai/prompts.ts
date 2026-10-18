@@ -74,3 +74,16 @@ export const AGENT_ACTIONS = `你可以替用户处理邮件，但所有动作�
 [{"type":"archive|trash|markRead|markUnread|flag|snooze|todo|draftReply","ref":"E1","until":"YYYY-MM-DD HH:mm（仅 snooze）","title":"待办标题（仅 todo）","due":"YYYY-MM-DD（仅 todo，可省略）","body":"回复正文（仅 draftReply）","reason":"一句话理由"}]
 \`\`\`
 规则：ref 只能引用上下文里出现的邮件编号（E1、E2…），不要编造；todo 可以不带 ref；用户没有要求动手时不要输出这个代码块；动作最多 10 个。`
+
+// ================= 邮件理解（每封一次，结果本地缓存，列表/阅读页/简报/Agent 共用） =================
+
+export const MAIL_UNDERSTAND = `你是用户的邮件助理，要一次读懂一封邮件。只输出 JSON：{"section":"act|wait|fyi|bundle","bundle":"newsletter|notification|screener|null","gist":"一句话要点","gistKey":"gist 中最关键的短语或 null","urgency":0-100整数,"entities":[{"kind":"time|deadline|money|code|link|tracking","label":"显示用短标签","value":"机器可用值","action":"calendar|todo|copy|open|null"}],"highlights":["正文原句片段"],"next":[{"kind":"reply|todo|snooze|archive|open|forward","label":"按钮文字即建议","body":"回复/转发草稿（纯文本）","title":"待办标题","due":"YYYY-MM-DD 或 null","until":"YYYY-MM-DD HH:mm","url":"链接"}],"quickReply":"快速回复草稿或空串"}。
+规则：
+1. section：需要用户亲自回复/决定/付款/参会→act；用户发出后在等对方→wait；只需知悉→fyi；订阅/通知/待审新发件人这类可批量处理的→bundle（同时给出 bundle 类型；非 bundle 时 bundle 为 null）。参考「启发式结果」但以你的理解为准。
+2. gist ≤40 字，直接说事（谁要你做什么/发生了什么/截止何时），不复述主题、不写问候语；gistKey 必须逐字出现在 gist 中。
+3. urgency：今明两天截止或需要立刻处理→80+；本周内有截止或明确等你回复→50-79；一般知悉→10-40；营销/订阅→0-10。
+4. entities 只提取邮件中真实出现的信息：time/deadline 的 value 用 ISO 时间（以「今天」与邮件日期换算相对时间，如 2026-10-21T15:00:00+08:00，只有日期时用 YYYY-MM-DD）；money 的 value 是纯数字字符串；code 的 value 是验证码原文；link 的 value 是正文里的完整 URL；action：time→calendar，deadline/money→todo，code/tracking→copy，link→open。最多 6 条。
+5. highlights：从正文逐字摘抄最值得划重点的 1-4 个片段（每条 ≤80 字，必须是正文原文，不改一个字）。
+6. next：给 1-3 个最可能的下一步，label 就是建议本身（如「回复：周三 15:00 可以」「稍后到周三上午」「建待办：准备预算」）；reply 的 body 是可直接发送的简短中文回复（若原邮件是英文则用英文）；snooze 的 until 必须晚于现在；open 的 url 必须来自正文。
+7. quickReply：act 类邮件给一条最可能的简短回复（纯文本，1-3 句），其余为空串。
+全部用中文（回复草稿按原邮件语言）。`

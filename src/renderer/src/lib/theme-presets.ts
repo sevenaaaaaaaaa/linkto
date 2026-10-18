@@ -78,22 +78,22 @@ export const PRESET_VAR_MAP: Record<string, string> = {
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: 'default',
-    name: '石墨 · 默认',
-    desc: '石墨纸底 + 铜绿 accent + 三层材质（内置，即 global.css 本身）',
+    name: '荧光签 · 默认',
+    desc: '冷白纸底 + 墨黑主操作 + 荧光只给 AI（内置，即 global.css 本身）',
     light: {
-      bg: 'oklch(97.6% .004 95)', 'bg-soft': 'oklch(95.2% .005 95)', surface: 'oklch(99.4% .002 95/.72)', 'surface-strong': 'oklch(99.4% .002 95)',
-      fg: 'oklch(21% .008 260)', muted: 'oklch(43% .008 260)', faint: 'oklch(53.5% .008 260)', border: 'oklch(89% .004 260)', 'border-strong': 'oklch(80% .006 260)',
-      hover: 'oklch(21% .008 260/.045)', 'hover-strong': 'oklch(21% .008 260/.085)', accent: 'oklch(52% .105 192)', 'accent-strong': 'oklch(46% .105 192)',
-      'accent-soft': 'oklch(52% .105 192/.12)', 'on-accent': 'oklch(100% 0 0)', glass: 'oklch(99.4% .002 95/.55)', 'glass-bright': 'oklch(99.4% .002 95/.92)',
-      'glass-border': 'oklch(100% 0 0/.7)', 'blob-a': 'oklch(80% .06 192/.2)', 'blob-b': 'transparent', 'blob-c': 'oklch(88% .02 95/.3)',
+      bg: 'oklch(96.9% .003 255)', 'bg-soft': 'oklch(95.2% .005 95)', surface: 'oklch(99.4% .002 95/.72)', 'surface-strong': 'oklch(100% 0 0)',
+      fg: 'oklch(17.5% .012 260)', muted: 'oklch(43% .008 260)', faint: 'oklch(53.5% .008 260)', border: 'oklch(89% .004 260)', 'border-strong': 'oklch(80% .006 260)',
+      hover: 'oklch(21% .008 260/.045)', 'hover-strong': 'oklch(21% .008 260/.085)', accent: 'oklch(19% .012 260)', 'accent-strong': 'oklch(25% .012 260)',
+      'accent-soft': 'oklch(19% .012 260/.07)', 'on-accent': 'oklch(100% 0 0)', glass: 'oklch(99.4% .002 95/.55)', 'glass-bright': 'oklch(99.4% .002 95/.92)',
+      'glass-border': 'oklch(100% 0 0/.7)', 'blob-a': 'transparent', 'blob-b': 'transparent', 'blob-c': 'transparent',
       shadow: '0 2px 6px oklch(21% .008 260/.06), 0 20px 48px -20px oklch(21% .008 260/.28)', 'shadow-sm': '0 1px 2px oklch(21% .008 260/.06), 0 4px 12px -6px oklch(21% .008 260/.12)'
     },
     dark: {
-      bg: 'oklch(17.5% .006 260)', 'bg-soft': 'oklch(20% .006 260)', surface: 'oklch(21.5% .007 260/.72)', 'surface-strong': 'oklch(21.5% .007 260)',
+      bg: 'oklch(14.5% .006 260)', 'bg-soft': 'oklch(20% .006 260)', surface: 'oklch(21.5% .007 260/.72)', 'surface-strong': 'oklch(18.5% .007 260)',
       fg: 'oklch(94% .004 95)', muted: 'oklch(73% .006 260)', faint: 'oklch(62% .007 260)', border: 'oklch(100% 0 0/.09)', 'border-strong': 'oklch(100% 0 0/.16)',
-      hover: 'oklch(100% 0 0/.05)', 'hover-strong': 'oklch(100% 0 0/.09)', accent: 'oklch(78% .11 188)', 'accent-strong': 'oklch(84% .11 188)',
-      'accent-soft': 'oklch(78% .11 188/.14)', 'on-accent': 'oklch(18% .03 190)', glass: 'oklch(24% .007 260/.55)', 'glass-bright': 'oklch(25% .007 260/.92)',
-      'glass-border': 'oklch(100% 0 0/.12)', 'blob-a': 'oklch(55% .08 192/.14)', 'blob-b': 'transparent', 'blob-c': 'oklch(40% .02 260/.22)',
+      hover: 'oklch(100% 0 0/.05)', 'hover-strong': 'oklch(100% 0 0/.09)', accent: 'oklch(94.5% .004 260)', 'accent-strong': 'oklch(88% .004 260)',
+      'accent-soft': 'oklch(94.5% .004 260/.09)', 'on-accent': 'oklch(16% .01 260)', glass: 'oklch(24% .007 260/.55)', 'glass-bright': 'oklch(25% .007 260/.92)',
+      'glass-border': 'oklch(100% 0 0/.12)', 'blob-a': 'transparent', 'blob-b': 'transparent', 'blob-c': 'transparent',
       shadow: '0 2px 6px oklch(0% 0 0/.3), 0 20px 48px -20px oklch(0% 0 0/.65)', 'shadow-sm': '0 1px 2px oklch(0% 0 0/.3), 0 4px 12px -6px oklch(0% 0 0/.4)'
     },
     layout: { 'r-lg': '14px', 'r-md': '10px', 'r-sm': '6px' }

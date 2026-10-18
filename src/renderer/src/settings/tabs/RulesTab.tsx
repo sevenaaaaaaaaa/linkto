@@ -32,7 +32,8 @@ const ACTIONS: { value: RuleActionType; label: string }[] = [
   { value: 'moveTrash', label: '移到废纸篓' },
   { value: 'saveToKb', label: '存入知识库' },
   { value: 'notify', label: '发系统通知' },
-  { value: 'runConnector', label: '发送到连接器' }
+  { value: 'runConnector', label: '发送到连接器' },
+  { value: 'moveFolder', label: '移到文件夹' }
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -135,6 +136,17 @@ export function RulesTab() {
 function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void }) {
   const { rule: r } = props
   const isBool = (f: RuleField) => f === 'hasAttachment' || f === 'isNewsletter'
+  // 「移到文件夹」的可选项：所有账户的非收件箱文件夹
+  const [folderOptions, setFolderOptions] = useState<{ value: string; label: string }[]>([])
+  useEffect(() => {
+    void Promise.all([api.listFolders(), api.listAccounts()]).then(([folders, accounts]) =>
+      setFolderOptions(
+        folders
+          .filter(f => f.special !== 'inbox' && f.special !== 'drafts')
+          .map(f => ({ value: f.id, label: `${accounts.find(a => a.id === f.accountId)?.name ?? ''} · ${f.name}` }))
+      )
+    )
+  }, [])
   // 「发送到连接器」的可选项：已连接实例 × 其动作
   const [connectorOptions, setConnectorOptions] = useState<{ value: string; label: string }[]>([])
   useEffect(() => {
@@ -237,7 +249,7 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                 const actions = [...r.actions]
                 actions[i] = {
                   type: v as RuleActionType,
-                  value: v === 'setCategory' ? 'personal' : v === 'runConnector' ? connectorOptions[0]?.value : undefined
+                  value: v === 'setCategory' ? 'personal' : v === 'runConnector' ? connectorOptions[0]?.value : v === 'moveFolder' ? folderOptions[0]?.value : undefined
                 }
                 props.onChange({ ...r, actions })
               }}
@@ -252,6 +264,17 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
                   props.onChange({ ...r, actions })
                 }}
                 options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            )}
+            {a.type === 'moveFolder' && folderOptions.length > 0 && (
+              <Select
+                value={a.value ?? folderOptions[0].value}
+                onChange={v => {
+                  const actions = [...r.actions]
+                  actions[i] = { ...a, value: v }
+                  props.onChange({ ...r, actions })
+                }}
+                options={folderOptions}
               />
             )}
             {a.type === 'runConnector' &&

@@ -4,7 +4,7 @@ import { GeneralTab } from './tabs/GeneralTab'
 import { AccountsTab } from './tabs/AccountsTab'
 import { NotificationsTab } from './tabs/NotificationsTab'
 import { SignaturesTab, TemplatesTab } from './tabs/ContentTabs'
-import { RulesTab } from './tabs/RulesTab'
+import { AutomationTab } from './tabs/AutomationTab'
 import { AiTab } from './tabs/AiTab'
 import { IntegrationsTab } from './tabs/IntegrationsTab'
 import { BackupTab } from './tabs/BackupTab'
@@ -19,7 +19,7 @@ const TABS = [
   { id: 'notifications', label: '通知', icon: IconBell },
   { id: 'signatures', label: '签名', icon: IconCompose },
   { id: 'templates', label: '模板', icon: IconBook },
-  { id: 'rules', label: '规则', icon: IconLayers },
+  { id: 'rules', label: '自动化', icon: IconLayers },
   { id: 'ai', label: 'AI', icon: IconSparkles },
   { id: 'integrations', label: '集成', icon: IconPlug },
   { id: 'backup', label: '备份', icon: IconArchive }
@@ -75,7 +75,7 @@ export default function SettingsApp() {
         {tab === 'notifications' && <NotificationsTab />}
         {tab === 'signatures' && <SignaturesTab />}
         {tab === 'templates' && <TemplatesTab />}
-        {tab === 'rules' && <RulesTab />}
+        {tab === 'rules' && <AutomationTab />}
         {tab === 'ai' && <AiTab />}
         {tab === 'integrations' && <IntegrationsTab />}
         {tab === 'backup' && <BackupTab />}

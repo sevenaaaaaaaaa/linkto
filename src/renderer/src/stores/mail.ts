@@ -56,6 +56,12 @@ interface MailState {
   syncProgress: Record<string, string>
   /** AI 自然语言搜索的结果集（非 null 时列表由它驱动） */
   nlResults: MessageSummary[] | null
+  /** 账户栏选中的账户（null = 全部账户）：收件箱切到该账户，旗标/置顶/稍后等视图按它过滤 */
+  accountCtx: string | null
+  /** 逐封处理模式：一次只看一封「需要你处理」的邮件，用大按钮快速清空 */
+  triage: boolean
+  /** 阅读页右侧栏：上下文（发件人 / 记忆 / 承诺）或 Agent 对话；null = 收起 */
+  rail: 'context' | 'agent' | null
 
   loadAccounts(): Promise<void>
   loadFolders(): Promise<void>
@@ -70,12 +76,19 @@ interface MailState {
   setGroupThreads(v: boolean): void
   setPinned(ids: string[], pinned: boolean): Promise<void>
   setSyncProgress(accountId: string, text: string): void
+  setAccountCtx(id: string | null): void
+  setTriage(v: boolean): void
+  /** 再点一次当前模式 = 收起 */
+  toggleRail(mode: 'context' | 'agent'): void
 }
+
+/** 这些全局视图在选中某个账户时只显示该账户的邮件 */
+const ACCOUNT_FILTERED_SCOPES = new Set<ScopeKind>(['flagged', 'pinned', 'snoozed', 'followup', 'unread', 'newsletter', 'category', 'screener'])
 
 export const useMail = create<MailState>((set, get) => ({
   accounts: [],
   folders: [],
-  scope: { kind: 'unified', title: '统一收件箱' },
+  scope: { kind: 'unified', title: '收件箱' },
   messages: [],
   total: 0,
   selectedId: null,
@@ -87,6 +100,9 @@ export const useMail = create<MailState>((set, get) => ({
   lastClickedId: null,
   syncProgress: {},
   nlResults: null,
+  accountCtx: null,
+  triage: false,
+  rail: (localStorage.getItem('ms_rail') as 'context' | 'agent' | null) || 'context',
 
   loadAccounts: async () => {
     const accounts = await api.listAccounts()
@@ -117,7 +133,9 @@ export const useMail = create<MailState>((set, get) => ({
         limit: 100,
         offset: 0
       })
-      set({ messages: page.items, total: page.total, loading: false })
+      const ctx = get().accountCtx
+      const items = ctx && ACCOUNT_FILTERED_SCOPES.has(scope.kind) ? page.items.filter(m => m.accountId === ctx) : page.items
+      set({ messages: items, total: items.length === page.items.length ? page.total : items.length, loading: false })
     } catch {
       set({ loading: false })
     }
@@ -171,5 +189,25 @@ export const useMail = create<MailState>((set, get) => ({
 
   setSyncProgress: (accountId, text) => {
     set({ syncProgress: { ...get().syncProgress, [accountId]: text } })
+  },
+
+  setTriage: v => set({ triage: v }),
+
+  toggleRail: mode => {
+    const next = get().rail === mode ? null : mode
+    localStorage.setItem('ms_rail', next ?? '')
+    set({ rail: next })
+  },
+
+  setAccountCtx: id => {
+    set({ accountCtx: id })
+    const acc = id ? get().accounts.find(a => a.id === id) : null
+    const { scope } = get()
+    // 在收件箱类视图里切账户 = 切到该账户收件箱；其他视图保持当前视图，只换过滤
+    if (scope.kind === 'unified' || scope.kind === 'account' || scope.kind === 'folder') {
+      get().setScope(acc ? { kind: 'account', accountId: acc.id, title: acc.name } : { kind: 'unified', title: '收件箱' })
+    } else {
+      void get().loadMessages()
+    }
   }
 }))

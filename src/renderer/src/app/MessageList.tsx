@@ -1,4 +1,3 @@
-import { avatarStyle } from '../lib/avatar'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useMail, sortMessages } from '../stores/mail'
@@ -7,7 +6,10 @@ import { subjectIsAuth } from '../lib/auth-detect'
 import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing } from '../components/icons'
-import type { BulkTodo, Folder, ListSort, MessageSummary } from '@shared/types'
+import type { BulkTodo, Folder, ListSort, MailInsight, MessageSummary, TodayBrief } from '@shared/types'
+import { goView } from '../lib/route'
+import { noteMouseAction } from './Guidance'
+import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
@@ -26,48 +28,27 @@ const SORT_LABEL: Record<ListSort, string> = {
 /** 标签过滤维度：AI 分类 + 状态切片 */
 type ListFilter = 'all' | 'personal' | 'notification' | 'newsletter' | 'noise' | 'unread' | 'attach' | 'flagged' | 'pinned'
 
-/** 头像：发件人低彩度色相 + 右下角账户色点（多账户归属不丢，视觉权重让给未读状态） */
-function Avatar({ name, color }: { name: string; color?: string }) {
-  const letter = [...name.trim()][0]?.toUpperCase() ?? '?'
-  return (
-    <div className="relative w-8 h-8 shrink-0">
-      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium" style={avatarStyle(name)}>
-        {letter}
-      </div>
-      {color && (
-        <i
-          className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full"
-          style={{ background: color, boxShadow: '0 0 0 2px var(--surface-strong)' }}
-        />
-      )}
-    </div>
-  )
-}
-
-/** 多选模式判定（store 派生）：打开的那一封不算「勾选」 */
-const useMultiMode = () => useMail(st => st.selectedIds.size > 1 || (st.selectedIds.size === 1 && !st.selectedIds.has(st.selectedId ?? '')))
-
-/** 头像位勾选框：悬停或多选模式下头像切换为勾选框（不额外占列宽，审计 IA-8） */
-function RowCheck(props: { checked: boolean; show: boolean; onToggle(): void; children: React.ReactNode }) {
+/** 行首 16px 槽位：平时是未读点，悬停 / 多选时变勾选框（不额外占列宽） */
+function RowSlot(props: { checked: boolean; show: boolean; unread: boolean; onToggle(): void }) {
   return (
     <div
-      className="relative w-8 h-8 shrink-0"
+      className="relative w-4 h-[18px] shrink-0 flex items-center justify-center"
       onClick={e => {
         if (!props.show) return
         e.stopPropagation()
         props.onToggle()
       }}
     >
-      <div className="transition-opacity" style={{ opacity: props.show ? 0 : 1, transitionDuration: 'var(--dur-1)' }}>{props.children}</div>
+      {!props.show && props.unread && <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent)' }} aria-label="未读" />}
       {props.show && (
         <span
           role="checkbox"
           aria-checked={props.checked}
-          className="absolute inset-0 m-auto w-[18px] h-[18px] rounded-full border-[1.5px] flex items-center justify-center fade-in"
+          className="w-4 h-4 rounded-[var(--r-xs)] border-[1.5px] flex items-center justify-center fade-in"
           style={{ borderColor: props.checked ? 'var(--accent)' : 'var(--border-strong)', background: props.checked ? 'var(--accent)' : 'var(--surface-strong)' }}
         >
           {props.checked && (
-            <svg viewBox="0 0 24 24" width={11} height={11} fill="none" stroke="var(--on-accent)" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" width={10} height={10} fill="none" stroke="var(--on-accent)" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
@@ -76,6 +57,23 @@ function RowCheck(props: { checked: boolean; show: boolean; onToggle(): void; ch
     </div>
   )
 }
+
+/** AI 一句话要点：关键短语荧光标出；没有理解结果时退回摘要片段 */
+function GistLine(props: { msg: MessageSummary; insight?: MailInsight }) {
+  const { insight, msg } = props
+  if (!insight?.gist) return <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
+  const [pre, key, post] = splitKey(insight.gist, insight.gistKey)
+  return (
+    <div className="mt-0.5 text-xs leading-[18px] line-clamp-2" style={{ color: 'var(--muted)' }} title={insight.source === 'ai' ? 'AI 要点' : '要点'}>
+      {pre}
+      {key && <mark className="hl">{key}</mark>}
+      {post}
+    </div>
+  )
+}
+
+/** 多选模式判定（store 派生）：打开的那一封不算「勾选」 */
+const useMultiMode = () => useMail(st => st.selectedIds.size > 1 || (st.selectedIds.size === 1 && !st.selectedIds.has(st.selectedId ?? '')))
 
 function RowMeta(props: { msg: MessageSummary }) {
   const { msg } = props
@@ -101,6 +99,7 @@ function RowMeta(props: { msg: MessageSummary }) {
 
 function MessageRow(props: {
   msg: MessageSummary
+  insight?: MailInsight
   accountColor?: string
   selected: boolean
   checked: boolean
@@ -116,7 +115,10 @@ function MessageRow(props: {
 
   const quick = (e: React.MouseEvent, action: 'archive' | 'flag' | 'trash' | 'pin') => {
     e.stopPropagation()
-    if (action === 'archive') void api.moveMessages([msg.id], 'archive').then(() => useMail.getState().loadMessages())
+    if (action === 'archive') {
+      noteMouseAction('archive')
+      void api.moveMessages([msg.id], 'archive').then(() => useMail.getState().loadMessages())
+    }
     if (action === 'flag') void api.markFlagged([msg.id], !msg.flagged).then(() => useMail.getState().loadMessages())
     if (action === 'trash') void api.deleteMessages([msg.id]).then(() => useMail.getState().loadMessages())
     if (action === 'pin') props.onPin()
@@ -142,17 +144,15 @@ function MessageRow(props: {
         e.dataTransfer.setData('text/ms-mail-ids', ids.join(','))
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      className={`relative flex gap-3 pl-3 pr-3 py-2 border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
+      className={`relative flex gap-2.5 pl-4 pr-3 py-2.5 border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
       style={{
         viewTransitionName: `mrow-${msg.id}`,
         background: props.selected || checked ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent'
       }}
     >
-      {props.selected && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r-full" style={{ background: 'var(--accent)' }} />}
-      {msg.unread && !props.selected && <span className="absolute left-1 top-[15px] w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} aria-label="未读" />}
-      <RowCheck checked={checked} show={hover || multi} onToggle={props.onToggle}>
-        <Avatar name={displayName(msg.from)} color={props.accountColor} />
-      </RowCheck>
+      {/* 账户色条：同一个颜色贯穿账户栏 · 列表 · 阅读页「收于」标签 */}
+      {props.accountColor && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: props.accountColor, opacity: props.selected ? 1 : 0.85 }} />}
+      <RowSlot checked={checked} show={hover || multi} unread={msg.unread} onToggle={props.onToggle} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 h-[18px]">
           <span className={`truncate text-sm ${msg.unread ? 'font-semibold' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
@@ -160,13 +160,13 @@ function MessageRow(props: {
           </span>
           <RowMeta msg={msg} />
           {!(hover && !multi) && (
-            <span className="ml-auto shrink-0 text-xs tnum" style={{ color: msg.unread ? 'var(--accent-ink)' : 'var(--faint)' }}>{fmtDate(msg.date)}</span>
+            <span className="ml-auto shrink-0 text-xs tnum" style={{ color: msg.unread ? 'var(--fg)' : 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{fmtDate(msg.date)}</span>
           )}
         </div>
         <div className={`mt-0.5 truncate text-sm ${msg.unread ? 'font-medium' : ''}`} style={{ color: msg.unread ? 'var(--fg)' : 'var(--muted)' }}>
           {msg.subject || '（无主题）'}
         </div>
-        <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--faint)' }}>{msg.snippet}</div>
+        <GistLine msg={msg} insight={props.insight} />
       </div>
 
       {/* 悬停快捷操作 */}
@@ -239,13 +239,11 @@ function ThreadRow(props: {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         data-lens-id={latest.id}
-        className="relative flex gap-3 px-3 py-2 border-b border-[var(--border-soft)] cursor-default transition-colors"
+        className="relative flex gap-2.5 pl-4 pr-3 py-2.5 border-b border-[var(--border-soft)] cursor-default transition-colors"
         style={{ viewTransitionName: `mrow-${latest.id}`, background: props.anyChecked && threadMulti ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent' }}
       >
-        {latest.unread && <span className="absolute left-1 top-[15px] w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} aria-label="未读" />}
-        <RowCheck checked={props.anyChecked && threadMulti} show={hover || threadMulti} onToggle={props.onToggleCheck}>
-          <Avatar name={participants[participants.length - 1] ?? ''} color={props.colorByAccount[latest.accountId]} />
-        </RowCheck>
+        {props.colorByAccount[latest.accountId] && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: props.colorByAccount[latest.accountId], opacity: 0.85 }} />}
+        <RowSlot checked={props.anyChecked && threadMulti} show={hover || threadMulti} unread={latest.unread} onToggle={props.onToggleCheck} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className={`truncate text-sm ${latest.unread ? 'font-semibold' : ''}`} style={{ color: 'var(--fg)' }}>
@@ -365,6 +363,18 @@ export function MessageList() {
   }, [syncProgress, messages, scope, folders])
 
   const colorByAccount = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a.color])), [accounts])
+
+  // —— 邮件理解：AI 一句话要点 / 分区，列表可见邮件批量取 ——
+  const insights = useInsights(st => st.byId)
+  useEffect(() => {
+    void useInsights.getState().load(messages.map(m => m.id))
+  }, [messages])
+  const [sectioned, setSectioned] = useState(() => localStorage.getItem('ms_sections') !== '0')
+  const toggleSectioned = () => {
+    const v = !sectioned
+    setSectioned(v)
+    localStorage.setItem('ms_sections', v ? '1' : '0')
+  }
   const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
 
   // —— 重力混合排序：时间分 × (1-t) + 重要分 × t；t=0 保持原排序，t>0 液态接管 ——
@@ -460,6 +470,39 @@ export function MessageList() {
         : ({ kind: 'msg' as const, msg: g.msgs[0] })
     )
   }, [timed, groupThreads])
+
+  // AI 分区：收件箱（全部 / 单账户）且没有其他筛选时生效；其他视图维持原列表
+  const sectionMode = sectioned && (scope.kind === 'unified' || scope.kind === 'account') && filter === 'all' && timeCut == null && !gravity && !useMail.getState().nlResults
+  const sections = useMemo(() => {
+    const act: MessageSummary[] = []
+    const wait: MessageSummary[] = []
+    const fyi: MessageSummary[] = []
+    const bundles: Record<'newsletter' | 'notification', MessageSummary[]> = { newsletter: [], notification: [] }
+    for (const m of timed) {
+      const ins = insights[m.id]
+      if (m.pinned) {
+        act.push(m)
+        continue
+      }
+      if (!ins) {
+        // 理解结果未到：按原分类先放，避免整页空白
+        if (m.category === 'newsletter') bundles.newsletter.push(m)
+        else if (m.category === 'notification' || m.category === 'noise') bundles.notification.push(m)
+        else fyi.push(m)
+        continue
+      }
+      if (ins.section === 'act') act.push(m)
+      else if (ins.section === 'wait') wait.push(m)
+      else if (ins.section === 'bundle' && ins.bundle === 'newsletter') bundles.newsletter.push(m)
+      else if (ins.section === 'bundle') bundles.notification.push(m)
+      else fyi.push(m)
+    }
+    // 「需要你处理」默认按 AI 紧急度排（原「魔法排序」并入这里），置顶恒在最前
+    act.sort((a, b) => Number(b.pinned) - Number(a.pinned) || (insights[b.id]?.urgency ?? 0) - (insights[a.id]?.urgency ?? 0) || b.date - a.date)
+    return { act, wait, fyi, bundles }
+  }, [timed, insights])
+  const [openBundle, setOpenBundle] = useState<string | null>(null)
+  const [fyiOpen, setFyiOpen] = useState(() => localStorage.getItem('ms_fyi_open') !== '0')
 
   useEffect(() => setSearchLocal(searchQuery), [searchQuery])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
@@ -669,7 +712,10 @@ export function MessageList() {
     ...(Object.keys(SORT_LABEL) as ListSort[]).map(k => ({ kind: 'check' as const, label: SORT_LABEL[k], checked: sort === k, onSelect: () => setSort(k) })),
     { kind: 'sep' },
     { kind: 'check', label: '按会话聚合', checked: groupThreads, onSelect: () => setGroupThreads(!groupThreads) },
-    ...(scope.kind === 'unified' ? [{ kind: 'check' as const, label: '重要 / 其他 双轨', checked: splitInbox, onSelect: toggleSplit }] : []),
+    ...(scope.kind === 'unified' || scope.kind === 'account'
+      ? [{ kind: 'check' as const, label: 'AI 分区（需要你处理 / 等待对方 / 打包）', checked: sectioned, onSelect: toggleSectioned }]
+      : []),
+    ...(scope.kind === 'unified' && !sectioned ? [{ kind: 'check' as const, label: '重要 / 其他 双轨', checked: splitInbox, onSelect: toggleSplit }] : []),
     { kind: 'sep' },
     { kind: 'check', label: '邮箱时光机', icon: <IconClock width={13} height={13} />, checked: timeOpen, onSelect: toggleTime },
     { kind: 'check', label: '重力滑块', icon: <IconSparkles width={13} height={13} />, checked: gravityOpen || gravity > 0, onSelect: () => { if (gravityOpen || gravity > 0) { setGravity(0); setGravityOpen(false) } else setGravityOpen(true) } },
@@ -810,6 +856,18 @@ export function MessageList() {
           </span>
         )}
         <div className="flex-1" />
+
+        {sectionMode && sections.act.length > 0 && (
+          <button
+            onClick={() => useMail.getState().setTriage(true)}
+            title="逐封处理：一次一封，归档 / 稍后 / 回复，快速清空「需要你处理」"
+            className="no-drag shrink-0 h-7 px-2.5 inline-flex items-center gap-1.5 rounded-[var(--r-sm)] text-xs font-semibold ai-chip transition-transform active:scale-95"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--ai-ink)' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z" /></svg>
+            {narrow ? sections.act.length : `逐封处理 ${sections.act.length}`}
+          </button>
+        )}
 
         {/* 分段控件：全部 / 未读（+ 当前生效的筛选）；完整维度在「筛选」菜单 */}
         <div className="no-drag shrink-0 flex items-center p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="tablist">
@@ -1116,7 +1174,39 @@ export function MessageList() {
             )}
           </div>
         )}
-        {(splitInbox && scope.kind === 'unified' ? splitView(view) : [{ key: 'all', items: view, important: false }]).map(section => (
+        {sectionMode && messages.length > 0 && (
+          <SectionedInbox
+            sections={sections}
+            renderRow={m => (
+              <MessageRow
+                key={m.id}
+                msg={m}
+                insight={insights[m.id]}
+                accountColor={accounts.length > 1 ? colorByAccount[m.accountId] : undefined}
+                selected={selectedId === m.id}
+                checked={selectedIds.has(m.id)}
+                onSelect={e => {
+                  if (e.shiftKey) toggleSelect(m.id, true)
+                  else select(m.id)
+                }}
+                onToggle={() => toggleSelect(m.id)}
+                onPin={() => void setPinned([m.id], !m.pinned)}
+                onSnooze={ids => setSnoozeMenuFor(ids)}
+              />
+            )}
+            openBundle={openBundle}
+            onToggleBundle={k => setOpenBundle(o => (o === k ? null : k))}
+            fyiOpen={fyiOpen}
+            onToggleFyi={() =>
+              setFyiOpen(o => {
+                localStorage.setItem('ms_fyi_open', o ? '0' : '1')
+                return !o
+              })
+            }
+            onNudge={id => setNudgeId(id)}
+          />
+        )}
+        {!sectionMode && (splitInbox && scope.kind === 'unified' ? splitView(view) : [{ key: 'all', items: view, important: false }]).map(section => (
           <div key={section.key}>
             {section.items.length > 0 && splitInbox && scope.kind === 'unified' && (
               <div
@@ -1136,7 +1226,8 @@ export function MessageList() {
             <MessageRow
               key={item.msg.id}
               msg={item.msg}
-              accountColor={colorByAccount[item.msg.accountId]}
+              insight={insights[item.msg.id]}
+              accountColor={accounts.length > 1 ? colorByAccount[item.msg.accountId] : undefined}
               selected={selectedId === item.msg.id}
               checked={selectedIds.has(item.msg.id)}
               onSelect={e => {
@@ -1674,6 +1765,219 @@ function NudgePanel(props: { messageId: string; onClose(): void }) {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+type Sections = {
+  act: MessageSummary[]
+  wait: MessageSummary[]
+  fyi: MessageSummary[]
+  bundles: Record<'newsletter' | 'notification', MessageSummary[]>
+}
+
+/**
+ * AI 分区收件箱：今日简报 → 需要你处理 → 等待对方 → 打包（订阅 / 通知 / 新发件人）→ 其他。
+ * 原「个人 / 通知 / 订阅 / 噪声」分类、跟进判断、魔法排序、待审批在这里合成一个视图。
+ */
+function SectionedInbox(props: {
+  sections: Sections
+  renderRow(m: MessageSummary): React.ReactNode
+  openBundle: string | null
+  onToggleBundle(k: string): void
+  fyiOpen: boolean
+  onToggleFyi(): void
+  onNudge(id: string): void
+}) {
+  const { sections: sec } = props
+  const accountCtx = useMail(st => st.accountCtx)
+  const [pending, setPending] = useState(0)
+  useEffect(() => {
+    void api.screenerPendingCount().then(setPending).catch(() => {})
+  }, [sec])
+  const bundleDefs: { key: 'newsletter' | 'notification'; title: string; cta: string }[] = [
+    { key: 'newsletter', title: '订阅', cta: '全部已读' },
+    { key: 'notification', title: '通知', cta: '全部已读' }
+  ]
+  const markAllRead = async (list: MessageSummary[]) => {
+    const ids = list.filter(m => m.unread).map(m => m.id)
+    if (!ids.length) return
+    await api.markRead(ids, true)
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已标记 ${ids.length} 封为已读` }))
+    await useMail.getState().loadMessages()
+  }
+  const archiveAll = async (list: MessageSummary[]) => {
+    await api.moveMessages(list.map(m => m.id), 'archive')
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已归档 ${list.length} 封` }))
+    await useMail.getState().loadMessages()
+  }
+
+  return (
+    <div className="pb-6">
+      <TodayBriefCard accountId={accountCtx} />
+
+      <SectionHeader label="需要你处理" count={sec.act.length} hint="AI 按紧急度排序" />
+      {sec.act.map(props.renderRow)}
+      {!sec.act.length && (
+        <div className="mx-4 my-2 px-3 py-3 rounded-[var(--r-md)] text-sm ai-chip" style={{ fontWeight: 500 }}>
+          需要你处理的已经清空。
+        </div>
+      )}
+
+      {sec.wait.length > 0 && (
+        <>
+          <SectionHeader label="等待对方" count={sec.wait.length} hint="你发出、对方还没回" />
+          {sec.wait.map(m => (
+            <div key={m.id} className="relative group/wait">
+              {props.renderRow(m)}
+              <button
+                onClick={() => props.onNudge(m.id)}
+                className="absolute right-3 bottom-2 text-2xs px-2 h-6 rounded-[var(--r-xs)] border border-[var(--border)] opacity-0 group-hover/wait:opacity-100 transition-opacity"
+                style={{ background: 'var(--surface-strong)', color: 'var(--fg)' }}
+              >
+                催一下
+              </button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {(sec.bundles.newsletter.length > 0 || sec.bundles.notification.length > 0 || pending > 0) && (
+        <SectionHeader label="打包" count={sec.bundles.newsletter.length + sec.bundles.notification.length + pending} hint="AI 自动归组，不打扰你" />
+      )}
+      {bundleDefs.map(b => {
+        const list = sec.bundles[b.key]
+        if (!list.length) return null
+        const open = props.openBundle === b.key
+        const unread = list.filter(m => m.unread).length
+        const senders = [...new Set(list.map(m => displayName(m.from)))].slice(0, 3).join('、')
+        return (
+          <div key={b.key} className="border-b border-[var(--border-soft)]">
+            <button onClick={() => props.onToggleBundle(b.key)} aria-expanded={open} className="w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-left hover:bg-[var(--hover)] transition-colors">
+              <span className="w-7 h-7 shrink-0 rounded-[var(--r-sm)] inline-flex items-center justify-center text-xs font-semibold tnum" style={{ background: 'var(--bg-soft)', color: 'var(--fg)', fontFamily: 'var(--font-mono)' }}>
+                {list.length}
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-semibold" style={{ color: 'var(--fg)' }}>
+                  {b.title}
+                  {unread > 0 && <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--muted)' }}>{unread} 封未读</span>}
+                </span>
+                <span className="block text-xs truncate" style={{ color: 'var(--faint)' }}>{senders}</span>
+              </span>
+              <IconChevron open={open} />
+            </button>
+            {open && (
+              <div className="fade-in">
+                <div className="flex gap-2 pl-14 pr-3 pb-2">
+                  <button onClick={() => void markAllRead(list)} className="text-xs h-7 px-2.5 rounded-[var(--r-sm)] border border-[var(--border)] hover:bg-[var(--hover)]" style={{ color: 'var(--fg)' }}>
+                    {b.cta}
+                  </button>
+                  <button onClick={() => void archiveAll(list)} className="text-xs h-7 px-2.5 rounded-[var(--r-sm)] border border-[var(--border)] hover:bg-[var(--hover)]" style={{ color: 'var(--fg)' }}>
+                    全部归档
+                  </button>
+                  {b.key === 'newsletter' && (
+                    <button onClick={() => goView('insights')} className="text-xs h-7 px-2.5 rounded-[var(--r-sm)] ai-chip font-medium">
+                      看 AI 摘要
+                    </button>
+                  )}
+                </div>
+                {list.map(props.renderRow)}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {pending > 0 && (
+        <button
+          onClick={() => useMail.getState().setScope({ kind: 'screener', title: '待审批发件人' })}
+          className="w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-left border-b border-[var(--border-soft)] hover:bg-[var(--hover)]"
+        >
+          <span className="w-7 h-7 shrink-0 rounded-[var(--r-sm)] inline-flex items-center justify-center text-xs font-semibold" style={{ background: 'var(--bg-soft)', color: 'var(--fg)', fontFamily: 'var(--font-mono)' }}>{pending}</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold" style={{ color: 'var(--fg)' }}>新发件人待审批</span>
+            <span className="block text-xs" style={{ color: 'var(--faint)' }}>放行后才进入收件箱，AI 可以帮你判定</span>
+          </span>
+          <IconChevron open={false} />
+        </button>
+      )}
+
+      {sec.fyi.length > 0 && (
+        <>
+          <SectionHeader label="其他" count={sec.fyi.length} hint={props.fyiOpen ? '收起' : '展开'} onClick={props.onToggleFyi} />
+          {props.fyiOpen && sec.fyi.map(props.renderRow)}
+        </>
+      )}
+    </div>
+  )
+}
+
+function SectionHeader(props: { label: string; count: number; hint?: string; onClick?(): void }) {
+  const Tag = props.onClick ? 'button' : 'div'
+  return (
+    <Tag
+      onClick={props.onClick}
+      className="sticky top-0 z-10 w-full flex items-center gap-2 pl-4 pr-3 h-8 border-b border-[var(--border-soft)] text-left"
+      style={{ background: 'var(--surface-strong)' }}
+    >
+      <span className="text-xs font-semibold" style={{ color: 'var(--fg)' }}>{props.label}</span>
+      <span className="text-xs tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{props.count}</span>
+      {props.hint && <span className="ml-auto text-2xs" style={{ color: 'var(--faint)' }}>{props.hint}</span>}
+    </Tag>
+  )
+}
+
+function IconChevron(props: { open: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: props.open ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-2) var(--ease-out)' }}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+/** 今日简报：一两句话 + 计数；点开是完整的每日商情（原智能洞察页） */
+function TodayBriefCard(props: { accountId: string | null }) {
+  const [brief, setBrief] = useState<TodayBrief | null>(null)
+  const [hidden, setHidden] = useState(() => sessionStorage.getItem('ms_brief_hidden') === '1')
+  useEffect(() => {
+    let alive = true
+    const load = () => void api.todayBrief(props.accountId).then(b => alive && setBrief(b)).catch(() => {})
+    load()
+    const off = api.onEvent(ev => {
+      const t = (ev as { type: string }).type
+      if (t === 'mail-insights' || t === 'messages-changed') load()
+    })
+    return () => {
+      alive = false
+      void off()
+    }
+  }, [props.accountId])
+  if (!brief || hidden || (!brief.lines.length && !brief.actCount)) return null
+  return (
+    <div className="mx-3 mt-3 mb-2 rounded-[var(--r-md)] px-3.5 py-3 flex gap-3 items-start" style={{ background: 'var(--ai-soft)' }}>
+      <span className="w-6 h-6 shrink-0 rounded-[var(--r-sm)] inline-flex items-center justify-center ai-chip">
+        <IconSparkles width={13} height={13} />
+      </span>
+      <div className="flex-1 min-w-0 text-sm leading-relaxed">
+        <div className="font-semibold" style={{ color: 'var(--fg)' }}>{brief.headline}</div>
+        {brief.lines.slice(0, 2).map((l, i) => (
+          <div key={i} className="text-xs leading-[18px]" style={{ color: 'var(--muted)' }}>{l}</div>
+        ))}
+        <button onClick={() => goView('insights')} className="mt-1 text-xs font-medium underline underline-offset-2" style={{ color: 'var(--fg)' }}>
+          完整简报
+        </button>
+      </div>
+      <button
+        onClick={() => {
+          sessionStorage.setItem('ms_brief_hidden', '1')
+          setHidden(true)
+        }}
+        aria-label="今天不再显示"
+        title="今天不再显示"
+        className="icon-btn w-6 h-6 shrink-0 inline-flex items-center justify-center"
+        style={{ color: 'var(--faint)' }}
+      >
+        <IconClose width={11} height={11} />
+      </button>
     </div>
   )
 }

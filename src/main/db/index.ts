@@ -16,7 +16,8 @@ import type {
   Rule,
   Signature,
   AgentMemory,
-  MemoryScope
+  MemoryScope,
+  MailInsight
 } from '@shared/types'
 
 export interface AccountRow extends AccountConfig {
@@ -124,6 +125,7 @@ export class MailStore {
     this.db.prepare('DELETE FROM attachments WHERE message_id = ?').run(id)
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
     this.db.prepare('DELETE FROM thread_map WHERE message_id = ?').run(id)
+    this.db.prepare('DELETE FROM mail_ai WHERE message_id = ?').run(id)
   }
 
   // ================= 文件夹 =================
@@ -1138,6 +1140,35 @@ export class MailStore {
     return new Set(rows.map(r => r.message_id as string))
   }
 
+  // ================= 邮件理解缓存（mail_ai） =================
+
+  /** 批量读取已缓存的邮件理解结果 */
+  getMailAi(ids: string[]): Record<string, MailInsight> {
+    const out: Record<string, MailInsight> = {}
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500)
+      if (!part.length) continue
+      const rows = this.db
+        .prepare(`SELECT message_id, data, source, updated_at FROM mail_ai WHERE message_id IN (${part.map(() => '?').join(',')})`)
+        .all(...part) as { message_id: string; data: string; source: string; updated_at: number }[]
+      for (const r of rows) {
+        const data = j<MailInsight | null>(r.data, null)
+        if (!data) continue
+        out[r.message_id] = { ...data, messageId: r.message_id, source: r.source === 'ai' ? 'ai' : 'heuristic', updatedAt: r.updated_at }
+      }
+    }
+    return out
+  }
+
+  saveMailAi(insight: MailInsight) {
+    this.db
+      .prepare(
+        `INSERT INTO mail_ai (message_id, data, source, updated_at) VALUES (?,?,?,?)
+         ON CONFLICT(message_id) DO UPDATE SET data=excluded.data, source=excluded.source, updated_at=excluded.updated_at`
+      )
+      .run(insight.messageId, JSON.stringify(insight), insight.source, insight.updatedAt)
+  }
+
   // ================= 统计 =================
 
   counts(): { messages: number; accounts: number; kb: number } {
@@ -1386,6 +1417,13 @@ export class MailStore {
     created_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS idx_screening_status ON sender_screening(status);
+
+  CREATE TABLE IF NOT EXISTS mail_ai (
+    message_id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    source TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
   CREATE TABLE IF NOT EXISTS smart_views (
     id TEXT PRIMARY KEY,

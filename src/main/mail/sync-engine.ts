@@ -9,7 +9,7 @@ import { DEFAULT_GENERAL } from '../store'
 import { heuristicClassify, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
 import { parseEmailRaw } from './parse-pool'
-import type { Rule, RuleAction } from '@shared/types'
+import type { FolderPref, Rule, RuleAction } from '@shared/types'
 
 const SEP = '::'
 export const folderIdOf = (accountId: string, path: string) => `${accountId}${SEP}${path}`
@@ -128,6 +128,8 @@ export class AccountWorker {
   private processingBody = false
   private cycle = 0
   private rules: Rule[] = []
+  /** 文件夹偏好读取器（sync=false 的文件夹只登记不同步；收件箱永远同步） */
+  private getFolderPrefs: () => Record<string, FolderPref> = () => ({})
   /** 上次完整同步时间；0 表示下一轮必须完整同步 */
   private lastFullSync = 0
   /** IDLE 收到 EXPUNGE：下一轮收件箱同步需要做删除对账 */
@@ -151,6 +153,10 @@ export class AccountWorker {
 
   setRules(rules: Rule[]) {
     this.rules = rules
+  }
+
+  setFolderPrefsGetter(getter: () => Record<string, FolderPref>) {
+    this.getFolderPrefs = getter
   }
 
   start() {
@@ -393,6 +399,11 @@ export class AccountWorker {
     )
     const seen = new Set<string>()
     const failed: string[] = []
+    // 每轮完整同步重新读取文件夹偏好（用户在 UI 中关闭同步后下一轮即生效）
+    let prefs: Record<string, FolderPref> = {}
+    try {
+      prefs = this.getFolderPrefs()
+    } catch { /* 偏好读取失败按全部同步处理 */ }
     for (const f of sorted) {
       if (!this.running) return
       this.touchActivity()
@@ -421,6 +432,8 @@ export class AccountWorker {
       })
       // Gmail 的 [Gmail]、Proton 的 Folders/Labels 等容器不可 SELECT，强行进入会让整轮同步失败
       if (f.flags?.has('\\Noselect') || f.flags?.has('\\NonExistent')) continue
+      // 用户关闭同步的文件夹：保留文件夹行，跳过拉取（收件箱不可关闭）
+      if (special !== 'inbox' && prefs[id]?.sync === false) continue
       try {
         await this.syncFolder(f.path, special, true)
       } catch (err) {
@@ -1043,7 +1056,9 @@ export class SyncEngine {
     private events: SyncEvents,
     private getRules: () => Rule[],
     /** 账户凭据（密码 / OAuth access token），由宿主注入；force 表示 OAuth 强制刷新 */
-    private getCredentials: (account: AccountConfig, force?: boolean) => Promise<{ pass?: string; accessToken?: string }> = async () => ({})
+    private getCredentials: (account: AccountConfig, force?: boolean) => Promise<{ pass?: string; accessToken?: string }> = async () => ({}),
+    /** 文件夹偏好（每轮完整同步读取；sync=false 的非收件箱文件夹跳过拉取） */
+    private getFolderPrefs: () => Record<string, FolderPref> = () => ({})
   ) {}
 
   startAccount(account: AccountConfig) {
@@ -1065,6 +1080,7 @@ export class SyncEngine {
       account.authType === 'oauth' ? (id, force) => this.getCredentials(account, force).then(c => c.accessToken ?? '') : undefined
     )
     worker.setRules(this.getRules())
+    worker.setFolderPrefsGetter(this.getFolderPrefs)
     this.workers.set(account.id, worker)
     worker.start()
   }

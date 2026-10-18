@@ -56,14 +56,24 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
 
   // ---- 菜单栏托盘 ----
   try {
-    const icon = nativeImage.createFromPath(joinAppRenderer('logo.png'))
-    if (!icon.isEmpty()) {
+    // 优先用模板图（纯黑 + alpha），Electron 会自动加载同目录的 @2x 版本；
+    // 设为 template 后 macOS 按菜单栏明暗自动着色
+    let trayIcon = nativeImage.createFromPath(joinAppRenderer('tray-Template.png'))
+    if (!trayIcon.isEmpty()) {
+      trayIcon.setTemplateImage(true)
+    } else {
+      // 模板图缺失时回退到彩色 logo
+      const icon = nativeImage.createFromPath(joinAppRenderer('logo.png'))
       // 1x + 2x 两档表示：只给 18px 单倍图时 Retina 菜单栏会按 2 倍拉伸发糊
-      const trayIcon = nativeImage.createEmpty()
-      for (const scaleFactor of [1, 2]) {
-        const size = 18 * scaleFactor
-        trayIcon.addRepresentation({ scaleFactor, buffer: icon.resize({ width: size, height: size, quality: 'best' }).toPNG() })
+      trayIcon = nativeImage.createEmpty()
+      if (!icon.isEmpty()) {
+        for (const scaleFactor of [1, 2]) {
+          const size = 18 * scaleFactor
+          trayIcon.addRepresentation({ scaleFactor, buffer: icon.resize({ width: size, height: size, quality: 'best' }).toPNG() })
+        }
       }
+    }
+    if (!trayIcon.isEmpty()) {
       tray = new Tray(trayIcon)
       tray.setToolTip('LinkTo 林可兔')
       tray.setContextMenu(

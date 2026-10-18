@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useView } from '../lib/route'
+import { useView, goView } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
+import { AccountRail } from './AccountRail'
+import { FolderManager } from './FolderManager'
+import { TriageView } from './TriageView'
+import { ContextRail } from './ContextRail'
+import { MovePalette } from './MovePalette'
+import { CoachTip } from './Guidance'
+import { useInsightEvents } from '../lib/insights'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
 import { KbView } from './KbView'
@@ -17,6 +24,9 @@ import type { ScheduledSend } from '@shared/types'
 
 export function MailShell() {
   const view = useView()
+  const triage = useMail(st => st.triage)
+  const rail = useMail(st => st.rail)
+  useInsightEvents()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [outbox, setOutbox] = useState<ScheduledSend[]>([])
@@ -108,6 +118,22 @@ export function MailShell() {
         setPaletteOpen(o => !o)
         return
       }
+      // ⌘J：阅读页右侧栏切到 Agent（再按一次收起）
+      if (meta && (e.key === 'j' || e.key === 'J')) {
+        e.preventDefault()
+        goView('mail')
+        useMail.getState().toggleRail('agent')
+        return
+      }
+      // ⌘1…⌘9 切到第 N 个账户，⌘0 回到全部账户（与账户栏顺序一致）
+      if (meta && /^[0-9]$/.test(e.key) && !typing) {
+        e.preventDefault()
+        const { accounts, setAccountCtx } = useMail.getState()
+        const n = Number(e.key)
+        if (n === 0) setAccountCtx(null)
+        else if (accounts[n - 1]) setAccountCtx(accounts[n - 1].id)
+        return
+      }
       if (meta && (e.key === 't' || e.key === 'T') && !typing) {
         e.preventDefault()
         const next = cycleTheme()
@@ -145,7 +171,12 @@ export function MailShell() {
           subject: `回复：${state.messages[idx]?.subject ?? ''}`,
           relatedMessageId: state.selectedId
         } as never)
-      } else if (e.key === 'a' && state.selectedId) {
+      } else if ((e.key === 'v' || e.key === 'V') && state.selectedId) {
+        // 移动面板：AI 先猜目标文件夹
+        e.preventDefault()
+        const ids = state.selectedIds.size > 1 ? [...state.selectedIds] : [state.selectedId]
+        window.dispatchEvent(new CustomEvent('ms:move', { detail: ids }))
+      } else if ((e.key === 'a' || e.key === 'e') && state.selectedId) {
         const id = state.selectedId
         // Triage：归档后自动跳下一封（单遍清空节奏）
         const next = state.messages[idx + 1] ?? state.messages[idx - 1]
@@ -174,16 +205,21 @@ export function MailShell() {
 
   return (
     <div className="h-full flex">
+      <AccountRail />
       <Sidebar />
+      <FolderManager />
+      <CoachTip />
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />
-          {/* 液态投放井：仅邮件视图；发件队列打开时自动上移让位 */}
-          <DropWell bottom={outbox.length ? 296 : 24} />
+          <ContextRail />
+          <MovePalette />
+          {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}
+          {!rail && <DropWell bottom={outbox.length ? 296 : 24} />}
         </>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

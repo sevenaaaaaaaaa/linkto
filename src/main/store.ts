@@ -53,6 +53,8 @@ export const DEFAULT_AI: AISettings = {
   // 自动化会把新邮件内容发给所配置的 AI 服务：默认关闭，由用户在 设置 → AI 主动开启
   autoInsights: false,
   autoDigest: false,
+  // 邮件理解：仅在 AI 已启用并配置后生效（aiReady），默认随 AI 一起打开
+  autoUnderstand: true,
   customPrompts: []
 }
 

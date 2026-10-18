@@ -1,5 +1,5 @@
 /*
- * Mail Studio 设计系统 v2 —— 石墨纸 + 铜绿（Phase C）
+ * LinkTo 设计系统 v3 ——「荧光签」：冷白纸底 + 墨黑 + 荧光（荧光只给 AI）
  * 全 oklch · 三层材质 · 7 级字号 · 4px 节拍 · 14/10/6/4 圆角 · 弹簧缓动
  * 运行时三层换肤（ThirdC 模式）：data-theme 明暗 / theme-override 预设 / 阅读皮肤
  */
@@ -7,6 +7,21 @@
 @import 'tailwindcss';
 
 /* ---------- 字体（自托管 woff2） ---------- */
+/* Geist 可变字体（OFL）：一份文件覆盖 100–900 字重；中文按字形回退到苹方 */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/geist-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/geist-mono-latin.woff2') format('woff2');
+}
 @font-face {
   font-family: 'Space Grotesk';
   font-style: normal;
@@ -65,31 +80,43 @@
  * 基色计算 —— 主题预设只需覆盖 --accent 等基色，派生色自动跟随。
  * ================================================================ */
 
-/* ---------- 1 · 色板（浅色 = 石墨纸） ---------- */
+/* ---------- 1 · 色板（浅色 = 冷白纸） ---------- */
 :root {
-  --bg: oklch(97.6% 0.004 95);
-  --bg-soft: oklch(95.2% 0.005 95);
-  --surface: oklch(99.4% 0.002 95 / 0.72);
-  --surface-strong: oklch(99.4% 0.002 95);
-  --fg: oklch(21% 0.008 260);
-  --muted: oklch(43% 0.008 260);
-  --faint: oklch(53.5% 0.008 260);
-  --border: oklch(89% 0.004 260);
-  --border-strong: oklch(80% 0.006 260);
-  --border-soft: oklch(from var(--fg) l c h / 0.07);
+  --bg: oklch(96.9% 0.003 255);
+  --bg-soft: oklch(94.6% 0.004 255);
+  --surface: oklch(100% 0 0 / 0.86);
+  --surface-strong: oklch(100% 0 0);
+  --fg: oklch(17.5% 0.012 260);
+  --muted: oklch(43% 0.012 260);
+  --faint: oklch(53% 0.01 260);
+  --border: oklch(91.5% 0.005 260);
+  --border-strong: oklch(83% 0.007 260);
+  --border-soft: oklch(from var(--fg) l c h / 0.075);
   --hover: oklch(from var(--fg) l c h / 0.045);
   --hover-strong: oklch(from var(--fg) l c h / 0.085);
-  --scrim: oklch(15% 0.01 260 / 0.32);
+  --scrim: oklch(15% 0.01 260 / 0.34);
 
-  /* Accent · 铜绿 Verdigris —— 全应用唯一品牌色 */
-  --accent: oklch(52% 0.105 192);
-  --accent-strong: oklch(from var(--accent) calc(l - 0.06) c h);
-  --accent-ink: oklch(from var(--accent) calc(l - 0.07) calc(c * 0.95) h);
-  --accent-soft: oklch(from var(--accent) l c h / 0.12);
-  --selected: oklch(from var(--accent) l c h / 0.1);
+  /* Accent · 墨 —— 主操作与选中态用墨色；彩色只留给账户色与 AI 荧光 */
+  --accent: oklch(19% 0.012 260);
+  --accent-strong: oklch(from var(--accent) calc(l + 0.06) c h);
+  --accent-ink: var(--accent);
+  --accent-soft: oklch(from var(--accent) l c h / 0.07);
+  --selected: oklch(from var(--accent) l c h / 0.065);
   --accent-2: var(--accent);
-  --accent-grad: linear-gradient(180deg, oklch(from var(--accent) calc(l + 0.035) c h), oklch(from var(--accent) calc(l - 0.02) c h));
+  --accent-grad: linear-gradient(180deg, oklch(from var(--accent) calc(l + 0.06) c h), var(--accent));
   --on-accent: oklch(100% 0 0);
+
+  /* AI · 荧光 —— 只用于 AI 产出（要点标记、划重点、AI 建议的主按钮），看到荧光 = AI 帮你划的 */
+  --ai: oklch(91% 0.2 121);
+  --ai-ink: oklch(19% 0.03 121);
+  --ai-soft: oklch(from var(--ai) l c h / 0.22);
+  --ai-line: oklch(from var(--ai) calc(l - 0.3) c h);
+  --hl: oklch(from var(--ai) l c h / 0.62);
+  /* 账户栏：深墨底 */
+  --rail-bg: oklch(17.5% 0.012 260);
+  --rail-fg: oklch(97% 0.003 255);
+  --rail-muted: oklch(68% 0.01 260);
+  --rail-line: oklch(100% 0 0 / 0.1);
 
   /* 语义色：fill · ink（文字）· soft（底） */
   --ok: oklch(52% 0.13 148);
@@ -122,17 +149,17 @@
   --edge-lo: oklch(21% 0.008 260 / 0.06);
   --inner-glow: oklch(100% 0 0 / 0.18);
   --glow-dot: oklch(100% 0 0 / 0.14);
-  --blob-a: oklch(80% 0.06 192 / 0.2);
+  --blob-a: transparent;
   --blob-b: transparent;
-  --blob-c: oklch(88% 0.02 95 / 0.3);
+  --blob-c: transparent;
   --shadow-sm: 0 1px 2px oklch(21% 0.008 260 / 0.06), 0 4px 12px -6px oklch(21% 0.008 260 / 0.12);
   --shadow: 0 2px 6px oklch(21% 0.008 260 / 0.06), 0 20px 48px -20px oklch(21% 0.008 260 / 0.28);
   --shadow-float: 0 1px 0 oklch(100% 0 0 / 0.5) inset, 0 2px 8px oklch(21% 0.008 260 / 0.08), 0 24px 56px -20px oklch(21% 0.008 260 / 0.32);
 
   /* ---------- 2 · 字号 ---------- */
-  --font-display: 'Space Grotesk', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Space Grotesk', 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-display: 'Geist', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', system-ui, sans-serif;
+  --font-body: 'Geist', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --tracking-caps: 0.06em;
   --tracking-tight: -0.01em;
 
@@ -144,8 +171,10 @@
   --control-h: 28px;
   --control-h-lg: 32px;
   /* 栏宽随视口收缩：放大显示（⌘+ / 系统「更大字体」缩放）后 CSS 视口变窄，固定栏宽会把阅读区挤没 */
-  --sidebar-w: clamp(184px, 18vw, 232px);
-  --list-w: clamp(300px, 30vw, 360px);
+  --rail-w: 64px;
+  --sidebar-w: clamp(176px, 15vw, 216px);
+  --list-w: clamp(300px, 30vw, 400px);
+  --context-w: clamp(240px, 20vw, 300px);
   --pad-pane: 16px;
 
   /* ---------- 4 · 圆角与描边 ---------- */
@@ -167,28 +196,38 @@
   color-scheme: light;
 }
 
-/* ---------- 1 · 色板（深色 = 石墨夜） ---------- */
+/* ---------- 1 · 色板（深色 = 墨夜） ---------- */
 [data-theme='dark'] {
-  --bg: oklch(17.5% 0.006 260);
-  --bg-soft: oklch(20% 0.006 260);
-  --surface: oklch(21.5% 0.007 260 / 0.72);
-  --surface-strong: oklch(21.5% 0.007 260);
-  --fg: oklch(94% 0.004 95);
-  --muted: oklch(73% 0.006 260);
-  --faint: oklch(62% 0.007 260);
+  --bg: oklch(14.5% 0.006 260);
+  --bg-soft: oklch(17% 0.007 260);
+  --surface: oklch(18.5% 0.007 260 / 0.86);
+  --surface-strong: oklch(18.5% 0.007 260);
+  --fg: oklch(94.5% 0.004 260);
+  --muted: oklch(74% 0.008 260);
+  --faint: oklch(63% 0.008 260);
   --border: oklch(100% 0 0 / 0.09);
   --border-strong: oklch(100% 0 0 / 0.16);
   --border-soft: oklch(100% 0 0 / 0.055);
   --hover: oklch(100% 0 0 / 0.05);
   --hover-strong: oklch(100% 0 0 / 0.09);
-  --scrim: oklch(0% 0 0 / 0.5);
+  --scrim: oklch(0% 0 0 / 0.55);
 
-  --accent: oklch(78% 0.11 188);
-  --accent-strong: oklch(from var(--accent) calc(l + 0.06) c h);
-  --accent-ink: oklch(from var(--accent) calc(l + 0.07) calc(c * 0.9) h);
-  --accent-soft: oklch(from var(--accent) l c h / 0.14);
-  --selected: oklch(from var(--accent) l c h / 0.13);
-  --on-accent: oklch(18% 0.03 190);
+  --accent: oklch(94.5% 0.004 260);
+  --accent-strong: oklch(from var(--accent) calc(l - 0.06) c h);
+  --accent-ink: var(--accent);
+  --accent-soft: oklch(from var(--accent) l c h / 0.09);
+  --selected: oklch(from var(--accent) l c h / 0.085);
+  --on-accent: oklch(16% 0.01 260);
+
+  --ai: oklch(90% 0.2 121);
+  --ai-ink: oklch(19% 0.03 121);
+  --ai-soft: oklch(from var(--ai) l c h / 0.16);
+  --ai-line: var(--ai);
+  --hl: oklch(from var(--ai) l c h / 0.3);
+  --rail-bg: oklch(10.5% 0.005 260);
+  --rail-fg: oklch(95% 0.004 260);
+  --rail-muted: oklch(66% 0.008 260);
+  --rail-line: oklch(100% 0 0 / 0.08);
 
   --ok: oklch(76% 0.13 148);
   --warn: oklch(80% 0.12 75);
@@ -217,9 +256,9 @@
   --edge-lo: oklch(0% 0 0 / 0.3);
   --inner-glow: oklch(100% 0 0 / 0.04);
   --glow-dot: oklch(100% 0 0 / 0.08);
-  --blob-a: oklch(55% 0.08 192 / 0.14);
+  --blob-a: transparent;
   --blob-b: transparent;
-  --blob-c: oklch(40% 0.02 260 / 0.22);
+  --blob-c: transparent;
   --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.3), 0 4px 12px -6px oklch(0% 0 0 / 0.4);
   --shadow: 0 2px 6px oklch(0% 0 0 / 0.3), 0 20px 48px -20px oklch(0% 0 0 / 0.65);
   --shadow-float: 0 1px 0 oklch(100% 0 0 / 0.06) inset, 0 2px 8px oklch(0% 0 0 / 0.3), 0 24px 56px -20px oklch(0% 0 0 / 0.7);
@@ -304,6 +343,10 @@
   --color-on-accent: var(--on-accent);
   --color-selected: var(--selected);
   --color-hover: var(--hover);
+  --color-ai: var(--ai);
+  --color-ai-ink: var(--ai-ink);
+  --color-ai-soft: var(--ai-soft);
+  --color-hl: var(--hl);
 
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
@@ -362,6 +405,20 @@
   --color-blue-400: var(--accent-strong);
   --color-blue-500: var(--accent);
   --color-blue-700: oklch(from var(--accent) calc(l - 0.08) c h);
+}
+
+/* ---------- AI 荧光标记：只用于 AI 产出（要点关键短语、正文划重点） ---------- */
+mark.hl {
+  background: var(--hl);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.ai-chip {
+  background: var(--ai);
+  color: var(--ai-ink);
 }
 
 /* ---------- 基础壳层 ---------- */

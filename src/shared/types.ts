@@ -315,6 +315,8 @@ export type RuleActionType =
   | 'notify'
   /** 执行连接器动作，value = `${instanceId}:${actionId}` */
   | 'runConnector'
+  /** 移到文件夹，value = 目标文件夹 id（同账户） */
+  | 'moveFolder'
 
 export interface RuleAction {
   type: RuleActionType
@@ -362,6 +364,8 @@ export interface AISettings {
   autoInsights: boolean
   /** 每天自动生成当日商情（重点 / digest / 备忘录 / 清理建议）（需 AI） */
   autoDigest: boolean
+  /** 新邮件自动「邮件理解」（要点 / 分区 / 实体 / 建议动作，结果本地缓存）（需 AI） */
+  autoUnderstand: boolean
   /** 用户自定义咒语：启用后追加到所有 AI 功能的系统提示 */
   customPrompts: CustomPrompt[]
 }
@@ -482,6 +486,8 @@ export type MailEvent =
   | { type: 'connectors-changed' }
   | { type: 'ghost-changed' }
   | { type: 'ai-local-download'; modelId: string; received: number; total: number; percent: number; done?: boolean; error?: string }
+  /** 邮件理解结果新增/更新（AI 结果异步到达） */
+  | { type: 'mail-insights'; ids: string[] }
 
 // ---------- 智能洞察 ----------
 
@@ -654,4 +660,64 @@ export interface GhostSendDraft {
   text: string
   /** 投递通道：mail=邮箱哑管道（默认）/ relay=匿名中继（伪装 HTTPS，无需邮箱账户） */
   via?: 'mail' | 'relay'
+}
+
+// ---------- 邮件理解（每封一次 AI/启发式理解，列表 / 阅读页 / 今日简报 / Agent 共用） ----------
+
+export type MailSection = 'act' | 'wait' | 'fyi' | 'bundle'
+export type MailBundle = 'newsletter' | 'notification' | 'screener'
+
+export interface MailEntity {
+  kind: 'time' | 'deadline' | 'money' | 'code' | 'link' | 'tracking'
+  /** 显示用短标签，如「周三 15:00」「¥12,800」「482913」 */
+  label: string
+  /** 机器可用值：ISO 时间 / 数字金额字符串 / 验证码 / URL */
+  value: string
+  action: 'calendar' | 'todo' | 'copy' | 'open' | null
+}
+
+export interface MailNextAction {
+  kind: 'reply' | 'todo' | 'snooze' | 'archive' | 'open' | 'forward'
+  /** 按钮文字即建议，如「回复：周三 15:00 可以」「稍后到周三上午」「建待办：准备预算」 */
+  label: string
+  /** reply/forward: 草稿正文（纯文本）；todo: 标题；snooze: until 'YYYY-MM-DD HH:mm'；open: url */
+  body?: string
+  title?: string
+  due?: string | null
+  until?: string
+  url?: string
+}
+
+export interface MailInsight {
+  messageId: string
+  section: MailSection
+  bundle: MailBundle | null
+  /** 一句话要点（≤60 字），列表行和阅读页要点卡共用 */
+  gist: string
+  /** gist 里需要荧光标出的关键短语（必须是 gist 的子串），可为 null */
+  gistKey: string | null
+  /** 0-100，「需要你处理」分区内排序依据 */
+  urgency: number
+  entities: MailEntity[]
+  /** 正文里值得荧光划出的原句片段（必须逐字出现在正文中，≤4 条，每条 ≤80 字） */
+  highlights: string[]
+  next: MailNextAction[]
+  /** 快速回复草稿（纯文本，可空） */
+  quickReply: string
+  source: 'ai' | 'heuristic'
+  updatedAt: number
+}
+
+export interface FolderPref {
+  pinned: boolean
+  sync: boolean
+}
+
+export interface TodayBrief {
+  headline: string
+  lines: string[]
+  actCount: number
+  waitCount: number
+  dueToday: number
+  source: 'ai' | 'heuristic'
 }

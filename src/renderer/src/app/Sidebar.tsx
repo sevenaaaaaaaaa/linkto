@@ -2,16 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
+import { OnboardingCard } from './Guidance'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconChevronRight, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
-  IconReplyAll, IconSave, IconClose
+  IconChevronDown, IconRefresh, IconPin, IconSparkles, IconRobot, IconClock, IconShield,
+  IconReplyAll, IconSave, IconClose, IconSearch
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
-import type { Folder, SpecialFolder } from '@shared/types'
+import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
 
 /**
- * 侧边栏 —— Phase B 信息架构：核心 / 队列 / 智能 / 账户 四区
+ * 侧边栏行组件与分组（v3 结构见 Sidebar）
  * - 分类过滤（个人 / 通知 / 订阅 / 噪声）不再占侧栏，改由列表头「筛选」与 ⌘K 承接（审计 IA-2 / IA-4）
  * - 激活态只由「当前视图 + scope」单一来源计算，杜绝双激活（审计 IA-1）
  * - L1 玻璃材质；行高 28px（--row-side-h）；选中 = --selected 底 + accent-ink 文字
@@ -112,68 +113,22 @@ const SPECIAL_LABEL: Record<string, string> = {
   all: '所有邮件'
 }
 
-function AccountRow(props: {
-  acc: { id: string; name: string; color: string; status: string; statusText: string }
-  folders: Folder[]
-  activeFolderId?: string
-  onPick(f: Folder, title: string): void
-}) {
-  const [open, toggle] = useGroupOpen(`acc_${props.acc.id}`, false)
-  const inbox = props.folders.find(f => f.special === 'inbox')
-  const others = props.folders.filter(f => f !== inbox)
-  const unread = props.folders.filter(f => f.special === 'inbox').reduce((s, f) => s + f.unread, 0)
-  const status = props.acc.status
-  return (
-    <div>
-      <Row
-        color={props.acc.color}
-        label={props.acc.name}
-        unread={unread}
-        active={!!inbox && props.activeFolderId === inbox.id}
-        onClick={() => inbox && props.onPick(inbox, `${props.acc.name} · 收件箱`)}
-        trailing={
-          <>
-            {status === 'syncing' && <IconRefresh width={11} height={11} className="spinning shrink-0" style={{ color: 'var(--faint)' }} />}
-            {status === 'error' && <span title={props.acc.statusText} className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--danger)' }} />}
-            <span
-              role="button"
-              title={open ? '收起文件夹' : '展开文件夹'}
-              onClick={e => {
-                e.stopPropagation()
-                toggle()
-              }}
-              className="w-5 h-5 -mr-1 shrink-0 inline-flex items-center justify-center rounded-[var(--r-xs)] opacity-0 group-hover:opacity-100 hover:bg-[var(--hover-strong)]"
-              style={{ color: 'var(--muted)', opacity: open ? 1 : undefined }}
-            >
-              {open ? <IconChevronDown width={11} height={11} /> : <IconChevronRight width={11} height={11} />}
-            </span>
-          </>
-        }
-      />
-      {open &&
-        others.map(f => (
-          <Row
-            key={f.id}
-            indent={1}
-            icon={folderIcon(f)}
-            label={SPECIAL_LABEL[f.special ?? ''] ?? f.name}
-            unread={f.special === null ? f.unread : 0}
-            muteCount
-            active={props.activeFolderId === f.id}
-            onClick={() => props.onPick(f, `${props.acc.name} · ${SPECIAL_LABEL[f.special ?? ''] ?? f.name}`)}
-          />
-        ))}
-      {open && !props.folders.length && (
-        <div className="pl-[34px] pr-2 h-6 flex items-center text-xs" style={{ color: 'var(--faint)' }}>
-          {status === 'error' ? props.acc.statusText || '连接失败' : status === 'connected' ? '暂无文件夹' : '同步中…'}
-        </div>
-      )}
-    </div>
-  )
+/** 文件夹偏好（常用 / 同步），由「管理文件夹」面板修改 */
+export function useFolderPrefs(): Record<string, FolderPref> {
+  const [prefs, setPrefs] = useState<Record<string, FolderPref>>({})
+  useEffect(() => {
+    const load = () => void api.getFolderPrefs().then(setPrefs).catch(() => {})
+    load()
+    window.addEventListener('ms:folder-prefs', load)
+    return () => window.removeEventListener('ms:folder-prefs', load)
+  }, [])
+  return prefs
 }
 
-function folderIcon(f: Folder) {
-  const p = { width: 14, height: 14 }
+export const folderLabel = (f: Folder) => (f.special ? SPECIAL_LABEL[f.special] ?? f.name : f.path.replace(/^Folders\//, '').replace(/[/.]/g, ' / '))
+
+function folderIcon(f: Folder, color?: string) {
+  const p = { width: 14, height: 14, style: color ? { color } : undefined }
   switch (f.special) {
     case 'sent':
       return <IconSend {...p} />
@@ -183,18 +138,26 @@ function folderIcon(f: Folder) {
       return <IconArchive {...p} />
     case 'trash':
       return <IconTrash {...p} />
+    case 'junk':
+      return <IconShield {...p} />
     default:
       return <IconFolder {...p} />
   }
 }
 
+/**
+ * 侧栏（v3）：账户切换交给左侧账户栏，这里只回答「在这个账户里看什么」。
+ * - 核心：收件箱（AI 分区）· 等待对方 · 稍后 · 旗标 · 置顶；待审批只在有人排队时出现
+ * - 文件夹：只显示「常用」（管理面板里钉选）；选中账户时附带它的已发送 / 归档 / 废纸篓
+ * - 智能：今日简报 · Agent · 知识库 · 我的视图
+ */
 export function Sidebar() {
-  const { accounts, folders, scope, setScope } = useMail()
+  const { accounts, folders, scope, setScope, accountCtx } = useMail()
   const view = useView()
+  const prefs = useFolderPrefs()
   const [pendingCount, setPendingCount] = useState(0)
-  const [queueOpen, toggleQueue] = useGroupOpen('queue', true)
+  const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
-  const [accOpen, toggleAcc] = useGroupOpen('accounts', true)
 
   useEffect(() => {
     const load = () => void api.screenerPendingCount().then(setPendingCount).catch(() => {})
@@ -205,7 +168,17 @@ export function Sidebar() {
     return () => void off()
   }, [])
 
-  const totalUnread = useMemo(() => folders.filter(f => f.special === 'inbox').reduce((s, f) => s + f.unread, 0), [folders])
+  const ctxAccount = accountCtx ? accounts.find(a => a.id === accountCtx) ?? null : null
+  const inScope = (f: Folder) => !accountCtx || f.accountId === accountCtx
+  const inboxUnread = useMemo(
+    () => folders.filter(f => f.special === 'inbox' && inScope(f)).reduce((s, f) => s + f.unread, 0),
+    [folders, accountCtx]
+  )
+  const colorOf = (accountId: string) => accounts.find(a => a.id === accountId)?.color
+  const pinned = folders.filter(f => inScope(f) && !f.hidden && prefs[f.id]?.pinned)
+  const standard = ctxAccount
+    ? folders.filter(f => f.accountId === ctxAccount.id && ['sent', 'archive', 'junk', 'trash'].includes(f.special ?? '') && !prefs[f.id]?.pinned)
+    : []
 
   /** 邮件视图下的激活判断（非邮件视图时一律不激活） */
   const is = (k: Scope['kind']) => view === 'mail' && scope.kind === k
@@ -213,73 +186,116 @@ export function Sidebar() {
     goView('mail')
     setScope(next)
   }
+  const goInbox = () =>
+    go(ctxAccount ? { kind: 'account', accountId: ctxAccount.id, title: ctxAccount.name } : { kind: 'unified', title: '收件箱' })
   const ico = { width: 15, height: 15 }
 
   return (
-    <div className="glass relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
-      {/* 标题栏（红绿灯区）52px：写邮件按钮与列表搜索、阅读工具栏同一基线 */}
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center justify-end pl-[76px] pr-2">
+    <div className="relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--bg)' }}>
+      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
+        <div className="flex-1 min-w-0 flex flex-col leading-tight">
+          <span className="text-sm font-semibold truncate" style={{ color: 'var(--fg)' }}>{ctxAccount ? ctxAccount.name : '全部账户'}</span>
+          <span className="text-2xs truncate" style={{ color: 'var(--faint)' }}>{ctxAccount ? ctxAccount.email : `${accounts.length} 个邮箱`}</span>
+        </div>
         <button
-          onClick={() => api.openCompose()}
+          onClick={() => api.openCompose(ctxAccount ? ({ accountId: ctxAccount.id } as never) : undefined)}
           title="写邮件（⌘N）"
-          className="no-drag btn-liquid h-7 px-2.5 inline-flex items-center gap-1.5 rounded-[var(--r-sm)] text-xs font-semibold"
+          aria-label="写邮件"
+          className="no-drag h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] transition-transform active:scale-95"
+          style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
         >
-          <IconCompose width={13} height={13} /> 写邮件
+          <IconCompose width={15} height={15} />
+        </button>
+      </div>
+
+      <div className="px-2 pb-2">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
+          className="w-full h-8 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] text-sm border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors"
+          style={{ background: 'var(--surface-strong)', color: 'var(--faint)' }}
+        >
+          <IconSearch width={14} height={14} />
+          <span className="flex-1 text-left">搜索或直接提问</span>
+          <kbd className="text-2xs" style={{ fontFamily: 'var(--font-mono)' }}>⌘K</kbd>
         </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
-        <Row icon={<IconInbox {...ico} />} label="统一收件箱" unread={totalUnread} active={is('unified')} onClick={() => go({ kind: 'unified', title: '统一收件箱' })} />
+        <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
+        <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />
+        <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />
         <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />
         <Row icon={<IconPin {...ico} />} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />
+        {pendingCount > 0 && (
+          <Row icon={<IconShield {...ico} />} label="待审批发件人" unread={pendingCount} active={is('screener')} onClick={() => go({ kind: 'screener', title: '待审批发件人' })} />
+        )}
 
-        <GroupHeader label="队列" open={queueOpen} onToggle={toggleQueue} count={pendingCount} />
-        {queueOpen && (
+        <GroupHeader
+          label="文件夹"
+          open={foldersOpen}
+          onToggle={toggleFolders}
+          actions={
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('ms:folders'))}
+              className="text-2xs px-1.5 h-5 rounded-[var(--r-xs)] hover:bg-[var(--hover)]"
+              style={{ color: 'var(--muted)' }}
+            >
+              管理
+            </button>
+          }
+        />
+        {foldersOpen && (
           <>
-            <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />
-            <Row icon={<IconShield {...ico} />} label="待审批" unread={pendingCount} active={is('screener')} onClick={() => go({ kind: 'screener', title: '待审批发件人' })} />
-            <Row icon={<IconReplyAll {...ico} />} label="待跟进" active={is('followup')} onClick={() => go({ kind: 'followup', title: '待跟进（我发未回）' })} />
+            {pinned.map(f => (
+              <Row
+                key={f.id}
+                icon={folderIcon(f, colorOf(f.accountId))}
+                label={folderLabel(f)}
+                unread={f.special === null ? f.unread : 0}
+                muteCount
+                active={view === 'mail' && scope.kind === 'folder' && scope.folderId === f.id}
+                onClick={() => go({ kind: 'folder', folderId: f.id, title: folderLabel(f) })}
+              />
+            ))}
+            {standard.map(f => (
+              <Row
+                key={f.id}
+                icon={folderIcon(f)}
+                label={folderLabel(f)}
+                active={view === 'mail' && scope.kind === 'folder' && scope.folderId === f.id}
+                onClick={() => go({ kind: 'folder', folderId: f.id, title: `${ctxAccount?.name ?? ''} · ${folderLabel(f)}` })}
+              />
+            ))}
+            {!pinned.length && !standard.length && (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('ms:folders'))}
+                className="w-full text-left px-2 py-1.5 text-xs leading-relaxed rounded-[var(--r-sm)] hover:bg-[var(--hover)]"
+                style={{ color: 'var(--faint)' }}
+              >
+                把常用的文件夹钉到这里 →
+              </button>
+            )}
           </>
         )}
 
         <GroupHeader label="智能" open={smartOpen} onToggle={toggleSmart} />
         {smartOpen && (
           <>
-            <Row icon={<IconSparkles {...ico} />} label="洞察" active={view === 'insights'} onClick={() => goView('insights')} />
+            <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />
+            <Row
+              icon={<IconRobot {...ico} />}
+              label="Agent"
+              active={view === 'agent'}
+              onClick={() => goView('agent')}
+              trailing={<kbd className="text-2xs" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>⌘J</kbd>}
+            />
             <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />
-            <Row icon={<IconRobot {...ico} />} label="Agent" active={view === 'agent'} onClick={() => goView('agent')} />
             <SmartViewsSection />
           </>
         )}
 
-        <GroupHeader
-          label="账户"
-          open={accOpen}
-          onToggle={toggleAcc}
-          actions={
-            <span className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity mr-1">
-              <button onClick={() => accounts.forEach(a => void api.syncAccountNow(a.id))} title="立即同步全部账户" className="icon-btn w-5 h-5 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
-                <IconRefresh width={11} height={11} />
-              </button>
-              <button onClick={() => api.openSettings('accounts')} title="账户设置" className="icon-btn w-5 h-5 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
-                <IconSettings width={11} height={11} />
-              </button>
-            </span>
-          }
-        />
-        {accOpen &&
-          accounts.map(acc => (
-            <AccountRow
-              key={acc.id}
-              acc={acc}
-              folders={folders.filter(f => f.accountId === acc.id && !f.hidden)}
-              activeFolderId={view === 'mail' && scope.kind === 'folder' ? scope.folderId : undefined}
-              onPick={(f, title) => go({ kind: 'folder', folderId: f.id, title })}
-            />
-          ))}
-
         {!accounts.length && (
-          <div className="mt-2 px-2 text-xs" style={{ color: 'var(--faint)' }}>
+          <div className="mt-4 px-2 text-xs" style={{ color: 'var(--faint)' }}>
             还没有账户。
             <button className="block mt-1.5 hover:underline" style={{ color: 'var(--accent-ink)' }} onClick={() => api.openSettings('accounts')}>
               添加第一个邮箱 →
@@ -288,16 +304,11 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="shrink-0 h-11 border-t border-[var(--border-soft)] px-2 flex items-center gap-0.5">
+      <OnboardingCard />
+      <SyncFooter />
+
+      <div className="shrink-0 h-11 border-t border-[var(--border)] px-2 flex items-center gap-0.5">
         <ThemeMenu />
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
-          title="命令面板（⌘K）—— 所有视图与次级操作都在这里"
-          className="icon-btn h-7 px-2 text-2xs font-medium"
-          style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
-        >
-          ⌘K
-        </button>
         <div className="flex-1" />
         <button
           onClick={() => api.openGhost()}
@@ -316,6 +327,36 @@ export function Sidebar() {
         </button>
       </div>
     </div>
+  )
+}
+
+/** 同步状态：只在有异常或正在同步时占一行，正常时一行「已同步」，点击立即同步 */
+function SyncFooter() {
+  const { accounts, accountCtx, syncProgress } = useMail()
+  const list = accountCtx ? accounts.filter(a => a.id === accountCtx) : accounts
+  if (!list.length) return null
+  const bad = list.filter(a => a.status === 'error')
+  const busy = list.filter(a => a.status === 'syncing')
+  const progress = list.map(a => syncProgress[a.id]).filter(Boolean)[0]
+  const text = bad.length
+    ? `${bad[0].name}：${bad[0].statusText || '连接失败'}`
+    : busy.length
+      ? progress || '同步中…'
+      : '全部已同步'
+  return (
+    <button
+      onClick={() => list.forEach(a => void api.syncAccountNow(a.id))}
+      title={bad.length ? bad.map(a => `${a.name}：${a.statusText}`).join('\n') : '立即同步'}
+      className="mx-2 mb-2 px-2.5 py-2 flex items-center gap-2 rounded-[var(--r-sm)] text-left text-xs hover:bg-[var(--hover)]"
+      style={{ color: bad.length ? 'var(--danger-ink)' : 'var(--faint)' }}
+    >
+      {busy.length && !bad.length ? (
+        <IconRefresh width={12} height={12} className="spinning shrink-0" />
+      ) : (
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bad.length ? 'var(--danger)' : 'var(--ok)' }} />
+      )}
+      <span className="flex-1 min-w-0 truncate">{text}</span>
+    </button>
   )
 }
 
