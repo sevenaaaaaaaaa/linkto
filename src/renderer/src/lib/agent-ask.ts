@@ -8,11 +8,11 @@ export function askAgent(question: string) {
   pending = question
   goView('mail')
   if (useMail.getState().rail !== 'agent') useMail.getState().toggleRail('agent')
-  // Agent 栏已挂载时直接投递；未挂载时由 AgentChat 挂载后领取
+  // Agent 栏已挂载时直接投递；未挂载时由 AgentChatPanel 挂载后领取
   window.dispatchEvent(new CustomEvent('ms:agent-ask'))
 }
 
-/** AgentChat 领取待问的问题（只领一次） */
+/** AgentChatPanel 领取待问的问题（只领一次） */
 export function takePendingAsk(): string | null {
   const q = pending
   pending = null
