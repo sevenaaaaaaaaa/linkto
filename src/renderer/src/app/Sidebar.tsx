@@ -13,6 +13,8 @@ import {
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
+import { PinnedProjects, useProjectBadge, useProjectsRowActive } from './projects/ProjectBits'
+import { IconLayers } from '../components/icons'
 
 /**
  * 侧边栏行组件与分组（v3 结构见 Sidebar）
@@ -161,6 +163,8 @@ export function Sidebar() {
   const sb = usePrefs().sidebar
   useTodoEvents()
   const todoToday = todayCount(useTodos(st => st.todos))
+  const projectBadge = useProjectBadge()
+  const projectsActive = useProjectsRowActive()
   const [pendingCount, setPendingCount] = useState(0)
   const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
@@ -230,6 +234,8 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
         <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
+        <Row icon={<IconLayers {...ico} />} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
+        <PinnedProjects Row={Row} />
         {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
         {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
         {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}

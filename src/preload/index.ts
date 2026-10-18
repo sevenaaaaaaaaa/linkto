@@ -45,7 +45,10 @@ const METHOD_NAMES = [
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
   'todoIntegrationSyncNow', 'todoIntegrationDisconnect', 'calendarBusyBlocks',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
-  'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity'
+  'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity',
+  // 项目 / 时间线
+  'listProjects', 'getProject', 'saveProject', 'deleteProject', 'projectFromMessage', 'projectAddMessages', 'projectRemoveMessages',
+  'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects'
 ] as const
 
 const api = {} as LinkToApi

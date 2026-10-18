@@ -908,3 +908,15 @@ input[data-search-input]:focus-visible {
     display: none;
   }
 }
+
+/* ---------- 项目色：色相由项目色名决定（lib/projects），明度 / 彩度随明暗切换 ---------- */
+:root {
+  --proj-l: 58%;
+  --proj-c: 0.115;
+  --proj-soft-a: 0.13;
+}
+[data-theme='dark'] {
+  --proj-l: 74%;
+  --proj-c: 0.105;
+  --proj-soft-a: 0.17;
+}

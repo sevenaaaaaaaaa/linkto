@@ -74,6 +74,9 @@ export function PersonalTab() {
       <SettingRow label="今日简报卡" desc="收件箱顶部一两句话的当日重点">
         <Toggle checked={p.brief} onChange={v => setPrefs({ brief: v })} />
       </SettingRow>
+      <SettingRow label="项目标签" desc="属于某个项目的邮件，在发件人旁显示项目色点与短名">
+        <Toggle checked={p.projectTags} onChange={v => setPrefs({ projectTags: v })} />
+      </SettingRow>
 
       <SectionTitle>阅读</SectionTitle>
       <SettingRow label="正文字号">

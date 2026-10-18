@@ -27,6 +27,8 @@ export interface UiPrefs {
   sidebar: { followup: boolean; snoozed: boolean; flagged: boolean; pinned: boolean; brief: boolean; kb: boolean; onboarding: boolean }
   /** 单键快捷键（E / S / R / V / J / K）——与输入法冲突时可关闭 */
   singleKey: boolean
+  /** 列表行显示所属项目的小标签 */
+  projectTags: boolean
 }
 
 export const DEFAULT_PREFS: UiPrefs = {
@@ -40,7 +42,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   defaultRail: 'context',
   uiFont: 'geist',
   sidebar: { followup: true, snoozed: true, flagged: true, pinned: true, brief: true, kb: true, onboarding: true },
-  singleKey: true
+  singleKey: true,
+  projectTags: true
 }
 
 const KEY = 'ms_ui_prefs'

@@ -735,6 +735,55 @@ export interface ProjectData {
   auto: boolean
   notes?: string | null
   updatedAt?: number
+  // —— 以下为项目入口追加的可选字段 ——
+  /** 来源：手动新建 / 从邮件建 / AI 发现 */
+  source?: 'manual' | 'mail' | 'ai'
+  /** 钉在侧栏 */
+  pinned?: boolean
+  /** 手动添加的里程碑（时间线展示） */
+  milestones?: ProjectMilestone[]
+  /** 「建议归入」队列：拿不准的新邮件，等用户一键确认 */
+  suggestions?: ProjectSuggestion[]
+  /** 用户移出 / 拒绝过的会话：不再自动归入或建议 */
+  excludedThreadIds?: string[]
+  /** 最近一次 AI 摘要（规则版每次即时计算，不存） */
+  summary?: ProjectSummary | null
+}
+
+export interface ProjectMilestone {
+  id: string
+  at: number
+  title: string
+  done?: boolean
+}
+
+export interface ProjectSuggestion {
+  messageId: string
+  threadId: string
+  /** 0~100 归并分 */
+  score: number
+  /** 为什么建议：「对方域名 acme.example · 主题含“报价”」 */
+  reason: string
+  at: number
+  /** 建议时的邮件主题 / 发件人（列表直接展示，不必再查） */
+  subject?: string
+  from?: string
+}
+
+/** 项目摘要：现在进展到哪 / 卡在谁 / 下一步，每条可带来源邮件 */
+export interface ProjectSummary {
+  source: 'ai' | 'rule'
+  progress: string
+  blocker: string | null
+  /** 球在谁那边：me 等我处理 · them 等对方 · none 无人欠回复 */
+  waitingOn: 'me' | 'them' | 'none'
+  next: string[]
+  /** 引用的来源邮件（progress / blocker / next 里的 [1] [2] 对应下标 + 1） */
+  sources: { messageId: string; subject: string; date: number }[]
+  /** 规则版附带：最后一封往来 */
+  lastMail?: { messageId: string; from: string; to: string; subject: string; date: number; fromMe: boolean } | null
+  openTodos?: number
+  generatedAt: number
 }
 
 /** 营销灵感收藏条目（insights kind='swipe' 的 data） */

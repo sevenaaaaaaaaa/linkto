@@ -16,6 +16,7 @@ import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
 import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './MailSearch'
 import { useSearch } from '../stores/search'
+import { ProjectTag } from './projects/ProjectBits'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -106,6 +107,7 @@ function RowMeta(props: { msg: MessageSummary }) {
         </span>
       )}
       {badge && <span className={`text-2xs px-1 h-4 inline-flex items-center rounded-[var(--r-xs)] shrink-0 ${badge.cls}`}>{badge.label}</span>}
+      <ProjectTag msg={msg} />
       {msg.hasAttachments && <IconAttach width={12} height={12} className="shrink-0" style={{ color: 'var(--faint)' }} />}
       {msg.flagged && <IconFlag width={12} height={12} className="shrink-0" style={{ color: 'var(--warn)' }} />}
     </>

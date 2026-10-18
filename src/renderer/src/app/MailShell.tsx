@@ -17,6 +17,8 @@ import { KbView } from './KbView'
 import { InsightsView } from './InsightsView'
 import { AgentView } from './AgentView'
 import { AttachmentsView } from './attachments/AttachmentsView'
+import { ProjectsView } from './projects/ProjectsView'
+import { ProjectPickerHost } from './projects/ProjectBits'
 import { CommandPalette } from './CommandPalette'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
@@ -243,7 +245,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />
@@ -254,6 +256,7 @@ export function MailShell() {
         </>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ProjectPickerHost />
 
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (

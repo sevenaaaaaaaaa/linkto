@@ -23,6 +23,8 @@ import { friendlyFailure, isAIError, showToast as globalToast, toastAIError } fr
 import { useTodos } from '../lib/todos'
 import { goView } from '../lib/route'
 import { Markdown, markdownToHtml } from '../components/Markdown'
+import { ProjectStrip, projectMenuItems } from './projects/ProjectBits'
+import { useProjectIndex } from '../lib/projects'
 
 interface AIState {
   text: string
@@ -167,6 +169,7 @@ export function Reader() {
   const allTodos = useTodos(st => st.todos)
   const linkedTodos = msg ? allTodos.filter(t => t.messageId === msg.id && (t.status as string) !== 'dismissed') : []
   const account = msg ? accounts.find(a => a.id === msg.accountId) : undefined
+  const projectOf = useProjectIndex().of
   const [authDismissed, setAuthDismissed] = useState(false)
   useEffect(() => setAuthDismissed(false), [selectedId])
 
@@ -552,6 +555,8 @@ export function Reader() {
   const atts = msg.attachments.filter(a => !a.inline)
   const canUnsub = !!msg.listUnsubscribe
   const moreItems: MenuItem[] = [
+    ...projectMenuItems(msg, projectOf(msg)),
+    { kind: 'sep' },
     {
       kind: 'action',
       label: '转为待办',
@@ -716,6 +721,8 @@ export function Reader() {
           ))}
         </div>
       )}
+
+      <ProjectStrip msg={msg} />
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

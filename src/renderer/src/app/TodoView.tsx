@@ -11,6 +11,8 @@ import {
 } from '../lib/scheduler'
 import { IconSparkles, IconClose, IconPlus } from '../components/icons'
 import type { InsightRecord, TodoData, TodoChecklistItem } from '@shared/types'
+import { useProjectNames } from '../lib/projects'
+import { TodoProjectLink } from './projects/ProjectBits'
 
 /* ================================================================
  * 待办（GTD）：
@@ -138,6 +140,9 @@ export function TodoView() {
   const inbox = visible.filter(p => inInbox(p.todo))
   const organized = visible.filter(p => !inInbox(p.todo))
   const projects = useMemo(() => [...new Set(todos.filter(t => t.status === 'open').map(t => dataOf(t).project).filter((x): x is string => !!x))], [todos])
+  // 编辑器 / 整理条可选的项目：「项目」入口里进行中的项目 + 待办里已用过的
+  const projectNames = useProjectNames()
+  const projectChoices = useMemo(() => [...new Set([...projectNames, ...projects])], [projectNames, projects])
   const tags = useMemo(() => [...new Set(todos.filter(t => t.status === 'open').flatMap(t => dataOf(t).tags ?? []))], [todos])
   const usedContexts = useMemo(() => [...new Set(todos.filter(t => t.status === 'open').map(t => dataOf(t).context).filter((x): x is string => !!x))], [todos])
   const todayItems = plan.items.filter(i => i.start && new Date(i.start).toDateString() === new Date(now).toDateString())
@@ -379,7 +384,7 @@ export function TodoView() {
                         phase={phase}
                         delta={deltas[p.id]}
                         editing={editing === p.id}
-                        projects={projects}
+                        projects={projectChoices}
                         triage
                         onTriage={patch => void update(p.id, { ...patch, data: { ...(patch.data ?? {}), inbox: false } })}
                         onEdit={() => setEditing(e => (e === p.id ? null : p.id))}
@@ -423,7 +428,7 @@ export function TodoView() {
                           phase={phase}
                           delta={deltas[p.id]}
                           editing={editing === p.id}
-                          projects={projects}
+                          projects={projectChoices}
                           onEdit={() => setEditing(e => (e === p.id ? null : p.id))}
                           onDone={() => void complete(p.todo)}
                           onUpdate={patch => update(p.id, patch)}
@@ -875,6 +880,7 @@ function TodoEditor(props: { todo: InsightRecord; projects: string[]; onUpdate(p
             ))}
           </datalist>
         </label>
+        <TodoProjectLink name={project} />
         <label className={label}>
           情境
           <select defaultValue={d.context ?? ''} onChange={e => void save({ data: { context: e.target.value || undefined } })} className={field} style={fieldStyle}>

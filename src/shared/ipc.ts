@@ -423,3 +423,33 @@ export interface ComposeAssistInput {
   /** 正在回复 / 转发的原邮件（作为上下文） */
   relatedMessageId?: string
 }
+
+// ---------- 项目 / 时间线（与上面的 LinkToApi 声明合并；实现见 src/main/projects/ipc.ts） ----------
+
+export interface LinkToApi {
+  /** 全部项目 + 统计（最近动态 / 未读 / 待办 / 款项合计 / 附件数） */
+  listProjects(): Promise<import('./projects').ProjectListItem[]>
+  /** 项目详情：会话、待办、款项、附件、规则版摘要 */
+  getProject(id: string): Promise<import('./projects').ProjectDetail | null>
+  /** 新建（不传 id）或局部更新；改名会同步待办里的项目名；改了对方 / 关键词会回扫已有邮件 */
+  saveProject(input: { id?: string | null; data: Partial<import('./types').ProjectData> }): Promise<import('./projects').ProjectRecord>
+  deleteProject(id: string): Promise<void>
+  /** 从一封邮件 / 它所在的会话建项目（带入对方域名、成员、关键词、会话） */
+  projectFromMessage(messageId: string): Promise<import('./projects').ProjectRecord | null>
+  /** 把邮件（连同所在会话）加入项目 */
+  projectAddMessages(projectId: string, messageIds: string[]): Promise<import('./projects').ProjectRecord | null>
+  /** 把邮件所在会话移出项目，之后不再自动归入 */
+  projectRemoveMessages(projectId: string, messageIds: string[]): Promise<import('./projects').ProjectRecord | null>
+  /** 「建议归入」一键确认 / 忽略 */
+  projectResolveSuggestion(projectId: string, threadId: string, accept: boolean): Promise<import('./projects').ProjectRecord | null>
+  /** 按项目的对方 / 关键词回扫已有邮件 */
+  projectRescan(projectId: string): Promise<{ added: number; suggested: number }>
+  /** 项目时间线：邮件 / 附件 / 待办 / 款项 / 里程碑 */
+  projectTimeline(projectId: string): Promise<import('./projects').TimelineEvent[]>
+  /** 与某个联系人（邮箱地址）或公司（域名）的全部往来时间线 */
+  contactTimeline(key: string): Promise<import('./projects').ContactTimeline | null>
+  /** AI 项目摘要（进展 / 卡点 / 下一步 + 来源邮件）；AI 未配置时返回规则版 */
+  projectSummarize(projectId: string): Promise<{ ok: boolean; error?: string; summary: import('./types').ProjectSummary | null }>
+  /** 从最近 N 天的企业往来里发现候选项目（AI 已配置用 AI 聚类，否则按对方聚类） */
+  discoverProjects(days?: number): Promise<{ ok: boolean; error?: string; source: 'ai' | 'heuristic'; candidates: import('./projects').ProjectCandidate[] }>
+}

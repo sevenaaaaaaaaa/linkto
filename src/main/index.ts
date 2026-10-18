@@ -30,6 +30,8 @@ import { notifyLocalChange as notifyIntegrationChange } from './todo-integration
 import { DEFAULT_AI } from './store'
 import { classifyAccountError } from '@shared/errors'
 import { initAttachments, attachmentService } from './attachments'
+import { ProjectService } from './projects/service'
+import { registerProjectIpc } from './projects/ipc'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -128,6 +130,7 @@ let backupService: BackupService
 let ghost: GhostService
 let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
+let projects: ProjectService | null = null
 let mainWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 const composeWindows = new Set<BrowserWindow>()
@@ -520,6 +523,8 @@ async function bootstrap() {
     getWorker: accountId => engine?.getWorker(accountId),
     // 自动收集待办：「需要你处理」且有明确事项的邮件进待办（幂等）
     onInsight: ins => {
+      // 项目自动归并（同一会话 > 对方 > 关键词；拿不准的进「建议归入」）
+      projects?.onMessage(ins.messageId)
       const a = collectTodoFromInsight(mailStore, ins)
       const b = collectMeetingTodo(mailStore, ins)
       if (a || b) {
@@ -687,6 +692,8 @@ async function bootstrap() {
   const internal = registerIpc(ctx)
   // 附件中心：索引 / 分类 / 缓存策略 / 网盘归档（独立注册 api:attach* 通道）
   initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
+  projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
+  registerProjectIpc(projects)
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
   // 定期整理：已读的旧订阅 / 通知按设置天数自动归档

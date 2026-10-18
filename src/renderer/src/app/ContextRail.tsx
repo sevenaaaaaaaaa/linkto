@@ -4,6 +4,7 @@ import { api, displayName } from '../lib/api'
 import { goView } from '../lib/route'
 import { IconBook, IconBrain, IconClose, IconFileText, IconRobot, IconUser } from '../components/icons'
 import { AgentChat } from './AgentView'
+import { ContactTimelineLinks } from './projects/ProjectBits'
 
 type SenderContext = NonNullable<Awaited<ReturnType<typeof api.senderContext>>>
 
@@ -139,6 +140,8 @@ export function ContextRail() {
                   ))}
                 </Block>
               )}
+
+              <ContactTimelineLinks addr={ctx.addr} />
 
               <button
                 onClick={() => goView('insights')}
