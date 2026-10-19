@@ -1350,8 +1350,8 @@ export interface FollowupData {
 
 export interface AttachmentTextInfo {
   attachmentId: string
-  /** pdfjs = PDF 文本层；plain = 纯文本类附件直接读取；none = 没有可提取的文字（扫描件等）；office = Word / Excel / PowerPoint（pages = 页数 / 工作表数 / 幻灯片数） */
-  method: 'pdfjs' | 'plain' | 'none' | 'office'
+  /** pdfjs = PDF 文本层；plain = 纯文本类附件直接读取；none = 没有可提取的文字（扫描件等）；office = Word / Excel / PowerPoint（pages = 页数 / 工作表数 / 幻灯片数）；ocr-* = 文字识别 */
+  method: 'pdfjs' | 'plain' | 'none' | 'ocr-local' | 'ocr-ai' | 'ocr-local+ai' | 'office'
   pages: number
   chars: number
   extractedAt: number
@@ -1362,6 +1362,10 @@ export interface AttachmentTextInfo {
   encoding?: string | null
   /** 发票类 PDF 抽到的结构化字段 */
   invoice?: AttachmentInvoiceFields | null
+  /** 扫描件 / 图片：没有文本层、可以做文字识别（OCR） */
+  needsOcr?: boolean
+  /** 文字识别的降级说明（如「AI 校对失败，已用本机识别结果」） */
+  ocrNote?: string | null
 }
 
 /** 发票正文抽取结果（字段都可能缺） */
@@ -1563,3 +1567,31 @@ export interface AttachmentAccessSettings {
 
 /** 读取被拦下的原因：consent = 还没授权；kind = 该类型被关闭；account = 该账户被排除；cloud = 不允许发给云端 AI */
 export type AttachmentAccessBlock = 'consent' | 'kind' | 'account' | 'cloud'
+
+// ---------- 扫描件 / 图片识字（OCR） ----------
+
+/** 本机 / AI 识字各自能不能用（界面据此显示按钮与说明） */
+export interface OcrAvailability {
+  platform: string
+  /** 本机识别（macOS 系统文字识别） */
+  local: boolean
+  localReason?: string | null
+  /** AI 识字：AI 已配置、不是内置小模型，且（本地端点或已允许发给云端 AI） */
+  ai: boolean
+  aiReason?: string | null
+  /** 当前 AI 是本地模型（Ollama / LM Studio / 内置），不需要云端授权 */
+  aiLocal: boolean
+  /** 识字用的视觉模型名 */
+  model: string | null
+  engine: OcrEngine
+  aiMaxPages: number
+  localMaxPages: number
+}
+
+/** 识字进度事件 'attachment-ocr-progress' */
+export interface AttachmentOcrProgress {
+  id: string
+  stage: 'local' | 'render' | 'ai'
+  done: number
+  total: number
+}

@@ -12,6 +12,7 @@ import type { FinanceService } from '../finance/service'
 import type { ProjectService } from '../projects/service'
 import type { AttachmentService } from '../attachments/service'
 import { attachmentText } from '../attachments/text'
+import { allowsAI, getAccess, requestAccessPrompt } from '../attachments/access'
 import { slicePages } from '../attachments/text-parse'
 import { searchTerms, rankByTerms } from '../search-terms'
 import { notifyLocalChange as notifySyncChange } from '../todo-sync'
@@ -1436,8 +1437,7 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
       title: '读附件正文',
       domain: 'attachment',
       risk: 'read',
-      description:
-        '按附件 id（来自 attachment_search / read_email）读取附件正文：PDF 文本层，或 txt / csv / md / html / eml 等纯文本。可按页读（page_from / page_to，从 1 开始）。扫描件没有文本层时会说明。发票 PDF 会附带抽到的发票号 / 金额 / 开票日期 / 销售方 / 购买方。' +
+      description: '按附件 id（来自 attachment_search / read_email）读取附件正文：PDF 文本层，或 txt / csv / md / html / eml 等纯文本；扫描件 PDF 与图片在用户允许时做文字识别（OCR）。可按页读（page_from / page_to，从 1 开始）。不能识别时会说明。发票 PDF 会附带抽到的发票号 / 金额 / 开票日期 / 销售方 / 购买方。' +
         'Word / Excel / PowerPoint（docx / xlsx / pptx / odt 等）同样可读：Excel 每个工作表一页（「## 表名」+ 制表符分隔的行，可用 sheet 按表名读），PowerPoint 每张幻灯片一页（page_from / page_to 按幻灯片读）。',
       params: {
         type: 'object',
@@ -1456,7 +1456,16 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const id = String(a.id ?? '').trim()
         if (!id) throw new ToolError('缺少附件 id，先用 attachment_search 找到附件')
         const item = deps.attachments()?.getItem(id)
-        const res = await t.read(id, 400_000)
+        // 授权：附件内容要交给（云端）模型，除本机读取授权外还需要「允许发给云端 AI」；被拦时在界面弹出授权说明
+        if (getAccess().readContent && !allowsAI()) {
+          requestAccessPrompt('cloud', item?.filename ?? null)
+          throw new ToolError('用户尚未授权把附件内容发给云端 AI（已在界面上请用户授权；也可在 设置 → 附件与存储 → 附件内容读取 中开启）')
+        }
+        const res = await t.read(id, 400_000, { ocr: 'auto' })
+        if (!res.ok && res.blocked) {
+          if (res.blocked !== 'account') requestAccessPrompt(res.blocked === 'cloud' ? 'cloud' : 'pdf', item?.filename ?? null)
+          throw new ToolError(res.blocked === 'consent' ? '用户尚未授权读取附件内容（已在界面上请用户授权）' : `用户尚未授权读取这份附件的内容：${res.error ?? ''}`)
+        }
         if (!res.ok) throw new ToolError(res.error ?? '读取失败')
         const info = res.info
         const name = item?.filename ?? id

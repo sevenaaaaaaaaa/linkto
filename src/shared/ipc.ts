@@ -617,3 +617,18 @@ export interface LinkToApi {
   contentAccessGet(): Promise<import('./types').AttachmentAccessSettings>
   contentAccessSet(patch: Partial<import('./types').AttachmentAccessSettings>): Promise<import('./types').AttachmentAccessSettings>
 }
+
+// ---------- 扫描件 / 图片识字（OCR）（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  /** 本机 / AI 识字各自能不能用（按平台、AI 设置与授权） */
+  ocrStatus(): Promise<import('./types').OcrAvailability>
+  /** 对扫描件 / 图片附件做文字识别；engine 为空 = 用设置里的方式。进度经事件 'attachment-ocr-progress' 推送 */
+  ocrAttachment(
+    attachmentId: string,
+    engine?: import('./types').OcrEngine | null,
+    maxChars?: number
+  ): Promise<{ ok: boolean; text?: string; info?: import('./types').AttachmentTextInfo; error?: string; blocked?: import('./types').AttachmentAccessBlock }>
+  /** 清除已提取的附件正文缓存（PDF 文本层 / 纯文本 / 识字结果），之后按需重新提取 */
+  clearAttachmentTextCache(): Promise<{ removed: number }>
+}

@@ -1,10 +1,10 @@
-import { app, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
+import { app, ipcMain, powerMonitor, utilityProcess, type UtilityProcess } from 'electron'
 import { allows, getAccess } from './access'
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
-import type { AttachmentAccessBlock, AttachmentInvoiceFields, AttachmentTextInfo, FinanceData } from '@shared/types'
+import type { AISettings, AttachmentAccessBlock, AttachmentInvoiceFields, AttachmentTextInfo, FinanceData, OcrEngine } from '@shared/types'
 import type { MailStore } from '../db'
 import type { FinanceService } from '../finance/service'
 import { setAttachmentTextReader } from '../agent/hooks'
@@ -14,6 +14,9 @@ import type { IndexRow } from './store'
 import type { PdfJob, PdfJobResult } from './pdf-worker'
 import type { OfficeJob, OfficeJobResult } from './office-worker'
 import { textutilToText } from './office'
+import { ocrAvailability, runOcr } from './ocr'
+import { isOcrImage } from './ocr-parse'
+import { onBattery, runAsBackground } from '../jobs/budget'
 import {
   checkAgainstPdf,
   classifyByContent,
@@ -70,6 +73,7 @@ interface TextRow {
   encoding: string | null
   hash: string | null
   invoice_json: string | null
+  ocr_note?: string | null
 }
 
 export interface ReadResult {
@@ -81,6 +85,9 @@ export interface ReadResult {
   blocked?: AttachmentAccessBlock
 }
 
+/** 读正文时要不要顺带做文字识别：auto = 扫描件 / 图片按设置的方式识别（需授权）；不传 = 只读文本层与缓存 */
+export type OcrWant = 'auto' | Exclude<OcrEngine, 'off'>
+
 function parseInvoice(s: string | null): AttachmentInvoiceFields | null {
   if (!s) return null
   try {
@@ -90,10 +97,15 @@ function parseInvoice(s: string | null): AttachmentInvoiceFields | null {
   }
 }
 
+const OCR_METHODS = new Set(['ocr-local', 'ocr-ai', 'ocr-local+ai'])
+
 function rowInfo(r: TextRow): AttachmentTextInfo {
+  const ocr = OCR_METHODS.has(r.method)
   return {
     attachmentId: r.attachment_id,
-    method: r.method === 'pdfjs' || r.method === 'plain' || r.method === 'office' ? r.method : 'none',
+    method: r.method === 'pdfjs' || r.method === 'plain' || r.method === 'office' || ocr ? (r.method as AttachmentTextInfo['method']) : 'none',
+    ...(r.method === 'none' && r.error && /扫描|图片/.test(r.error) ? { needsOcr: true } : {}),
+    ...(ocr && r.ocr_note ? { ocrNote: r.ocr_note } : {}),
     pages: r.pages ?? 0,
     chars: r.chars ?? 0,
     extractedAt: r.extracted_at ?? 0,
@@ -226,6 +238,8 @@ export interface AttachmentTextDeps {
   attachments: AttachmentService
   finance?: () => FinanceService | null
   event(payload: unknown): void
+  /** AI 识字用（baseURL / Key / 模型复用 AI 设置）；不传则只能本机识别 */
+  getAISettings?: () => AISettings
 }
 
 export class AttachmentTextService {
@@ -236,11 +250,18 @@ export class AttachmentTextService {
 
   constructor(private deps: AttachmentTextDeps) {
     deps.db.exec(ATTACHMENT_TEXT_SCHEMA)
+    // 新列：识字的降级说明
+    try {
+      deps.db.exec('ALTER TABLE attachment_text ADD COLUMN ocr_note TEXT')
+    } catch {
+      /* 已有 */
+    }
   }
 
   stop() {
     this.pool.stop()
     this.officePool.stop()
+    if (this.ocrTimer) clearInterval(this.ocrTimer)
   }
 
   private row(id: string): TextRow | undefined {
@@ -287,10 +308,10 @@ export class AttachmentTextService {
    * 读正文：有缓存（且文件哈希没变）直接返回；否则按附件中心 ensureLocal（缓存 → eml 镜像 → IMAP → 网盘）取回本地后提取。
    * maxChars = 0 只要信息不要正文。opts.download = false 时不为提取去下载（后台补提取用）。
    */
-  read(id0: string, maxChars = 20000, opts: { download?: boolean } = {}): Promise<ReadResult> {
+  read(id0: string, maxChars = 20000, opts: { download?: boolean; ocr?: OcrWant } = {}): Promise<ReadResult> {
     const key = this.realId(id0)
     const running = this.inflight.get(key)
-    const p = running ?? this.doRead(key, opts).finally(() => this.inflight.delete(key))
+    const p = running ?? this.doRead(key, opts).then(r => this.autoOcr(key, r, opts.ocr)).finally(() => this.inflight.delete(key))
     if (!running) this.inflight.set(key, p)
     return p.then(r => (r.ok && r.text != null && maxChars >= 0 ? { ...r, text: r.text.slice(0, maxChars) } : r))
   }
@@ -302,10 +323,12 @@ export class AttachmentTextService {
     const filename = idx?.filename ?? att?.filename ?? ''
     const ext = (idx?.ext || /\.([a-z0-9]{1,10})$/i.exec(filename)?.[1] || '').toLowerCase()
     const kind = textKindOf(ext, idx?.content_type ?? att?.contentType)
-    if (!kind) return { ok: false, error: '这种格式暂不支持读取文字（支持 PDF、Word / Excel / PowerPoint 与 txt / csv / md / html / eml 等纯文本）' }
-    // 授权：用户同意前不读取任何附件内容（缓存的正文同样不返回）；Office 文件单独按 office 授权
-    const gate = allows(kind === 'pdf' ? 'pdf' : kind === 'office' ? 'office' : 'text', { accountId: idx?.account_id ?? null, reason: filename })
+    const image = !kind && isOcrImage(ext, idx?.content_type ?? att?.contentType)
+    if (!kind && !image) return { ok: false, error: '这种格式暂不支持读取文字（支持 PDF、Word / Excel / PowerPoint、图片识字与 txt / csv / md / html / eml 等纯文本）' }
+    // 授权：用户同意前不读取任何附件内容（缓存的正文同样不返回）；Office 按 office 授权，图片按 ocr 授权
+    const gate = allows(image ? 'ocr' : kind === 'pdf' ? 'pdf' : kind === 'office' ? 'office' : 'text', { accountId: idx?.account_id ?? null, reason: filename })
     if (!gate.ok) return { ok: false, error: gate.error, blocked: gate.block }
+    if (!kind) return this.imageRead(id, idx?.hash ?? null)
     const cached = this.row(id)
     // 缓存有效：文件哈希没变；失败的（超时 / 解析出错）10 分钟后允许重试，扫描件 / 加密 / 不支持的格式 / 超限不重试
     if (cached && (!cached.hash || !idx?.hash || cached.hash === idx.hash)) {
@@ -406,6 +429,8 @@ export class AttachmentTextService {
   checkFinance(messageIds?: string[]): number {
     const fin = this.deps.finance?.()
     if (!fin) return 0
+    // 授权收回后不再用缓存的发票正文核对
+    if (!getAccess().readContent) return 0
     const want = messageIds?.length ? new Set(messageIds) : null
     const rows = fin.rows(false).filter(r => !want || r.data.messageIds?.some(m => want.has(m)))
     if (!rows.length) return 0
@@ -457,17 +482,22 @@ export class AttachmentTextService {
   /** 已缓存的正文节选（不触发提取）：messageId → 文本（多个附件拼接） */
   cachedTextsForMessages(messageIds: string[], maxChars = 4000, onlyPdf = true): Map<string, string> {
     const out = new Map<string, string>()
+    // 授权收回后缓存的正文也不再交出去
+    const access = getAccess()
+    if (!access.readContent || (onlyPdf && !access.kinds.pdf)) return out
+    const excluded = new Set(access.excludedAccounts)
     for (let i = 0; i < messageIds.length; i += 400) {
       const part = messageIds.slice(i, i + 400)
       if (!part.length) continue
       const rows = this.deps.db
         .prepare(
-          `SELECT i.message_id, substr(t.text, 1, ?) AS text FROM attachment_text t JOIN attachment_index i ON i.id = t.attachment_id
-           WHERE i.message_id IN (${part.map(() => '?').join(',')}) AND t.method != 'none' AND i.skip = 0${onlyPdf ? ` AND t.method IN ('pdfjs', 'office')` : ''}
+          `SELECT i.message_id, i.account_id, substr(t.text, 1, ?) AS text FROM attachment_text t JOIN attachment_index i ON i.id = t.attachment_id
+           WHERE i.message_id IN (${part.map(() => '?').join(',')}) AND t.method != 'none' AND i.skip = 0${onlyPdf ? ` AND (t.method IN ('pdfjs', 'office') OR (t.method LIKE 'ocr-%' AND i.ext = 'pdf'))` : ''}
            ORDER BY i.id`
         )
-        .all(maxChars, ...part) as { message_id: string; text: string }[]
+        .all(maxChars, ...part) as { message_id: string; account_id: string; text: string }[]
       for (const r of rows) {
+        if (excluded.has(r.account_id)) continue
         const prev = out.get(r.message_id)
         out.set(r.message_id, (prev ? `${prev}\n\n` : '') + r.text)
       }
@@ -530,7 +560,162 @@ export class AttachmentTextService {
     }
     return out
   }
+
+  // ---------------------------------------------------------------- 扫描件 / 图片识字（OCR）
+
+  private ocrInflight = new Map<string, Promise<ReadResult>>()
+  private ocrTimer: NodeJS.Timeout | null = null
+  private ocrBackfilling = false
+  private ocrFailed = new Set<string>()
+
+  /** 图片附件：有识字缓存（文件没变）直接返回；否则说明「需要文字识别」（不落库，后台补识别还能找到它） */
+  private imageRead(id: string, hash: string | null): ReadResult {
+    const cached = this.row(id)
+    if (cached && (!cached.hash || !hash || cached.hash === hash)) return { ok: true, text: cached.text ?? '', info: rowInfo(cached) }
+    return { ok: true, text: '', info: { attachmentId: id, method: 'none', pages: 1, chars: 0, extractedAt: 0, error: '图片：需要文字识别（OCR）', needsOcr: true } }
+  }
+
+  /** read(…, { ocr }) 的后续：扫描件 / 图片且允许识字时，按设置（或指定方式）识别 */
+  private async autoOcr(id: string, r: ReadResult, want?: OcrWant): Promise<ReadResult> {
+    if (!want || !r.ok || !r.info?.needsOcr) return r
+    const engine = want === 'auto' ? getAccess().ocrEngine : want
+    if (engine === 'off') return r
+    const res = await this.ocr(id, engine, { silent: true })
+    return res.ok ? res : r
+  }
+
+  /**
+   * 对扫描件 PDF / 图片附件做文字识别，结果写进 attachment_text（method = ocr-local / ocr-ai / ocr-local+ai），
+   * 之后与文本层一样参与再分类、发票字段抽取、财务核对、知识库与 Agent 读取。进度经事件 'attachment-ocr-progress' 推送。
+   */
+  ocr(id0: string, engine0?: OcrEngine | null, opts: { download?: boolean; silent?: boolean } = {}): Promise<ReadResult> {
+    const key = this.realId(id0)
+    const running = this.ocrInflight.get(key)
+    if (running) return running
+    const p = this.doOcr(key, engine0, opts).finally(() => this.ocrInflight.delete(key))
+    this.ocrInflight.set(key, p)
+    return p
+  }
+
+  private async doOcr(id: string, engine0: OcrEngine | null | undefined, opts: { download?: boolean; silent?: boolean }): Promise<ReadResult> {
+    const engine = engine0 ?? getAccess().ocrEngine
+    if (engine === 'off') return { ok: false, error: '文字识别已关闭（设置 → 附件与存储 → 附件内容读取）' }
+    const idx = this.deps.attachments.idx.get(id)
+    const att = id.startsWith('r:') ? null : this.deps.store.getAttachment(id)
+    if (!idx && !att) return { ok: false, error: '附件记录不存在' }
+    const filename = idx?.filename ?? att?.filename ?? ''
+    const ext = (idx?.ext || /\.([a-z0-9]{1,10})$/i.exec(filename)?.[1] || '').toLowerCase()
+    const ct = idx?.content_type ?? att?.contentType
+    const kind = textKindOf(ext, ct) === 'pdf' ? 'pdf' : isOcrImage(ext, ct) ? 'image' : null
+    if (!kind) return { ok: false, error: '只有扫描件 PDF 与图片可以做文字识别' }
+    const gate = allows('ocr', { accountId: idx?.account_id ?? null, reason: filename, silent: opts.silent })
+    if (!gate.ok) return { ok: false, error: gate.error, blocked: gate.block }
+    if (opts.download === false && !(idx ? idx.cached && !idx.remote_only : !!att)) return { ok: false, error: '附件不在本地' }
+    const local = await this.deps.attachments.ensureLocal(id)
+    if (!local.ok || !local.path) return { ok: false, error: local.error ?? '附件无法取得' }
+    const realId = local.id ?? id
+    const row = this.deps.attachments.idx.get(realId) ?? idx
+    const getAI = this.deps.getAISettings
+    const res = await runOcr(
+      local.path,
+      kind,
+      engine,
+      { getAISettings: () => (getAI ? getAI() : NO_AI), render: (job, timeoutMs) => this.pool.run(job, timeoutMs) },
+      { filename, onProgress: p => this.deps.event({ type: 'attachment-ocr-progress', id: realId, ...p }) }
+    )
+    if (!res.ok) return { ok: false, error: res.error ?? '文字识别失败', ...(res.blocked ? { blocked: res.blocked } : {}) }
+    let text = res.text ?? ''
+    const truncated = !!res.truncated || text.length > TEXT_LIMITS.maxChars
+    text = text.slice(0, TEXT_LIMITS.maxChars)
+    const solid = solidChars(text) > 0
+    const invoice = solid ? this.postProcess(realId, row, text) : null
+    this.save(realId, {
+      text: solid ? text : '',
+      method: solid ? (res.method ?? 'ocr-local') : 'none',
+      pages: res.pages ?? 0,
+      chars: solid ? text.length : 0,
+      error: solid ? null : '文字识别没有找到文字',
+      truncated: truncated ? 1 : 0,
+      encoding: null,
+      hash: row?.hash ?? null,
+      invoice_json: invoice ? JSON.stringify(invoice) : null
+    })
+    this.deps.db.prepare('UPDATE attachment_text SET ocr_note = ? WHERE attachment_id = ?').run(res.note ?? null, realId)
+    if (invoice && row) this.checkFinance([row.message_id])
+    this.deps.event({ type: 'attachment-text', id: realId })
+    const r = this.row(realId)!
+    return { ok: true, text: r.text ?? '', info: rowInfo(r) }
+  }
+
+  /** 清除全部正文缓存（含识字结果），之后按需重新提取；返回删除的条数 */
+  clearCache(): number {
+    const n = Number(this.deps.db.prepare('DELETE FROM attachment_text').run().changes) || 0
+    this.ocrFailed.clear()
+    this.deps.event({ type: 'attachment-text', id: null })
+    return n
+  }
+
+  /** 后台补识别：每 10 分钟看一次，只在接通电源、电脑空闲（≥ 2 分钟无操作）时做，每轮最多 2 份、每天最多 OCR_DAILY 份 */
+  startOcrBackfill() {
+    if (this.ocrTimer) return
+    this.ocrTimer = setInterval(() => void this.ocrBackfill().catch(err => console.error('[ocr] backfill failed:', err)), 10 * 60_000)
+    this.ocrTimer.unref?.()
+  }
+
+  async ocrBackfill(opts: { force?: boolean } = {}): Promise<{ done: number; skipped: string | null }> {
+    const out = { done: 0, skipped: null as string | null }
+    const access = getAccess()
+    if (access.ocrEngine === 'off') return { ...out, skipped: '文字识别已关闭' }
+    if (!allows('ocr', { silent: true }).ok) return { ...out, skipped: '未授权' }
+    if (!opts.force) {
+      if (onBattery()) return { ...out, skipped: '正在用电池' }
+      let idle = 0
+      try {
+        idle = powerMonitor.getSystemIdleTime()
+      } catch {
+        idle = 0
+      }
+      if (idle < 120) return { ...out, skipped: '电脑不空闲' }
+    }
+    if (this.ocrBackfilling) return { ...out, skipped: '正在进行' }
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const today = (this.deps.db.prepare(`SELECT COUNT(*) AS n FROM attachment_text WHERE method LIKE 'ocr-%' AND extracted_at >= ?`).get(start.getTime()) as { n: number }).n
+    const left = Math.min(2, OCR_DAILY - today)
+    if (left <= 0) return { ...out, skipped: `今天已识别 ${today} 份（每日上限 ${OCR_DAILY}）` }
+    this.ocrBackfilling = true
+    try {
+      const imgExts = ['png', 'jpg', 'jpeg', 'heic', 'heif', 'tif', 'tiff']
+      // 扫描件 PDF（文本层判定为扫描）+ 像票据 / 合同 / 文档的图片（≥ 20KB，避开签名档小图标）
+      const rows = this.deps.db
+        .prepare(
+          `SELECT i.id, i.account_id FROM attachment_index i LEFT JOIN attachment_text t ON t.attachment_id = i.id
+           WHERE i.skip = 0 AND i.cached = 1 AND i.remote_only = 0 AND i.size <= ? AND (
+             (i.ext = 'pdf' AND t.method = 'none' AND t.error LIKE '%扫描%') OR
+             (t.attachment_id IS NULL AND i.size >= 20480 AND i.category IN ('invoice', 'contract', 'quote', 'document') AND i.ext IN (${imgExts.map(() => '?').join(',')}))
+           ) ORDER BY i.date DESC LIMIT 40`
+        )
+        .all(TEXT_LIMITS.maxPdfBytes, ...imgExts) as { id: string; account_id: string }[]
+      for (const r of rows) {
+        if (out.done >= left) break
+        if (this.ocrFailed.has(r.id) || access.excludedAccounts.includes(r.account_id)) continue
+        // 后台上下文：AI 识字的每次请求计入后台用量（超上限 / 用电池时直接停）
+        const res = await runAsBackground('ocr-backfill', () => this.ocr(r.id, null, { download: false, silent: true })).catch(err => ({ ok: false, error: String(err) }) as ReadResult)
+        if (res.ok) out.done++
+        else this.ocrFailed.add(r.id)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    } finally {
+      this.ocrBackfilling = false
+    }
+    return out
+  }
 }
+
+/** 后台补识别每天最多几份（用户主动识别的也计入当天总数） */
+const OCR_DAILY = 20
+
+const NO_AI = { enabled: false, baseURL: '', apiKey: '', model: '' } as unknown as AISettings
 
 // ---------------------------------------------------------------- 单例与注册
 
@@ -560,6 +745,15 @@ export function initAttachmentText(deps: AttachmentTextDeps): AttachmentTextServ
     for (const [id, info] of svc.infoMany(ids.slice(0, 500).map(String))) out[id] = { ...info, invoice: null }
     return out
   })
+  ipcMain.handle('api:ocrStatus', () => ocrAvailability(deps.getAISettings ? deps.getAISettings() : NO_AI))
+  ipcMain.handle('api:ocrAttachment', async (_event, attachmentId: unknown, engine?: unknown, maxChars?: unknown) => {
+    const e = engine === 'local' || engine === 'ai' || engine === 'local+ai' ? engine : null
+    const n = typeof maxChars === 'number' && Number.isFinite(maxChars) ? Math.max(0, Math.floor(maxChars)) : 20000
+    const r = await svc.ocr(String(attachmentId ?? ''), e)
+    return r.ok && r.text != null ? { ...r, text: r.text.slice(0, n) } : r
+  })
+  ipcMain.handle('api:clearAttachmentTextCache', () => ({ removed: svc.clearCache() }))
+  svc.startOcrBackfill()
   app.on('before-quit', () => svc.stop())
   setAttachmentTextReader(async (id, maxChars) => {
     const r = await svc.read(id, maxChars ?? 20000)

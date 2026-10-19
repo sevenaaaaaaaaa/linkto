@@ -63,6 +63,11 @@ export function allows(kind: AttachmentContentKind, opts: { accountId?: string |
   return { ok: true }
 }
 
+/** 用户主动操作（如问 Agent 读附件）被拦时：立即请界面弹出授权说明（不受 10 分钟节流、也不管是否问过） */
+export function requestAccessPrompt(kind: AttachmentContentKind | 'cloud', reason?: string | null) {
+  deps?.event({ type: 'content-access-needed', kind, reason: reason ?? null, interactive: true })
+}
+
 /** 附件内容能否交给当前配置的 AI：本地端点 / 内置引擎总是可以；云端需要 sendToCloudAI */
 export function allowsAI(baseURL?: string): boolean {
   const url = baseURL ?? deps?.getAISettings().baseURL ?? ''

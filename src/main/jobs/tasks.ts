@@ -12,6 +12,7 @@ import type { FinanceService } from '../finance/service'
 import type { ProjectService } from '../projects/service'
 import type { AttachmentService } from '../attachments/service'
 import { attachmentText } from '../attachments/text'
+import { allowsAI } from '../attachments/access'
 import { KB_LEARN, JSON_RETRY_NUDGE } from '../ai/prompts'
 import type { ActivityStore } from './activity'
 import { isBudgetError, type AiBudget } from './budget'
@@ -312,6 +313,8 @@ function pdfTextsOf(messageIds: string[]): Map<string, string> {
 
 /** 挑中的邮件带 PDF 时：取正文节选一并交给 AI 提炼（必要时现提取，单封最多 2 个 PDF） */
 async function pdfExcerptFor(messageId: string, maxChars: number): Promise<string> {
+  // PDF 正文要交给 AI 提炼：需要允许发给当前 AI（本机读取授权由正文服务把关）
+  if (!allowsAI()) return ''
   try {
     const r = await attachmentText()?.pdfExcerpt(messageId, maxChars)
     return r?.text ? `\n\n附件 PDF 正文（节选）：\n${r.text}` : ''

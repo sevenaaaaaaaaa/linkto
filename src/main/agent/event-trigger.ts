@@ -11,6 +11,7 @@ import { inQuietHours } from '../notify-policy'
 import { detectFinance } from '../finance/detect'
 import { runAsBackground, type AiBudget } from '../jobs/budget'
 import { listAllSkills, readAttachmentText, registerFollowup, runSkillHeadless } from './hooks'
+import { allowsAI } from '../attachments/access'
 import {
   detectEvents, EVENT_LABEL, extractNotesActions, isLiveArrival, mergeHits, parseReview, planTriggers, quotaCheck, uncertain,
   DEFAULT_TRIGGER_LIMITS, type EventMailInput, type TriggerPlan
@@ -387,6 +388,8 @@ export class EventTriggers {
 
   /** 附件正文（PDF 等，附件模块注册了读取器时）；最多两个附件、6000 字 */
   private async attachmentText(messageId: string): Promise<string | null> {
+    // 技能在 AI 上运行：附件内容只在允许交给当前 AI 时才带上（本机读取授权由读取器把关）
+    if (!allowsAI()) return null
     const atts = this.attachmentsOf(messageId).filter(a => !a.inline && /(pdf|text\/plain|\.txt$|\.md$)/i.test(`${a.contentType} ${a.filename}`))
     const parts: string[] = []
     for (const a of atts.slice(0, 2)) {

@@ -19,6 +19,12 @@ export interface PdfJob {
   maxPages: number
   maxBytes: number
   maxChars: number
+  /** render = 把页面渲染成 JPEG（AI 识字用，非 macOS 平台；pdfjs + @napi-rs/canvas）；默认提取文本层 */
+  op?: 'text' | 'render'
+  /** render：pdf 或图片 */
+  kind?: 'pdf' | 'image'
+  /** render：长边像素上限 */
+  maxDim?: number
 }
 
 export interface PdfJobResult {
@@ -33,6 +39,8 @@ export interface PdfJobResult {
   scanned?: boolean
   truncated?: boolean
   ms?: number
+  /** render：每页 JPEG（base64） */
+  images?: string[]
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -128,10 +136,134 @@ async function extract(job: PdfJob): Promise<PdfJobResult> {
   }
 }
 
+// ---------------------------------------------------------------- 渲染成图片（AI 识字）
+
+let napiCanvas: any = null
+
+/** @napi-rs/canvas（pdfjs 的可选依赖）：提供画布，并补上 pdfjs 渲染要用的 DOMMatrix / ImageData / Path2D */
+function loadCanvas(): any {
+  if (napiCanvas) return napiCanvas
+  napiCanvas = require('@napi-rs/canvas')
+  const g = globalThis as any
+  if (!g.DOMMatrix) g.DOMMatrix = napiCanvas.DOMMatrix
+  if (!g.ImageData) g.ImageData = napiCanvas.ImageData
+  if (!g.Path2D) g.Path2D = napiCanvas.Path2D
+  return napiCanvas
+}
+
+class NapiCanvasFactory {
+  constructor(_opts: unknown) {}
+  create(width: number, height: number) {
+    const canvas = loadCanvas().createCanvas(Math.max(1, width), Math.max(1, height))
+    return { canvas, context: canvas.getContext('2d') }
+  }
+  reset(cc: { canvas: any }, width: number, height: number) {
+    cc.canvas.width = width
+    cc.canvas.height = height
+  }
+  destroy(cc: { canvas: any; context: any }) {
+    if (cc.canvas) {
+      cc.canvas.width = 0
+      cc.canvas.height = 0
+    }
+    cc.canvas = null
+    cc.context = null
+  }
+}
+
+/** utilityProcess 里没有 document：滤镜（传输函数 / 高对比度）一律不用 */
+class NoopFilterFactory {
+  constructor(_opts: unknown) {}
+  addFilter() {
+    return 'none'
+  }
+  addHCMFilter() {
+    return 'none'
+  }
+  addAlphaFilter() {
+    return 'none'
+  }
+  addLuminosityFilter() {
+    return 'none'
+  }
+  addHighlightHCMFilter() {
+    return 'none'
+  }
+  destroy() {}
+}
+
+async function render(job: PdfJob): Promise<PdfJobResult> {
+  const t0 = Date.now()
+  const size = statSync(job.path).size
+  if (size > job.maxBytes) return { id: job.id, ok: false, error: `文件过大（${Math.round(size / 1048576)} MB），未识别` }
+  const canvasLib = loadCanvas()
+  const maxDim = job.maxDim ?? 1600
+  if (job.kind === 'image') {
+    const img = await canvasLib.loadImage(readFileSync(job.path))
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    const c = canvasLib.createCanvas(Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)))
+    const ctx = c.getContext('2d')
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, c.width, c.height)
+    ctx.drawImage(img, 0, 0, c.width, c.height)
+    const buf: Buffer = await c.encode('jpeg', 82)
+    return { id: job.id, ok: true, pages: 1, pagesRead: 1, images: [buf.toString('base64')], ms: Date.now() - t0 }
+  }
+  const lib = await loadPdfjs()
+  const task = lib.getDocument({
+    data: new Uint8Array(readFileSync(job.path)),
+    disableFontFace: true,
+    isEvalSupported: false,
+    useSystemFonts: false,
+    useWorkerFetch: false,
+    isOffscreenCanvasSupported: false,
+    isImageDecoderSupported: false,
+    disableAutoFetch: true,
+    disableStream: true,
+    cMapUrl: 'cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'standard_fonts/',
+    CMapReaderFactory: FsCMapReaderFactory,
+    StandardFontDataFactory: FsStandardFontDataFactory,
+    CanvasFactory: NapiCanvasFactory,
+    FilterFactory: NoopFilterFactory,
+    verbosity: 0
+  })
+  let doc: any
+  try {
+    doc = await task.promise
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/password/i.test(msg) || (err as any)?.name === 'PasswordException') return { id: job.id, ok: false, error: 'PDF 已加密，需要密码' }
+    return { id: job.id, ok: false, error: `无法解析 PDF：${msg}` }
+  }
+  try {
+    const total = doc.numPages as number
+    const n = Math.min(total, job.maxPages)
+    const images: string[] = []
+    for (let i = 1; i <= n; i++) {
+      const page = await doc.getPage(i)
+      const base = page.getViewport({ scale: 1 })
+      const viewport = page.getViewport({ scale: Math.min(4, maxDim / Math.max(base.width, base.height)) })
+      const c = canvasLib.createCanvas(Math.max(1, Math.round(viewport.width)), Math.max(1, Math.round(viewport.height)))
+      const ctx = c.getContext('2d')
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, c.width, c.height)
+      await page.render({ canvasContext: ctx, viewport }).promise
+      const buf: Buffer = await c.encode('jpeg', 82)
+      images.push(buf.toString('base64'))
+      page.cleanup()
+    }
+    return { id: job.id, ok: true, pages: total, pagesRead: n, images, truncated: n < total, ms: Date.now() - t0 }
+  } finally {
+    void doc.destroy().catch(() => {})
+  }
+}
+
 process.parentPort.on('message', async (e: { data: PdfJob }) => {
   const job = e.data
   try {
-    process.parentPort.postMessage(await extract(job))
+    process.parentPort.postMessage(job.op === 'render' ? await render(job) : await extract(job))
   } catch (err) {
     process.parentPort.postMessage({ id: job.id, ok: false, error: err instanceof Error ? err.message : String(err) } satisfies PdfJobResult)
   }

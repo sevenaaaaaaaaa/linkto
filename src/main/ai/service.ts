@@ -102,6 +102,11 @@ export function setAiRequestGuard(fn: (() => void) | null) {
   requestGuard = fn
 }
 
+/** 不经 AIService 自己发请求的模块（如 AI 识字的多模态请求）发请求前调用：同样计入后台用量 */
+export function checkAiRequestGuard() {
+  requestGuard?.()
+}
+
 /** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()

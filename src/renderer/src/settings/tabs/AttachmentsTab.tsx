@@ -7,6 +7,7 @@ import { ATTACHMENT_CATEGORIES, DEFAULT_ATTACHMENT_PATH_TEMPLATE } from '@shared
 import { renderPathTemplate } from '@shared/attachment-paths'
 import { fmtBytes, useAttachmentEvents } from '../../app/attachments/model'
 import { ReleaseSheet, GhostBtn, PrimaryBtn } from '../../app/attachments/Sheets'
+import { ContentAccessSection } from './ContentAccessSection'
 
 const KEEP_DAYS = [
   { value: '0', label: '不按时间' },
@@ -254,6 +255,8 @@ export function AttachmentsTab() {
       <SettingRow label="AI 补充分类" desc="文件名看不出类别的附件（扫描件、image.pdf…），用已配置的 AI 按文件名、主题与对方补充判断；只发送这三项，不发送附件内容">
         <Toggle checked={s.aiAssist} onChange={v => void update({ aiAssist: v })} />
       </SettingRow>
+
+      <ContentAccessSection />
 
       {releaseOpen && <ReleaseSheet onClose={() => setReleaseOpen(false)} onDone={() => load()} />}
     </div>

@@ -6,6 +6,7 @@ import type { AIService } from '../ai/service'
 import { aiReady } from '../ai/service'
 import { LIFE_EXTRACT } from '../ai/prompts'
 import { readAttachmentText } from '../agent/hooks'
+import { allowsAI } from '../attachments/access'
 import { runAsBackground, isBudgetError } from '../jobs/budget'
 import { bodyOf } from '../finance/detect'
 import { acceptLife, detectLife, looksLife, type LifeCandidate, type LifeMailInput } from './detect'
@@ -399,7 +400,8 @@ export class LifeService {
   private async aiCandidate(row: MsgRow, input: LifeMailInput): Promise<LifeCandidate | null> {
     const h = detectLife(input)
     const body = bodyOf(input).slice(0, 3500)
-    const attach = input.attachmentText ? `\n附件正文：\n${input.attachmentText.slice(0, 2500)}` : ''
+    // 附件正文只在允许交给当前 AI 时才带上（本机规则识别不受影响）
+    const attach = input.attachmentText && allowsAI() ? `\n附件正文：\n${input.attachmentText.slice(0, 2500)}` : ''
     const user = `发件人：${input.fromName} <${input.fromAddr}>\n日期：${new Date(input.date).toISOString().slice(0, 10)}\n主题：${input.subject}\n正文：\n${body}${attach}`
     const text = await this.deps.ai.complete(
       [
