@@ -275,7 +275,8 @@ export function knowledgeCandidates(deps: WorkDeps, opts: { since: number; accou
       .all(...part) as any[])
       pdf.add(r.message_id)
     try {
-      for (const r of deps.store.db.prepare(`SELECT DISTINCT message_id FROM attachment_index WHERE message_id IN (${q}) AND ext = 'pdf' AND skip = 0`).all(...part) as any[]) pdf.add(r.message_id)
+      // PDF 与 Word / PowerPoint 文档都算「资料」（正文由附件正文服务提取，Office 同样经过授权闸门）
+      for (const r of deps.store.db.prepare(`SELECT DISTINCT message_id FROM attachment_index WHERE message_id IN (${q}) AND ext IN ('pdf', 'docx', 'doc', 'pptx', 'odt', 'odp') AND skip = 0`).all(...part) as any[]) pdf.add(r.message_id)
     } catch {
       /* 附件索引表未建（附件中心未启动） */
     }

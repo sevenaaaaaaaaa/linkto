@@ -19,7 +19,9 @@ export default defineConfig({
           // MIME 解析专用 utilityProcess（重邮件解析不阻塞主进程）
           'parse-worker': resolve(__dirname, 'src/main/parse-worker.ts'),
           // PDF 文本层提取专用 utilityProcess（pdfjs-dist 作为外部依赖在运行时加载）
-          'pdf-worker': resolve(__dirname, 'src/main/attachments/pdf-worker.ts')
+          'pdf-worker': resolve(__dirname, 'src/main/attachments/pdf-worker.ts'),
+          // Word / Excel / PowerPoint 正文提取专用 utilityProcess（解压 + XML 抽取不占主进程）
+          'office-worker': resolve(__dirname, 'src/main/attachments/office-worker.ts')
         }
       }
     }

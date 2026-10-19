@@ -578,6 +578,8 @@ export interface LinkToApi {
 
   /** 附件正文（PDF 文本层 / 纯文本）；未提取过时现取并缓存 */
   readAttachmentText(attachmentId: string, maxChars?: number): Promise<{ ok: boolean; text?: string; info?: import('./types').AttachmentTextInfo; error?: string }>
+  /** 已缓存的附件正文信息（有正文 / 页数 / 字数；不触发提取、不含正文）；未授权读取附件内容时为空 */
+  readAttachmentTextInfo(attachmentIds: string[]): Promise<Record<string, import('./types').AttachmentTextInfo>>
 }
 
 // ---------- 规则建议 / 生活档案（与上面的 LinkToApi 声明合并） ----------

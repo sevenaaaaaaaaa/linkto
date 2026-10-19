@@ -48,6 +48,7 @@ const METHOD_NAMES = [
   'ruleSuggestions', 'ruleSuggestionAccept', 'ruleSuggestionDismiss',
   'lifeList', 'lifeCreate', 'lifeUpdate', 'lifeDelete', 'lifeScan', 'lifeExportIcs', 'lifeMakeTodo', 'lifeFromMessage',
   'agentEventsFor', 'followupList', 'followupCreate', 'followupUpdate', 'followupNudge', 'readAttachmentText',
+  'readAttachmentTextInfo',
   'agentRun', 'agentApprove', 'agentCancel', 'agentTools', 'agentThreads', 'agentThread', 'agentDeleteThread',
   'agentSkills', 'agentSaveSkill', 'agentDeleteSkill', 'agentJobs', 'agentJobSet', 'agentJobRunNow', 'agentActivity',
   'onboardingScanStatus', 'onboardingScanStart', 'onboardingScanDismiss',

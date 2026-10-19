@@ -14,13 +14,32 @@ import type { AttachmentInvoiceFields, FinancePdfCheck } from '@shared/types'
 /** 文本类附件扩展名（直接读取，不走 PDF 解析） */
 export const PLAIN_EXTS = new Set(['txt', 'text', 'csv', 'tsv', 'md', 'markdown', 'log', 'json', 'xml', 'yaml', 'yml', 'ini', 'html', 'htm', 'xhtml', 'eml', 'ics', 'vcf', 'srt', 'rtf'])
 
-export type TextKind = 'pdf' | 'plain' | 'html' | 'eml' | null
+export type TextKind = 'pdf' | 'plain' | 'html' | 'eml' | 'office' | null
 
-/** 按扩展名 / 内容类型判断怎么取正文；null = 不支持（图片 / Office / 压缩包…） */
+/** Word / Excel / PowerPoint / OpenDocument（含宏、模板与旧格式 doc / xls / ppt） */
+export const OFFICE_EXTS = new Set(['docx', 'docm', 'dotx', 'dotm', 'xlsx', 'xlsm', 'xltx', 'xltm', 'pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'odt', 'ott', 'ods', 'ots', 'odp', 'otp', 'doc', 'dot', 'xls', 'xlt', 'ppt', 'pps'])
+
+/** Office 类 MIME（扩展名缺失时兜底） */
+export function isOfficeMime(contentType?: string | null): boolean {
+  const c = (contentType || '').toLowerCase().split(';')[0].trim()
+  return (
+    c.startsWith('application/vnd.openxmlformats-officedocument.') ||
+    c.startsWith('application/vnd.ms-word') ||
+    c.startsWith('application/vnd.ms-excel') ||
+    c.startsWith('application/vnd.ms-powerpoint') ||
+    c === 'application/msword' ||
+    c.startsWith('application/vnd.oasis.opendocument.text') ||
+    c.startsWith('application/vnd.oasis.opendocument.spreadsheet') ||
+    c.startsWith('application/vnd.oasis.opendocument.presentation')
+  )
+}
+
+/** 按扩展名 / 内容类型判断怎么取正文；null = 不支持（图片 / 压缩包…） */
 export function textKindOf(ext: string, contentType?: string | null): TextKind {
   const e = (ext || '').toLowerCase()
   const ct = (contentType || '').toLowerCase()
   if (e === 'pdf' || ct === 'application/pdf') return 'pdf'
+  if (OFFICE_EXTS.has(e) || (!PLAIN_EXTS.has(e) && isOfficeMime(ct))) return 'office'
   if (e === 'eml' || ct === 'message/rfc822') return 'eml'
   if (e === 'html' || e === 'htm' || e === 'xhtml' || ct === 'text/html') return 'html'
   if (PLAIN_EXTS.has(e) || ct.startsWith('text/')) return 'plain'

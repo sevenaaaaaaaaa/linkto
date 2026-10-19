@@ -1350,8 +1350,8 @@ export interface FollowupData {
 
 export interface AttachmentTextInfo {
   attachmentId: string
-  /** pdfjs = PDF 文本层；plain = 纯文本类附件直接读取；none = 没有可提取的文字（扫描件等） */
-  method: 'pdfjs' | 'plain' | 'none'
+  /** pdfjs = PDF 文本层；plain = 纯文本类附件直接读取；none = 没有可提取的文字（扫描件等）；office = Word / Excel / PowerPoint（pages = 页数 / 工作表数 / 幻灯片数） */
+  method: 'pdfjs' | 'plain' | 'none' | 'office'
   pages: number
   chars: number
   extractedAt: number

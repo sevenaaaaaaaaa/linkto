@@ -1436,14 +1436,17 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
       title: '读附件正文',
       domain: 'attachment',
       risk: 'read',
-      description: '按附件 id（来自 attachment_search / read_email）读取附件正文：PDF 文本层，或 txt / csv / md / html / eml 等纯文本。可按页读（page_from / page_to，从 1 开始）。扫描件没有文本层时会说明。发票 PDF 会附带抽到的发票号 / 金额 / 开票日期 / 销售方 / 购买方。',
+      description:
+        '按附件 id（来自 attachment_search / read_email）读取附件正文：PDF 文本层，或 txt / csv / md / html / eml 等纯文本。可按页读（page_from / page_to，从 1 开始）。扫描件没有文本层时会说明。发票 PDF 会附带抽到的发票号 / 金额 / 开票日期 / 销售方 / 购买方。' +
+        'Word / Excel / PowerPoint（docx / xlsx / pptx / odt 等）同样可读：Excel 每个工作表一页（「## 表名」+ 制表符分隔的行，可用 sheet 按表名读），PowerPoint 每张幻灯片一页（page_from / page_to 按幻灯片读）。',
       params: {
         type: 'object',
         properties: {
           id: { type: 'string', description: '附件 id' },
           max_chars: { type: 'integer', minimum: 200, maximum: 20000, default: 6000, description: '最多返回多少字（默认 6000）' },
           page_from: { type: 'integer', minimum: 1, description: '从第几页开始（PDF）' },
-          page_to: { type: 'integer', minimum: 1, description: '读到第几页（含）' }
+          page_to: { type: 'integer', minimum: 1, description: '读到第几页（含）' },
+          sheet: { type: 'string', description: 'Excel：只读这个工作表（表名）' }
         },
         required: ['id']
       },
@@ -1461,7 +1464,11 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
           return { data: { id, filename: name, has_text: false, pages: info?.pages ?? 0, reason: info?.error ?? '没有可提取的文字' }, summary: `「${name}」没有可读文字`, refs: [{ type: 'attachment', id, label: name }] }
         }
         const max = Math.min(20000, Math.max(200, Number(a.max_chars) || 6000))
-        const part = slicePages(res.text, a.page_from ?? null, a.page_to ?? null)
+        // Excel 按工作表名读：每个工作表是一页，页首是「## 表名」
+        const sheetNames = a.sheet ? res.text.split('\n\f\n').map(p => p.split('\n')[0].replace(/^##\s*/, '').replace(/（隐藏）$/, '').trim()) : []
+        const sheetNo = a.sheet ? sheetNames.indexOf(String(a.sheet).trim()) + 1 : 0
+        if (a.sheet && !sheetNo) throw new ToolError(`没有名为「${a.sheet}」的工作表${sheetNames.length > 1 ? `（有：${sheetNames.slice(0, 20).join('、')}）` : ''}`)
+        const part = sheetNo ? slicePages(res.text, sheetNo, sheetNo) : slicePages(res.text, a.page_from ?? null, a.page_to ?? null)
         const body = part.text.replace(/\n\f\n/g, '\n\n[分页]\n\n')
         const inv = info?.invoice
         return {
@@ -1737,7 +1744,7 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
 /** attachment_search 结果里的正文状态：已提取 → 「有正文 · 3 页」；能提取但还没提取 → 「可读取」 */
 function attachmentTextLabel(ext: string, info: { method: string; pages: number; chars: number } | undefined): string | null {
   if (info) return info.method === 'none' ? '无文字（扫描件等）' : `有正文 · ${info.pages > 1 ? `${info.pages} 页 · ` : ''}${info.chars} 字`
-  return /^(pdf|txt|csv|tsv|md|markdown|html?|eml|json|xml|log)$/i.test(ext || '') ? '可用 read_attachment 读取' : null
+  return /^(pdf|txt|csv|tsv|md|markdown|html?|eml|json|xml|log|docx?|docm|xlsx|xlsm|pptx|pptm|odt|ods|odp)$/i.test(ext || '') ? '可用 read_attachment 读取' : null
 }
 
 export function toolInfo(t: AgentTool): AgentToolInfo {

@@ -10,12 +10,39 @@ import type { AttachmentTextInfo } from '@shared/types'
  */
 
 const TEXT_EXT = /\.(pdf|txt|text|csv|tsv|md|markdown|log|json|xml|ya?ml|ini|html?|xhtml|eml|ics|vcf|srt|rtf)$/i
+/** Word / Excel / PowerPoint / OpenDocument（与主进程 text-parse 的 OFFICE_EXTS 一致） */
+const OFFICE_EXT = /\.(docx|docm|dotx|dotm|xlsx|xlsm|xltx|xltm|pptx|pptm|potx|potm|ppsx|ppsm|odt|ott|ods|ots|odp|otp|doc|dot|xls|xlt|ppt|pps)$/i
+const OFFICE_CT = /^application\/(vnd\.openxmlformats-officedocument\.|vnd\.ms-(word|excel|powerpoint)|msword|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation))/i
 const PREVIEW_CHARS = 6000
 
-/** 能读文字的附件（PDF / 纯文本类） */
+/** 能读文字的附件（PDF / 纯文本类 / Word / Excel / PowerPoint） */
 export function canReadText(filename: string, contentType?: string | null): boolean {
   const ct = (contentType || '').toLowerCase()
-  return TEXT_EXT.test(filename || '') || ct === 'application/pdf' || ct.startsWith('text/') || ct === 'message/rfc822'
+  return TEXT_EXT.test(filename || '') || OFFICE_EXT.test(filename || '') || OFFICE_CT.test(ct) || ct === 'application/pdf' || ct.startsWith('text/') || ct === 'message/rfc822'
+}
+
+/** Office 文件的「页」：Excel 是工作表、PowerPoint 是幻灯片、Word 是页 */
+function officeKind(filename: string): 'sheet' | 'slide' | 'doc' {
+  if (/\.(xls[xmt]?|xlt[xm]?|ods|ots)$/i.test(filename)) return 'sheet'
+  if (/\.(pp[st][xm]?|pot[xm]|odp|otp)$/i.test(filename)) return 'slide'
+  return 'doc'
+}
+
+/** 「3 页」/「3 个工作表」/「12 页幻灯片」；单页的普通文档不显示 */
+function pagesLabel(info: AttachmentTextInfo, filename: string): string | null {
+  if (info.method === 'office') {
+    const k = officeKind(filename)
+    if (k === 'sheet') return `${info.pages} 个工作表`
+    if (k === 'slide') return `${info.pages} 页幻灯片`
+  }
+  return info.pages > 1 ? `${info.pages} 页` : null
+}
+
+const METHOD_LABEL: Record<string, string> = { pdfjs: 'PDF 文本层', plain: '纯文本' }
+
+function methodLabel(info: AttachmentTextInfo, filename: string): string | null {
+  if (info.method === 'office') return { sheet: 'Excel 表格', slide: '演示文稿', doc: 'Word 文档' }[officeKind(filename)]
+  return METHOD_LABEL[info.method] ?? null
 }
 
 type Loaded = { ok: boolean; text?: string; info?: AttachmentTextInfo; error?: string }
@@ -29,8 +56,9 @@ function money(n: number, cur?: string | null) {
   return !cur || cur === 'CNY' ? `¥${v}` : `${cur} ${v}`
 }
 
-/** 正文里的分页符 → 可读的分页标记 */
-function withPageMarks(text: string): string {
+/** 正文里的分页符 → 可读的分页标记（Office 的工作表 / 幻灯片自带「## 表名 / 第 N 页」标题，只空行分隔） */
+function withPageMarks(text: string, office = false): string {
+  if (office) return text.replace(/\n\f\n/g, '\n\n')
   let n = 1
   return text.replace(/\n\f\n/g, () => `\n\n—— 第 ${++n} 页 ——\n\n`)
 }
@@ -62,7 +90,7 @@ export function AttachmentTextBody(props: { id: string; filename: string; compac
   const hasText = !!res?.ok && !!text.trim() && info?.method !== 'none'
   const inv = info?.invoice
   const meta = info
-    ? [info.method === 'pdfjs' ? 'PDF 文本层' : info.method === 'plain' ? '纯文本' : null, info.pages > 1 ? `${info.pages} 页` : null, info.chars ? `${fmtNum(info.chars)} 字` : null, info.encoding && info.encoding !== 'utf-8' && info.encoding !== 'mime' ? `编码 ${info.encoding.toUpperCase()}` : null]
+    ? [methodLabel(info, props.filename), pagesLabel(info, props.filename), info.chars ? `${fmtNum(info.chars)} 字` : null, info.encoding && info.encoding !== 'utf-8' && info.encoding !== 'mime' ? `编码 ${info.encoding.toUpperCase()}` : null]
         .filter(Boolean)
         .join(' · ')
     : ''
@@ -110,7 +138,7 @@ export function AttachmentTextBody(props: { id: string; filename: string; compac
             aria-label="附件正文"
             tabIndex={0}
           >
-            {withPageMarks(text)}
+            {withPageMarks(text, info?.method === 'office')}
             {info && info.chars > text.length && (
               <span className="block mt-2 text-2xs" style={{ color: 'var(--faint)' }}>
                 …… 仅显示前 {fmtNum(text.length)} 字（共 {fmtNum(info.chars)} 字）
@@ -160,6 +188,44 @@ function Chip(props: { k: string; v: string }) {
     <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-[var(--r-xs)] text-2xs max-w-full" style={{ background: 'var(--info-soft)', color: 'var(--info-ink)' }}>
       <span style={{ opacity: 0.75 }}>{props.k}</span>
       <span className="truncate tnum">{props.v}</span>
+    </span>
+  )
+}
+
+/** 已提取过的正文信息（只读缓存、不触发提取）；正文提取完成时刷新 */
+function useCachedTextInfo(id: string): AttachmentTextInfo | null {
+  const [info, setInfo] = useState<AttachmentTextInfo | null>(null)
+  useEffect(() => {
+    let alive = true
+    setInfo(null)
+    if (!id) return
+    const load = () =>
+      void api
+        .readAttachmentTextInfo([id])
+        .then(r => alive && setInfo(r[id] ?? null))
+        .catch(() => {})
+    load()
+    const off = api.onEvent(ev => {
+      const e = ev as { type: string; id?: string }
+      if (e.type === 'attachment-text' && (!e.id || e.id === id)) load()
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [id])
+  return info
+}
+
+/** 附件卡 / 附件中心上的一行「有正文 · 3 个工作表」（还没提取过、或没有文字时不渲染） */
+export function AttachmentTextMeta(props: { id: string; filename: string; contentType?: string | null; className?: string }) {
+  const readable = canReadText(props.filename, props.contentType)
+  const info = useCachedTextInfo(readable ? props.id : '')
+  if (!readable || !info || info.method === 'none' || !info.chars) return null
+  const label = ['有正文', pagesLabel(info, props.filename)].filter(Boolean).join(' · ')
+  return (
+    <span className={props.className ?? 'mt-0.5 block text-2xs tnum'} style={{ color: 'var(--faint)' }} title={`已提取 ${fmtNum(info.chars)} 字，可「查看文字」或问 Agent`}>
+      {label}
     </span>
   )
 }
@@ -216,7 +282,14 @@ export function AttachmentTextSection(props: { id: string; filename: string; con
           <IconFileText width={11} height={11} /> {open ? '收起' : '查看文字'}
         </button>
       </div>
-      {open ? <AttachmentTextBody id={props.id} filename={props.filename} /> : <div className="text-2xs" style={{ color: 'var(--faint)' }}>读取 PDF / 文本附件里的文字，可复制或交给 Agent 提问。</div>}
+      {open ? (
+        <AttachmentTextBody id={props.id} filename={props.filename} />
+      ) : (
+        <div className="text-2xs" style={{ color: 'var(--faint)' }}>
+          <AttachmentTextMeta id={props.id} filename={props.filename} contentType={props.contentType} className="block mb-0.5 tnum" />
+          读取 PDF / Word / Excel / PowerPoint / 文本附件里的文字，可复制或交给 Agent 提问。
+        </div>
+      )}
     </div>
   )
 }

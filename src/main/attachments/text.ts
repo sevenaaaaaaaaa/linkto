@@ -1,5 +1,5 @@
 import { app, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
-import { allows } from './access'
+import { allows, getAccess } from './access'
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,6 +12,8 @@ import { parseEmailRaw } from '../mail/parse-pool'
 import type { AttachmentService } from './service'
 import type { IndexRow } from './store'
 import type { PdfJob, PdfJobResult } from './pdf-worker'
+import type { OfficeJob, OfficeJobResult } from './office-worker'
+import { textutilToText } from './office'
 import {
   checkAgainstPdf,
   classifyByContent,
@@ -21,6 +23,7 @@ import {
   htmlToPlain,
   looksLikeInvoice,
   normalizeCjk,
+  OFFICE_EXTS,
   PLAIN_EXTS,
   samePdfCheck,
   solidChars,
@@ -29,7 +32,7 @@ import {
 } from './text-parse'
 
 /**
- * 附件正文：PDF 文本层（pdfjs，独立 utilityProcess）/ 纯文本类附件（编码探测）/ HTML / eml。
+ * 附件正文：PDF 文本层（pdfjs，独立 utilityProcess）/ Word · Excel · PowerPoint（office.ts，独立 utilityProcess）/ 纯文本类附件（编码探测）/ HTML / eml。
  * 结果缓存在新表 attachment_text（按附件 id；文件哈希变了重新提取）。提取后顺带：
  *  - 拿不准的附件用正文关键词再分类（category_source = 'content'）
  *  - 发票正文抽字段（invoice_json）→ 与同一封邮件的财务记录核对（FinanceData.pdfCheck）
@@ -90,7 +93,7 @@ function parseInvoice(s: string | null): AttachmentInvoiceFields | null {
 function rowInfo(r: TextRow): AttachmentTextInfo {
   return {
     attachmentId: r.attachment_id,
-    method: r.method === 'pdfjs' || r.method === 'plain' ? r.method : 'none',
+    method: r.method === 'pdfjs' || r.method === 'plain' || r.method === 'office' ? r.method : 'none',
     pages: r.pages ?? 0,
     chars: r.chars ?? 0,
     extractedAt: r.extracted_at ?? 0,
@@ -136,18 +139,24 @@ function rtfToPlain(s: string): string {
 
 /**
  * 懒启动单个 utilityProcess，串行处理；单个文件超时即 kill（下次重新拉起），空闲 90 秒自动退出释放内存。
- * 主进程只做发消息 / 等结果，不碰 PDF 解析。
+ * 主进程只做发消息 / 等结果，不碰 PDF 解析。Office 正文用同一实现、另一个入口（office-worker.js）。
  */
-class PdfPool {
+class PdfPool<J extends { id: string } = PdfJob, R extends { id: string; ok: boolean; error?: string } = PdfJobResult> {
+  constructor(
+    private script = 'pdf-worker.js',
+    private serviceName = 'linkto-pdf-worker',
+    private label = 'PDF'
+  ) {}
+
   private child: UtilityProcess | null = null
   private chain: Promise<unknown> = Promise.resolve()
-  private waiters = new Map<string, (r: PdfJobResult) => void>()
+  private waiters = new Map<string, (r: R) => void>()
   private idleTimer: NodeJS.Timeout | null = null
 
   private ensure(): UtilityProcess {
     if (this.child) return this.child
-    const child = utilityProcess.fork(join(__dirname, 'pdf-worker.js'), [], { serviceName: 'linkto-pdf-worker' })
-    child.on('message', (msg: PdfJobResult) => {
+    const child = utilityProcess.fork(join(__dirname, this.script), [], { serviceName: this.serviceName })
+    child.on('message', (msg: R) => {
       const w = this.waiters.get(msg?.id)
       if (!w) return
       this.waiters.delete(msg.id)
@@ -155,7 +164,7 @@ class PdfPool {
     })
     child.on('exit', () => {
       if (this.child === child) this.child = null
-      for (const [id, w] of this.waiters) w({ id, ok: false, error: 'PDF 解析进程意外退出' })
+      for (const [id, w] of this.waiters) w({ id, ok: false, error: `${this.label} 解析进程意外退出` } as R)
       this.waiters.clear()
     })
     this.child = child
@@ -172,25 +181,25 @@ class PdfPool {
     }
   }
 
-  run(job: Omit<PdfJob, 'id'>, timeoutMs: number): Promise<PdfJobResult> {
-    const next = this.chain.then(() => this.exec({ ...job, id: randomUUID() }, timeoutMs))
+  run(job: Omit<J, 'id'>, timeoutMs: number): Promise<R> {
+    const next = this.chain.then(() => this.exec({ ...job, id: randomUUID() } as J, timeoutMs))
     this.chain = next.catch(() => {})
     return next
   }
 
-  private exec(job: PdfJob, timeoutMs: number): Promise<PdfJobResult> {
+  private exec(job: J, timeoutMs: number): Promise<R> {
     if (this.idleTimer) clearTimeout(this.idleTimer)
-    return new Promise<PdfJobResult>(resolve => {
+    return new Promise<R>(resolve => {
       let child: UtilityProcess
       try {
         child = this.ensure()
       } catch (err) {
-        return resolve({ id: job.id, ok: false, error: `无法启动 PDF 解析进程：${err instanceof Error ? err.message : String(err)}` })
+        return resolve({ id: job.id, ok: false, error: `无法启动 ${this.label} 解析进程：${err instanceof Error ? err.message : String(err)}` } as R)
       }
       const timer = setTimeout(() => {
         this.waiters.delete(job.id)
         this.kill()
-        resolve({ id: job.id, ok: false, error: `提取超时（${Math.round(timeoutMs / 1000)} 秒）` })
+        resolve({ id: job.id, ok: false, error: `提取超时（${Math.round(timeoutMs / 1000)} 秒）` } as R)
       }, timeoutMs)
       this.waiters.set(job.id, r => {
         clearTimeout(timer)
@@ -221,6 +230,7 @@ export interface AttachmentTextDeps {
 
 export class AttachmentTextService {
   private pool = new PdfPool()
+  private officePool = new PdfPool<OfficeJob, OfficeJobResult>('office-worker.js', 'linkto-office-worker', 'Office')
   private inflight = new Map<string, Promise<ReadResult>>()
   private backfilling = false
 
@@ -230,6 +240,7 @@ export class AttachmentTextService {
 
   stop() {
     this.pool.stop()
+    this.officePool.stop()
   }
 
   private row(id: string): TextRow | undefined {
@@ -291,14 +302,14 @@ export class AttachmentTextService {
     const filename = idx?.filename ?? att?.filename ?? ''
     const ext = (idx?.ext || /\.([a-z0-9]{1,10})$/i.exec(filename)?.[1] || '').toLowerCase()
     const kind = textKindOf(ext, idx?.content_type ?? att?.contentType)
-    if (!kind) return { ok: false, error: '这种格式暂不支持读取文字（支持 PDF 与 txt / csv / md / html / eml 等纯文本）' }
-    // 授权：用户同意前不读取任何附件内容（缓存的正文同样不返回）
-    const gate = allows(kind === 'pdf' ? 'pdf' : 'text', { accountId: idx?.account_id ?? null, reason: filename })
+    if (!kind) return { ok: false, error: '这种格式暂不支持读取文字（支持 PDF、Word / Excel / PowerPoint 与 txt / csv / md / html / eml 等纯文本）' }
+    // 授权：用户同意前不读取任何附件内容（缓存的正文同样不返回）；Office 文件单独按 office 授权
+    const gate = allows(kind === 'pdf' ? 'pdf' : kind === 'office' ? 'office' : 'text', { accountId: idx?.account_id ?? null, reason: filename })
     if (!gate.ok) return { ok: false, error: gate.error, blocked: gate.block }
     const cached = this.row(id)
-    // 缓存有效：文件哈希没变；失败的（超时 / 解析出错）10 分钟后允许重试，扫描件判定不重试
+    // 缓存有效：文件哈希没变；失败的（超时 / 解析出错）10 分钟后允许重试，扫描件 / 加密 / 不支持的格式 / 超限不重试
     if (cached && (!cached.hash || !idx?.hash || cached.hash === idx.hash)) {
-      const retry = cached.method === 'none' && !!cached.error && !/扫描|图片/.test(cached.error) && Date.now() - cached.extracted_at > 10 * 60_000
+      const retry = cached.method === 'none' && !!cached.error && !/扫描|图片|加密|暂不支持|过大/.test(cached.error) && Date.now() - cached.extracted_at > 10 * 60_000
       if (!retry) return { ok: true, text: cached.text ?? '', info: rowInfo(cached) }
     }
     if (opts.download === false && !(idx ? idx.cached && !idx.remote_only : !!att)) return { ok: false, error: '附件不在本地' }
@@ -306,7 +317,7 @@ export class AttachmentTextService {
     if (!local.ok || !local.path) return { ok: false, error: local.error ?? '附件无法取得' }
     const realId = local.id ?? id
     const row = this.deps.attachments.idx.get(realId) ?? idx
-    const res = await this.extractFile(local.path, kind)
+    const res = await this.extractFile(local.path, kind, ext)
     const hash = row?.hash ?? null
     if (!res.ok) {
       this.save(realId, { text: '', method: 'none', pages: res.pages ?? 0, chars: 0, error: res.error ?? '提取失败', truncated: 0, encoding: null, hash, invoice_json: null })
@@ -335,11 +346,17 @@ export class AttachmentTextService {
 
   private async extractFile(
     path: string,
-    kind: NonNullable<ReturnType<typeof textKindOf>>
-  ): Promise<{ ok: boolean; error?: string; text?: string; method: 'pdfjs' | 'plain'; pages?: number; truncated?: boolean; scanned?: boolean; encoding?: string | null }> {
+    kind: NonNullable<ReturnType<typeof textKindOf>>,
+    ext = ''
+  ): Promise<{ ok: boolean; error?: string; text?: string; method: 'pdfjs' | 'plain' | 'office'; pages?: number; truncated?: boolean; scanned?: boolean; encoding?: string | null }> {
     if (kind === 'pdf') {
       const r = await this.pool.run({ path, maxPages: TEXT_LIMITS.maxPages, maxBytes: TEXT_LIMITS.maxPdfBytes, maxChars: TEXT_LIMITS.maxChars }, TEXT_LIMITS.timeoutMs)
       return { ok: r.ok, error: r.error, text: r.text, method: 'pdfjs', pages: r.pages, truncated: r.truncated, scanned: r.scanned }
+    }
+    if (kind === 'office') {
+      // Word / Excel / PowerPoint：解压与 XML 抽取在 office-worker 子进程里做（旧版 .doc 在子进程里调 textutil）
+      const r = await this.officePool.run({ path, ext, maxChars: TEXT_LIMITS.maxChars }, TEXT_LIMITS.timeoutMs)
+      return { ok: r.ok, error: r.error, text: r.text, method: 'office', pages: r.pages, truncated: r.truncated }
     }
     try {
       if (kind === 'eml') {
@@ -351,7 +368,10 @@ export class AttachmentTextService {
       const size = statSync(path).size
       const buf = readHead(path, TEXT_LIMITS.maxPlainBytes)
       const { text: raw, encoding } = decodeBuffer(buf)
-      let text = kind === 'html' ? htmlToPlain(raw) : /^\s*\{\\rtf/.test(raw) ? rtfToPlain(raw) : tidyText(normalizeCjk(raw))
+      const isRtf = kind !== 'html' && /^\s*\{\\rtf/.test(raw)
+      // RTF：macOS 上优先用系统 textutil（能还原 \'xx 编码的中文），失败再粗略去控制字
+      const viaTextutil = isRtf && process.platform === 'darwin' ? await textutilToText(path) : null
+      let text = viaTextutil?.ok ? (viaTextutil.text ?? '') : kind === 'html' ? htmlToPlain(raw) : isRtf ? rtfToPlain(raw) : tidyText(normalizeCjk(raw))
       const truncated = size > buf.length || text.length > TEXT_LIMITS.maxChars
       text = text.slice(0, TEXT_LIMITS.maxChars)
       return { ok: true, text, method: 'plain', pages: 1, truncated, encoding }
@@ -443,7 +463,7 @@ export class AttachmentTextService {
       const rows = this.deps.db
         .prepare(
           `SELECT i.message_id, substr(t.text, 1, ?) AS text FROM attachment_text t JOIN attachment_index i ON i.id = t.attachment_id
-           WHERE i.message_id IN (${part.map(() => '?').join(',')}) AND t.method != 'none' AND i.skip = 0${onlyPdf ? ` AND t.method = 'pdfjs'` : ''}
+           WHERE i.message_id IN (${part.map(() => '?').join(',')}) AND t.method != 'none' AND i.skip = 0${onlyPdf ? ` AND t.method IN ('pdfjs', 'office')` : ''}
            ORDER BY i.id`
         )
         .all(maxChars, ...part) as { message_id: string; text: string }[]
@@ -458,7 +478,12 @@ export class AttachmentTextService {
 
   /** 一封邮件的 PDF 附件正文节选（必要时现取现提取，最多 2 个 PDF） */
   async pdfExcerpt(messageId: string, maxChars = 3000): Promise<{ text: string; files: string[] }> {
-    const rows = this.deps.attachments.idx.byMessage(messageId).filter(r => !r.skip && r.ext === 'pdf').slice(0, 2)
+    // PDF 优先，其次 Word / PowerPoint / Excel 文档
+    const rows = this.deps.attachments.idx
+      .byMessage(messageId)
+      .filter(r => !r.skip && (r.ext === 'pdf' || OFFICE_EXTS.has(r.ext)))
+      .sort((a, b) => Number(b.ext === 'pdf') - Number(a.ext === 'pdf'))
+      .slice(0, 2)
     const parts: string[] = []
     const files: string[] = []
     for (const r of rows) {
@@ -481,7 +506,7 @@ export class AttachmentTextService {
     try {
       const limit = Math.max(1, opts.limit ?? 20)
       let budget = opts.maxBytes ?? 150 * 1024 * 1024
-      const exts = ['pdf', ...PLAIN_EXTS]
+      const exts = ['pdf', ...PLAIN_EXTS, ...OFFICE_EXTS]
       const rows = this.deps.db
         .prepare(
           `SELECT i.id, i.size FROM attachment_index i LEFT JOIN attachment_text t ON t.attachment_id = i.id
@@ -527,6 +552,13 @@ export function initAttachmentText(deps: AttachmentTextDeps): AttachmentTextServ
       console.error('[ipc:readAttachmentText]', err)
       throw err
     }
+  })
+  // 已缓存的提取信息（有正文 / 页数 / 字数；不触发提取、不含正文与发票字段）：附件卡与附件中心显示「有正文 · N 个工作表」
+  ipcMain.handle('api:readAttachmentTextInfo', (_event, ids: unknown) => {
+    if (!getAccess().readContent || !Array.isArray(ids)) return {}
+    const out: Record<string, AttachmentTextInfo> = {}
+    for (const [id, info] of svc.infoMany(ids.slice(0, 500).map(String))) out[id] = { ...info, invoice: null }
+    return out
   })
   app.on('before-quit', () => svc.stop())
   setAttachmentTextReader(async (id, maxChars) => {
