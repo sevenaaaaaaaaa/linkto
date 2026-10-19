@@ -3,8 +3,8 @@ import type { InsightRecord } from '@shared/types'
 /**
  * 待办自动排布（确定性、纯函数）——「科学排布」的那一半：
  * 1) 打分：截止紧迫 45% · 重要度 35% · 能否快速清掉 12% · 搁置时长 8%
- * 2) 排时间：固定时间的事项先占位，其余按分数从高到低填进今天的空闲时段（避开午休），
- *    放不下的顺延到下一个工作日；逾期的自动挪到今天
+ * 2) 排时间：固定时间的事项先占位，其余按分数从高到低填进今天的空闲时段（避开午休、日历忙碌时段及其前后缓冲），
+ *    放不下的顺延到下一个工作日；逾期的自动挪到今天。没有日历数据时行为与以前一致
  * 3) 每一项给出一句「为什么排在这里」
  * AI 只负责估时长 / 定优先级 / 写理由（aiPlanTodos），排布本身在这里瞬时完成，方便做动画。
  */
@@ -34,9 +34,44 @@ export interface ScheduleConfig {
   dayEnd: number
   lunch: [number, number] | null
   workdays: number[] // 0=周日
+  /** 日历会议前后留的缓冲（分钟）；旧配置没有此项时按默认 */
+  meetingBuffer?: number
 }
 
-export const DEFAULT_SCHEDULE: ScheduleConfig = { dayStart: 9, dayEnd: 18, lunch: [12, 13], workdays: [0, 1, 2, 3, 4, 5, 6] }
+export const DEFAULT_SCHEDULE: ScheduleConfig = { dayStart: 9, dayEnd: 18, lunch: [12, 13], workdays: [0, 1, 2, 3, 4, 5, 6], meetingBuffer: 10 }
+
+/** 日历忙碌时段（todo-integrations 提供；只有开了「忙碌时段」的日历才有） */
+export interface BusyBlock {
+  start: number
+  end: number
+  title?: string
+}
+
+/**
+ * 日历忙碌时段 → 排程约束：每段前后各加 bufferMin 分钟缓冲，合并重叠，去掉非法 / 超长（≥ 12 小时，多半是全天占位）的。
+ * 返回按开始时间排序、互不重叠的区间。
+ */
+export function calendarConstraints(blocks: BusyBlock[] | null | undefined, bufferMin = DEFAULT_SCHEDULE.meetingBuffer ?? 10): [number, number][] {
+  const buf = Math.max(0, Math.min(120, Number(bufferMin) || 0)) * 60_000
+  const list = (blocks ?? [])
+    .filter(b => Number.isFinite(b?.start) && Number.isFinite(b?.end) && b.end > b.start && b.end - b.start < 12 * 3600_000)
+    .map(b => [b.start - buf, b.end + buf] as [number, number])
+    .sort((a, b) => a[0] - b[0])
+  const out: [number, number][] = []
+  for (const [s, e] of list) {
+    const last = out[out.length - 1]
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e)
+    else out.push([s, e])
+  }
+  return out
+}
+
+/** [from, to) 内与区间集合的重叠时长（毫秒） */
+export function overlapMs(intervals: [number, number][], from: number, to: number): number {
+  let ms = 0
+  for (const [s, e] of intervals) ms += Math.max(0, Math.min(to, e) - Math.max(from, s))
+  return ms
+}
 
 const CFG_KEY = 'ms_todo_schedule'
 /** 工作时段（待办页可调，按设备保存） */
@@ -159,7 +194,13 @@ function place(cursor: number, minutes: number, busy: [number, number][], cfg: S
   return [t, t + minutes * 60_000]
 }
 
-export function schedule(todos: InsightRecord[], now = Date.now(), cfg = DEFAULT_SCHEDULE, manualOrder?: string[]): { items: Planned[]; freeToday: number; movedToToday: number } {
+export function schedule(
+  todos: InsightRecord[],
+  now = Date.now(),
+  cfg = DEFAULT_SCHEDULE,
+  manualOrder?: string[],
+  calendar?: BusyBlock[] | null
+): { items: Planned[]; freeToday: number; movedToToday: number; meetingsToday: number } {
   const open = todos.filter(t => t.status === 'open')
   const scored = open.map(t => {
     const f = factorsOf(t, now)
@@ -178,6 +219,9 @@ export function schedule(todos: InsightRecord[], now = Date.now(), cfg = DEFAULT
     const s = data(x.t).fixedAt as number
     return [s, s + minutesOf(x.t) * 60_000]
   })
+  // 日历忙碌时段（含前后缓冲）：自动排的时间块不与它们重叠；固定时间的事项是用户定的，不挪
+  const meetings = calendarConstraints(calendar, cfg.meetingBuffer ?? DEFAULT_SCHEDULE.meetingBuffer)
+  busy.push(...meetings)
   // 15 分钟对齐的起点
   let cursor = Math.ceil(now / (15 * 60_000)) * 15 * 60_000
   const todayEnd = dayStartOf(now, 24)
@@ -208,11 +252,15 @@ export function schedule(todos: InsightRecord[], now = Date.now(), cfg = DEFAULT
     if (cfg.workdays.includes(new Date(now).getDay()) && close > start) {
       const lunch = cfg.lunch ? Math.max(0, Math.min(close, dayStartOf(now, cfg.lunch[1])) - Math.max(start, dayStartOf(now, cfg.lunch[0]))) : 0
       const used = items.filter(i => i.start && i.start < todayEnd).reduce((s, i) => s + Math.max(0, Math.min(close, i.end!) - Math.max(start, i.start!)), 0)
-      freeToday = Math.max(0, close - start - lunch - used) / 60_000
+      // 会议（含缓冲）占的工作时间，扣掉与午休重叠的部分避免重复计算
+      const lunchIv: [number, number][] = cfg.lunch ? [[dayStartOf(now, cfg.lunch[0]), dayStartOf(now, cfg.lunch[1])]] : []
+      const meet = overlapMs(meetings, start, close) - meetings.reduce((sum, [ms, me]) => sum + overlapMs(lunchIv, Math.max(ms, start), Math.min(me, close)), 0)
+      freeToday = Math.max(0, close - start - lunch - used - Math.max(0, meet)) / 60_000
     }
   }
+  const meetingsToday = (calendar ?? []).filter(b => b.start < todayEnd && b.end > now).length
   items.sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity) || b.score - a.score)
-  return { items, freeToday, movedToToday }
+  return { items, freeToday, movedToToday, meetingsToday }
 
   function build(x: { t: InsightRecord; f: ReturnType<typeof factorsOf>; score: number }, start: number | null, end: number | null): Planned {
     const today = dayStartOf(now, 0)

@@ -21,7 +21,13 @@ export interface DigestMail {
   appLink: string
   /** 网页版备选链接 */
   webLink?: string | null
+  /** link = 通用内容（订阅文章 / 网页）：from 是来源，appLink 是原文链接 */
+  kind?: 'mail' | 'link'
 }
+
+/** 邮件 / 通用内容的字段名 */
+export const labelsOf = (m: Pick<DigestMail, 'kind'> | undefined) =>
+  m?.kind === 'link' ? { from: '来源', open: '原文链接', noun: '分享', many: '条内容', gist: '摘要' } : { from: '发件人', open: '本机打开', noun: '邮件', many: '封邮件', gist: 'AI 要点' }
 
 export interface ShareDigest {
   mails: DigestMail[]
@@ -50,7 +56,7 @@ export function truncateChars(s: string, max: number): string {
   return c.length <= max ? s : c.slice(0, Math.max(0, max - 1)).join('') + '…'
 }
 
-const title = (d: ShareDigest) => (d.mails.length === 1 ? subj(d.mails[0].subject) : `${d.mails.length} 封邮件`)
+const title = (d: ShareDigest) => (d.mails.length === 1 ? subj(d.mails[0].subject) : `${d.mails.length} ${labelsOf(d.mails[0]).many}`)
 
 // ---------------------------------------------------------------- 通用 Markdown（企业微信 / 钉钉 / 飞书 lark_md / Discord）
 
@@ -69,16 +75,20 @@ export function digestMarkdown(d: ShareDigest, opts: { bold?: (s: string) => str
   if (d.note?.trim()) out.push(d.note.trim(), '')
   d.mails.forEach((m, i) => {
     if (d.mails.length > 1 || !opts.noTitle) out.push(b(`${d.mails.length > 1 ? `${i + 1}. ` : ''}${subj(m.subject)}`))
-    out.push(`发件人：${m.from}`, `时间：${m.dateText}`)
+    const L = labelsOf(m)
+    if (m.from) out.push(`${L.from}：${m.from}`)
+    if (m.dateText) out.push(`时间：${m.dateText}`)
     if (d.linkOnly) {
-      out.push(`本机打开：${m.appLink}`)
+      if (m.appLink) out.push(m.kind === 'link' ? link(L.open, m.appLink) : `${L.open}：${m.appLink}`)
       if (m.webLink) out.push(link('网页版搜索', m.webLink))
       out.push('')
       return
     }
-    if (m.gist) out.push(`${b('AI 要点')}：${m.gist}`)
+    if (m.gist) out.push(`${b(L.gist)}：${m.gist}`)
     for (const h of (m.highlights ?? []).slice(0, 3)) out.push(`- ${h}`)
     if (m.excerpt) out.push(opts.quoteBody === false ? m.excerpt : quote(m.excerpt))
+    // 通用内容：正文之后带上原文链接（邮件的本机链接只在「链接」格式里给）
+    if (m.kind === 'link' && m.appLink) out.push(link(L.open, m.appLink))
     if (m.attachments.length) out.push(`附件：${m.attachments.map(a => `${a.name}（${fmtSize(a.size)}）`).join('、')}`)
     out.push('')
   })
@@ -111,8 +121,10 @@ export function dingtalkUrl(url: string, secret: string | null | undefined, time
 export function dingtalkPayload(d: ShareDigest) {
   const t = title(d)
   // 钉钉 markdown 换行需要两个空格或空行；正文 ≤ 20000 字符
-  const text = truncateChars(`#### ${t}\n\n${digestMarkdown(d, { noTitle: true }).replace(/\n/g, '\n\n').replace(/\n\n(> )/g, '\n$1')}`, 18000)
-  return { msgtype: 'markdown', markdown: { title: truncateChars(`邮件：${t}`, 60), text } }
+  // 通用内容不含「邮件」二字：补一行落款，让设了「邮件」关键词的机器人也能通过校验
+  const tail = d.mails[0]?.kind === 'link' ? '\n\n— 由 LinkTo 邮件客户端分享' : ''
+  const text = truncateChars(`#### ${t}\n\n${digestMarkdown(d, { noTitle: true }).replace(/\n/g, '\n\n').replace(/\n\n(> )/g, '\n$1')}${tail}`, 18000)
+  return { msgtype: 'markdown', markdown: { title: truncateChars(`${labelsOf(d.mails[0]).noun}：${t}`, 60), text } }
 }
 
 // ---------------------------------------------------------------- 飞书 / Lark（签名校验：key = timestamp + "\n" + secret，对空串做 HmacSHA256）
@@ -163,7 +175,7 @@ export function slackPayload(d: ShareDigest) {
   if (cur) chunks.push(cur)
   for (const c of chunks.slice(0, 20)) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: c } })
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '来自 LinkTo' }] })
-  return { text: truncateChars(`邮件：${t}`, 300), blocks }
+  return { text: truncateChars(`${labelsOf(d.mails[0]).noun}：${t}`, 300), blocks }
 }
 
 // ---------------------------------------------------------------- Microsoft Teams（Workflows / Incoming Webhook 都接受 Adaptive Card 附件）
@@ -173,13 +185,15 @@ export function teamsPayload(d: ShareDigest) {
   if (d.note?.trim()) body.push({ type: 'TextBlock', text: d.note.trim(), wrap: true })
   d.mails.forEach((m, i) => {
     if (d.mails.length > 1) body.push({ type: 'TextBlock', text: `${i + 1}. ${subj(m.subject)}`, weight: 'Bolder', wrap: true, spacing: 'Medium', separator: true })
-    body.push({ type: 'FactSet', facts: [{ title: '发件人', value: m.from }, { title: '时间', value: m.dateText }, ...(m.attachments.length ? [{ title: '附件', value: m.attachments.map(a => a.name).join('、') }] : [])] })
+    const L = labelsOf(m)
+    body.push({ type: 'FactSet', facts: [...(m.from ? [{ title: L.from, value: m.from }] : []), ...(m.dateText ? [{ title: '时间', value: m.dateText }] : []), ...(m.attachments.length ? [{ title: '附件', value: m.attachments.map(a => a.name).join('、') }] : [])] })
     if (d.linkOnly) {
-      body.push({ type: 'TextBlock', text: `本机打开：${m.appLink}`, wrap: true, isSubtle: true })
+      if (m.appLink) body.push({ type: 'TextBlock', text: m.kind === 'link' ? `[${L.open}](${m.appLink})` : `${L.open}：${m.appLink}`, wrap: true, isSubtle: m.kind !== 'link' })
       return
     }
-    if (m.gist) body.push({ type: 'TextBlock', text: `**AI 要点**：${m.gist}`, wrap: true })
+    if (m.gist) body.push({ type: 'TextBlock', text: `**${labelsOf(m).gist}**：${m.gist}`, wrap: true })
     if (m.excerpt) body.push({ type: 'TextBlock', text: truncateChars(m.excerpt, 2000), wrap: true, isSubtle: true })
+    if (m.kind === 'link' && m.appLink) body.push({ type: 'TextBlock', text: `[${L.open}](${m.appLink})`, wrap: true })
   })
   if (d.files.length) body.push({ type: 'TextBlock', text: d.files.map(f => (f.url ? `- [${f.name}](${f.url})` : `- ${f.name}${f.where ? `：${f.where}` : ''}`)).join('\n'), wrap: true })
   return {
@@ -198,16 +212,21 @@ export function teamsPayload(d: ShareDigest) {
 
 export function discordPayload(d: ShareDigest) {
   const embeds = d.mails.slice(0, 10).map(m => {
+    const L = labelsOf(m)
+    const isLink = m.kind === 'link'
     const desc = d.linkOnly
-      ? `本机打开：${m.appLink}${m.webLink ? `\n[网页版搜索](${m.webLink})` : ''}`
-      : [m.gist ? `**AI 要点**：${m.gist}` : '', ...(m.highlights ?? []).slice(0, 3).map(h => `- ${h}`), m.excerpt ? quote(m.excerpt) : ''].filter(Boolean).join('\n')
+      ? isLink
+        ? `[${L.open}](${m.appLink})`
+        : `${L.open}：${m.appLink}${m.webLink ? `\n[网页版搜索](${m.webLink})` : ''}`
+      : [m.gist ? `**${L.gist}**：${m.gist}` : '', ...(m.highlights ?? []).slice(0, 3).map(h => `- ${h}`), m.excerpt ? quote(m.excerpt) : ''].filter(Boolean).join('\n')
     return {
       title: truncateChars(subj(m.subject), 256),
+      ...(isLink && /^https?:\/\//i.test(m.appLink) ? { url: m.appLink } : {}),
       description: truncateChars(desc, 4000),
       color: 0x3b82f6,
       fields: [
-        { name: '发件人', value: truncateChars(m.from, 1024), inline: true },
-        { name: '时间', value: m.dateText, inline: true },
+        ...(m.from ? [{ name: L.from, value: truncateChars(m.from, 1024), inline: true }] : []),
+        ...(m.dateText ? [{ name: '时间', value: m.dateText, inline: true }] : []),
         ...(m.attachments.length ? [{ name: '附件', value: truncateChars(m.attachments.map(a => a.name).join('、'), 1024), inline: false }] : [])
       ],
       timestamp: new Date(m.date || Date.now()).toISOString(),
@@ -227,12 +246,15 @@ export function telegramText(d: ShareDigest, max = 4096): string {
   const out: string[] = []
   if (d.note?.trim()) out.push(tgEsc(d.note.trim()), '')
   d.mails.forEach((m, i) => {
-    out.push(`<b>${tgEsc(`${d.mails.length > 1 ? `${i + 1}. ` : ''}${subj(m.subject)}`)}</b>`, `发件人：${tgEsc(m.from)}`, `时间：${tgEsc(m.dateText)}`)
-    if (d.linkOnly) out.push(`本机打开：<code>${tgEsc(m.appLink)}</code>`, ...(m.webLink ? [`<a href="${tgEsc(m.webLink)}">网页版搜索</a>`] : []))
+    const L = labelsOf(m)
+    const openLink = m.kind === 'link' && m.appLink ? `<a href="${tgEsc(m.appLink)}">${L.open}</a>` : ''
+    out.push(`<b>${tgEsc(`${d.mails.length > 1 ? `${i + 1}. ` : ''}${subj(m.subject)}`)}</b>`, ...(m.from ? [`${L.from}：${tgEsc(m.from)}`] : []), ...(m.dateText ? [`时间：${tgEsc(m.dateText)}`] : []))
+    if (d.linkOnly) out.push(...(openLink ? [openLink] : [`${L.open}：<code>${tgEsc(m.appLink)}</code>`]), ...(m.webLink ? [`<a href="${tgEsc(m.webLink)}">网页版搜索</a>`] : []))
     else {
-      if (m.gist) out.push(`<b>AI 要点</b>：${tgEsc(m.gist)}`)
+      if (m.gist) out.push(`<b>${L.gist}</b>：${tgEsc(m.gist)}`)
       if (m.excerpt) out.push(`<blockquote>${tgEsc(m.excerpt)}</blockquote>`)
       if (m.attachments.length) out.push(`附件：${tgEsc(m.attachments.map(a => a.name).join('、'))}`)
+      if (openLink) out.push(openLink)
     }
     out.push('')
   })
@@ -313,10 +335,13 @@ export function notionBlocks(m: DigestMail & { body: string }, d: Pick<ShareDige
   blocks.push({
     object: 'block',
     type: 'callout',
-    callout: { icon: { type: 'emoji', emoji: '✉️' }, rich_text: rt(`发件人：${m.from}\n收件人：${m.to || '—'}\n时间：${m.dateText}`) }
+    callout:
+      m.kind === 'link'
+        ? { icon: { type: 'emoji', emoji: '🔗' }, rich_text: rt([m.from ? `来源：${m.from}` : '', m.dateText ? `时间：${m.dateText}` : ''].filter(Boolean).join('\n') || '网页内容') }
+        : { icon: { type: 'emoji', emoji: '✉️' }, rich_text: rt(`发件人：${m.from}\n收件人：${m.to || '—'}\n时间：${m.dateText}`) }
   })
   if (m.gist) {
-    blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: rt('AI 要点') } })
+    blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: rt(labelsOf(m).gist) } })
     blocks.push(para(m.gist))
     for (const h of (m.highlights ?? []).slice(0, 4)) blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt(h) } })
   }
@@ -327,7 +352,9 @@ export function notionBlocks(m: DigestMail & { body: string }, d: Pick<ShareDige
     for (const a of m.attachments) blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt(`${a.name}（${fmtSize(a.size)}）`) } })
     for (const f of d.files) blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: f.url ? rt(f.name, { link: f.url }) : rt(`${f.name}${f.where ? `：${f.where}` : ''}`) } })
   }
-  blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: rt(`本机打开：${m.appLink}`) } })
+  if (m.kind === 'link') {
+    if (m.appLink) blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: rt('原文链接', { link: /^https?:\/\//i.test(m.appLink) ? m.appLink : null }) } })
+  } else blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: rt(`本机打开：${m.appLink}`) } })
   return blocks
 }
 
@@ -339,12 +366,12 @@ export function notionPage(parent: { type: 'database' | 'page'; id: string }, m:
   if (parent.type === 'database') {
     properties = { [schema?.titleProp || 'Name']: { title: rt(titleText) } }
     const has = (names: string[], type: string) => names.find(n => schema?.props[n] === type)
-    const fromProp = has(['发件人', 'From', 'Sender', '来自'], 'rich_text')
+    const fromProp = has(m.kind === 'link' ? ['来源', 'Source', '来自', '发件人', 'From'] : ['发件人', 'From', 'Sender', '来自'], 'rich_text')
     if (fromProp) properties[fromProp] = { rich_text: rt(m.from) }
     const dateProp = has(['日期', 'Date', '时间', 'Received'], 'date')
     if (dateProp) properties[dateProp] = { date: { start: new Date(m.date || Date.now()).toISOString() } }
     const linkProp = has(['链接', 'Link', 'URL', 'Url'], 'url')
-    if (linkProp) properties[linkProp] = { url: m.webLink || m.appLink }
+    if (linkProp && (m.webLink || /^https?:/i.test(m.appLink) || m.kind !== 'link')) properties[linkProp] = { url: m.webLink || m.appLink }
   } else {
     properties = { title: { title: rt(titleText) } }
   }

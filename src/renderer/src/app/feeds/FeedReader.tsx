@@ -182,7 +182,7 @@ export function FeedReader(props: { id: string | null }) {
   /** 分享：「分享与导出」中心在场时由它接管（监听 ms:share-request 并 preventDefault），否则复制链接 */
   const share = () => {
     if (!item) return
-    const ev = new CustomEvent('ms:share-request', { cancelable: true, detail: { kind: 'link', title: item.title, url: item.url, text: ai.text || item.summary, source: item.sourceTitle } })
+    const ev = new CustomEvent('ms:share-request', { cancelable: true, detail: { kind: 'link', title: item.title, url: item.url, text: ai.text || item.summary, source: item.sourceTitle, date: item.publishedAt, feedItemId: item.id } })
     window.dispatchEvent(ev)
     if (ev.defaultPrevented) return
     if (!item.url) return toast('这条没有原文链接')
@@ -223,7 +223,7 @@ export function FeedReader(props: { id: string | null }) {
       { kind: 'action', label: '转为待办', icon: <IconCheckSquare width={13} height={13} />, onSelect: () => void toTodo() },
       { kind: 'action', label: '存入知识库', icon: <IconSave width={13} height={13} />, onSelect: () => void saveKb() },
       { kind: 'sep' },
-      { kind: 'action', label: '分享 / 复制链接', icon: <IconSend width={13} height={13} />, disabled: !item?.url, onSelect: share },
+      { kind: 'action', label: '分享…', icon: <IconSend width={13} height={13} />, disabled: !item, onSelect: share },
       { kind: 'action', label: '复制链接', icon: <IconLink width={13} height={13} />, disabled: !item?.url, onSelect: () => item?.url && void navigator.clipboard.writeText(item.url).then(() => toast('已复制链接')) },
       { kind: 'sep' },
       ...(ai.text ? [{ kind: 'action' as const, label: '重新生成 AI 摘要', icon: <IconSparkles width={13} height={13} />, onSelect: () => void summarize(true) }] : []),

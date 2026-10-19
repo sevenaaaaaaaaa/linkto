@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { looksPrivateHost } from '@shared/net-ip'
 import { api, useMailEvent } from '../../lib/api'
 import { SectionTitle, SettingRow, Select, Toggle } from './GeneralTab'
 import { IconPlus, IconTrash, IconSend, IconFolder } from '../../components/icons'
@@ -247,6 +248,16 @@ function TargetForm(props: { kind: ShareTargetKind; target?: ShareTargetInfo; dr
   }
 
   const saved = props.target?.secrets
+  // Webhook / API 地址是用户自己填的，不拦内网地址，只提示一下
+  const privateHost = [v.url, v.apiBase]
+    .map(u => {
+      try {
+        return u ? new URL(String(u).trim()).hostname : ''
+      } catch {
+        return ''
+      }
+    })
+    .find(h => h && looksPrivateHost(h))
   const field = (f: ShareField) => {
     const has = f.secret && saved && (f.key === 'url' ? saved.url : f.key === 'secret' ? saved.secret : f.key === 'token' ? saved.token : false)
     if (f.kind === 'drive')
@@ -313,6 +324,11 @@ function TargetForm(props: { kind: ShareTargetKind; target?: ShareTargetInfo; dr
           </FieldRow>
         ))}
       </div>
+      {privateHost && (
+        <div className="mt-3 text-xs rounded-[var(--r-sm)] px-2.5 py-1.5 leading-relaxed" style={{ background: 'var(--warn-soft)', color: 'var(--warn-ink)' }}>
+          「{privateHost}」是内网或本机地址：只有这台电脑能连上它时才发得出去（如公司内网、自建服务）。确认是你自己的服务就可以保存。
+        </div>
+      )}
       {err && (
         <div className="mt-3 text-xs rounded-[var(--r-sm)] px-2.5 py-1.5" role="alert" style={{ background: 'var(--danger-soft)', color: 'var(--danger-ink)' }}>
           {err}

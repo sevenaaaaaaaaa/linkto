@@ -18,6 +18,8 @@ export interface PrintMail {
   html: string
   attachments: { name: string; size: number }[]
   gist?: string | null
+  /** 非邮件内容（订阅文章等）：自定义头部信息行，替代 发件人 / 收件人 / 抄送 */
+  meta?: { label: string; value: string }[]
 }
 
 export interface PrintOptions {
@@ -51,9 +53,13 @@ export function buildPrintHtml(mails: PrintMail[], opts: PrintOptions): string {
   <header class="lt-head">
     <h1>${escapeHtml(m.subject || '（无主题）')}</h1>
     <table class="lt-meta">
-      <tr><th>发件人</th><td>${escapeHtml(m.from)}</td></tr>
+      ${
+        m.meta
+          ? m.meta.map(x => `<tr><th>${escapeHtml(x.label)}</th><td>${escapeHtml(x.value)}</td></tr>`).join('')
+          : `<tr><th>发件人</th><td>${escapeHtml(m.from)}</td></tr>
       <tr><th>收件人</th><td>${escapeHtml(m.to || '—')}</td></tr>
-      ${m.cc ? `<tr><th>抄送</th><td>${escapeHtml(m.cc)}</td></tr>` : ''}
+      ${m.cc ? `<tr><th>抄送</th><td>${escapeHtml(m.cc)}</td></tr>` : ''}`
+      }
       <tr><th>时间</th><td>${escapeHtml(m.dateText)}</td></tr>
     </table>
     ${m.gist ? `<div class="lt-gist"><b>AI 要点</b>　${escapeHtml(m.gist)}</div>` : ''}

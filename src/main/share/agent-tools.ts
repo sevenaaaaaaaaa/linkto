@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { formatLabel, SHARE_FORMATS, SHARE_GROUP_LABEL, type ShareFormat } from '@shared/share'
+import { CONTENT_FORMATS, formatLabel, SHARE_FORMATS, SHARE_GROUP_LABEL, type ShareFormat, type ShareRequest } from '@shared/share'
+import { feedService } from '../feeds'
 import type { MailStore } from '../db'
 import type { AgentTool } from '../agent/tools'
 import { shareService } from './index'
@@ -50,12 +51,13 @@ export function shareAgentTools(deps: { store: MailStore; fail(msg: string): Err
       domain: 'mail',
       risk: 'external',
       description:
-        '把邮件发到某个分享目标（如团队群机器人、Telegram、Notion、flomo），或导出为 PDF / 长图 / EML / Markdown 到本地或网盘（对外动作，每次都需要用户确认）。先用 list_share_targets 查目标 id 与支持的格式。',
+        '把邮件发到某个分享目标（如团队群机器人、Telegram、Notion、flomo），或导出为 PDF / 长图 / EML / Markdown 到本地或网盘（对外动作，每次都需要用户确认）。先用 list_share_targets 查目标 id 与支持的格式。也可以分享一条订阅文章：给 feed_item_id（来自 feed_search），不给 message_ids。',
       params: {
         type: 'object',
         properties: {
           target: { type: 'string', description: '目标 id 或名称（来自 list_share_targets）' },
           message_ids: { type: 'array', items: { type: 'string' }, description: '邮件 id；不填则用当前打开的邮件' },
+          feed_item_id: { type: 'string', description: '要分享的订阅条目 id（分享订阅文章时填，此时忽略 message_ids；不支持 eml 格式）' },
           format: { type: 'string', enum: FORMAT_ENUM, description: 'text 文本摘要 / rich 富文本 / pdf / png 长图 / eml 原文 / md Markdown / link 链接；IM 默认 text' },
           include_attachments: { type: 'boolean', description: '连同附件（Webhook 会先存到目标设置的网盘再附链接）' },
           merge: { type: 'boolean', description: '多封合并为一条消息 / 一个 PDF' },
@@ -70,6 +72,10 @@ export function shareAgentTools(deps: { store: MailStore; fail(msg: string): Err
         } catch {
           /* 预览时目标不存在：执行时再报错 */
         }
+        if (a.feed_item_id) {
+          const it = feedService()?.item(String(a.feed_item_id))
+          return [`发到：${name}`, `格式：${formatLabel((a.format as ShareFormat) || 'text')}`, `订阅文章：${it?.title ?? a.feed_item_id}${it?.sourceTitle ? `（${it.sourceTitle}）` : ''}`, ...(a.note ? [`附言：${String(a.note).slice(0, 200)}`] : [])]
+        }
         const ids = Array.isArray(a.message_ids) ? a.message_ids.map(String) : []
         const subjects = ids.slice(0, 5).map((id: string) => deps.store.getMessageRow(id)?.subject || id)
         return [
@@ -81,6 +87,17 @@ export function shareAgentTools(deps: { store: MailStore; fail(msg: string): Err
       },
       async run(a, ctx) {
         const t = resolveTarget(a.target)
+        if (a.feed_item_id) {
+          const it = feedService()?.item(String(a.feed_item_id))
+          if (!it) throw deps.fail(`找不到订阅条目 ${a.feed_item_id}；先用 feed_search 查找`)
+          const formats = t.formats.filter(f => CONTENT_FORMATS.includes(f))
+          if (!formats.length) throw deps.fail(`「${t.name}」不支持分享网页内容`)
+          const format = (formats.includes(a.format) ? a.format : formats.includes('text') ? 'text' : formats[0]) as ShareFormat
+          const req: ShareRequest = { messageIds: [], content: { kind: 'link', title: it.title, url: it.url, source: it.sourceTitle, feedItemId: it.id }, targetId: t.id, format, note: a.note ? String(a.note) : undefined, confirmed: true }
+          const res = t.id === 'sys:export' ? await svc().exportFiles({ ...req, where: 'quick' }) : await svc().send(req, { via: 'agent' })
+          if (!res.ok) throw deps.fail(res.error ?? '发送失败')
+          return { data: { ok: true, target: t.name, format, message: res.message, ...(res.paths?.length ? { paths: res.paths.slice(0, 10) } : {}) }, summary: res.message ?? `已发到 ${t.name}` }
+        }
         const ids = idsOf(a, ctx.messageId)
         if (!ids.length) throw deps.fail('没有指定邮件（message_ids），当前也没有打开的邮件')
         const format = (FORMAT_ENUM.includes(a.format) ? a.format : t.formats.includes('text') ? 'text' : t.formats[0]) as ShareFormat

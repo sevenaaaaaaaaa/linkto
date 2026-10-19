@@ -561,7 +561,7 @@ export class FeedService {
             const req = buildApiRequest(p, topic, key, settings.apiBase[p], Math.max(10, topic.maxResults))
             let res: SafeFetchResult
             try {
-              res = await this.fetch(req.url, { method: req.method, headers: req.headers, body: req.body, accept: 'application/json', maxBytes: 3 * 1024 * 1024 })
+              res = await this.fetch(req.url, { method: req.method, headers: req.headers, body: req.body, accept: 'application/json', maxBytes: 3 * 1024 * 1024, allowPrivate: !!settings.apiBase[p] })
             } catch (err) {
               if (err instanceof FetchError && err.code === 'http') throw new Error(apiErrorText(err.status ?? 0, String((err as any).body ?? '')))
               throw err

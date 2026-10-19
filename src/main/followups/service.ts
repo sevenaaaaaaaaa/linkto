@@ -596,9 +596,20 @@ export class FollowupService {
     for (let rec of this.rows()) {
       if (!isActive(rec.data.status)) continue
       out.checked++
-      // 起草了但很久没发出（草稿也不在了）：取消，免得一直挂着
+      // 起草了但没发出、草稿也没存下（Agent 打开的撰写窗一字未改就关了）：24 小时后取消，免得一直挂着；
+      // 存了草稿的一直保留（用户可能还会回来发；删草稿时 outbox 事件会取消它）
       if (rec.data.status === 'drafted') {
-        if (now - rec.createdAt > 30 * DAY_MS && !this.draftExists(rec.data.draftId)) this.apply(rec, { type: 'cancel', at: now })
+        if (now - rec.createdAt > DAY_MS && !this.draftExists(rec.data.draftId)) {
+          const next = this.apply(rec, { type: 'cancel', at: now })
+          if (next) {
+            logActivity({
+              source: next.data.source === 'skill' ? 'skill' : next.data.source === 'agent' ? 'chat' : 'job',
+              title: `已取消跟进：${subj(next.data.subject)}`,
+              detail: '起草后一直没有发出、也没有存草稿（撰写窗未保存就关了），24 小时后自动取消；需要的话可以重新起草',
+              refs: this.refs(next)
+            })
+          }
+        }
         continue
       }
       const due = this.apply(rec, { type: 'due', at: now })

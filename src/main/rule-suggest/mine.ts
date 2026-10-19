@@ -93,7 +93,8 @@ export const DAY_CAP = 3
 
 export interface Candidate {
   scope: Scope
-  action: MinedAction
+  /** openNoRead：打开后几秒就关掉、没读（见 dwell.ts），建议自动标已读 */
+  action: MinedAction | 'openNoRead'
   /** moveFolder 的目标文件夹 id */
   value: string | null
   conditions: RuleCondition[]
@@ -518,7 +519,7 @@ export function blockedByHistory(c: Pick<Candidate, 'fingerprint' | 'domain' | '
 
 const SPECIFICITY: Record<Scope['kind'], number> = { addr: 0, list: 1, 'addr+kw': 2, 'domain+kw': 3, domain: 4, newsletter: 5 }
 
-function scopeDomain(scope: Scope): string {
+export function scopeDomain(scope: Scope): string {
   switch (scope.kind) {
     case 'addr':
     case 'addr+kw':
@@ -533,7 +534,7 @@ function scopeDomain(scope: Scope): string {
   }
 }
 
-const ctxOf = (e: MineEvent): RuleEvalContext => ({
+export const ctxOf = (e: MineEvent): RuleEvalContext => ({
   from: evFrom(e),
   to: '',
   subject: String(e.subject ?? e.subjectPattern ?? ''),

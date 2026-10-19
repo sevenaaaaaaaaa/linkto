@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useReadDwell } from '../lib/read-dwell'
 import { api, useMailEvent, fmtFullDate, displayName, fmtSize } from '../lib/api'
 import { useMail } from '../stores/mail'
 import { sanitizeEmailHtml, activateRemoteImages } from '../lib/sanitize'
@@ -60,6 +61,9 @@ export function Reader() {
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // 阅读停留信号：打开后几秒就切走、没有互动 → 上报给规则建议（只记元数据）
+  const readerRootRef = useRef<HTMLDivElement>(null)
+  useReadDwell(msg, readerRootRef)
   const requestRef = useRef('')
   const styleRootRef = useRef<HTMLDivElement>(null)
   // 工具栏宽度自适应：不足 600px 时次要按钮只留图标（审计 IA-6 窄屏溢出）
@@ -597,7 +601,7 @@ export function Reader() {
   ])
 
   return (
-    <div className="flex-1 min-w-0 h-full flex flex-col relative">
+    <div ref={readerRootRef} className="flex-1 min-w-0 h-full flex flex-col relative">
       {/* 顶部工具栏：并入 52px 标题栏，与侧栏「写邮件」、列表搜索同一基线（审计 T-4 / IA-6）
           主动作：回复 · 全部回复 · 转发 | 归档 · 稍后 · 删除；其余进「⋯」；窄宽度自动只留图标 */}
       <div ref={toolbarRef} className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-0.5 px-4 border-b border-[var(--border-soft)]">

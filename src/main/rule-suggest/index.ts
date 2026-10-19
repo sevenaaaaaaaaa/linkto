@@ -13,14 +13,16 @@ export function ruleSuggestService(): RuleSuggestService | null {
   return service
 }
 
-/** 初始化：服务 + IPC（ruleSuggestions / ruleSuggestionAccept / ruleSuggestionDismiss）。操作记录钩子在 ipc.ts，不依赖这里 */
+/** 初始化：服务 + IPC（ruleSuggestions / ruleSuggestionAccept / ruleSuggestionDismiss / ruleSuggestReadSignal）。操作记录钩子在 ipc.ts，不依赖这里 */
 export function initRuleSuggest(deps: RuleSuggestDeps): RuleSuggestService {
   const svc = new RuleSuggestService(deps)
   service = svc
   const handlers: Record<string, (...args: any[]) => unknown> = {
     ruleSuggestions: () => svc.list(),
     ruleSuggestionAccept: (id: string, opts?: { rule?: Omit<Rule, 'id' | 'order' | 'enabled'>; applyExisting?: boolean }) => svc.accept(String(id), opts ?? {}),
-    ruleSuggestionDismiss: (id: string, forever?: boolean) => svc.dismiss(String(id), !!forever)
+    ruleSuggestionDismiss: (id: string, forever?: boolean) => svc.dismiss(String(id), !!forever),
+    // 阅读停留信号（打开后马上关掉、没读）：渲染端判定后上报，只记元数据
+    ruleSuggestReadSignal: (sig: { messageId: string; verdict: 'noRead' | 'read'; dwellMs?: number }) => svc.readSignal(sig ?? ({} as never))
   }
   for (const [method, handler] of Object.entries(handlers)) {
     ipcMain.handle(`api:${method}`, async (_e, ...args) => {

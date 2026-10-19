@@ -591,6 +591,8 @@ export interface LinkToApi {
   ruleSuggestionAccept(id: string, opts?: { rule?: Omit<import('./types').Rule, 'id' | 'order' | 'enabled'>; applyExisting?: boolean }): Promise<{ ok: boolean; ruleId?: string; applied?: number; error?: string }>
   /** 忽略：forever=true 同类（同指纹）不再建议；否则 30 天内不再提 */
   ruleSuggestionDismiss(id: string, forever?: boolean): Promise<void>
+  /** 阅读停留信号：打开一封未读邮件后，几秒内切走且没有滚动 / 点击 = noRead；读了 = read（只记元数据，用于「这类邮件你通常不看」的规则建议） */
+  ruleSuggestReadSignal(sig: { messageId: string; verdict: 'noRead' | 'read'; dwellMs?: number }): Promise<boolean>
 
   lifeList(): Promise<import('./types').InsightRecord[]>
   lifeCreate(input: { title: string; dueAt?: number | null; data: Partial<import('./types').LifeData> }): Promise<string>

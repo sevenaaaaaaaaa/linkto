@@ -1040,3 +1040,53 @@ export function explicitDateOf(when: string | null | undefined, ref: number): nu
   }
   return null
 }
+
+// ---------------------------------------------------------------- 「我」= 用户本人
+
+/** 用户本人的身份：账户显示名（发信时的 From 名）与邮箱 */
+export interface SelfIdentity {
+  /** 认作本人的名字（发信 From 名、账户名称） */
+  names: string[]
+  emails: string[]
+  /** 「我」显示成的名字：已发邮件里最常用的 From 名；没有就保留「我」（账户名称常是「工作」这类标签，不拿来显示） */
+  display?: string | null
+}
+
+/** IM 粘贴 / 导出里代表自己的写法（微信 / 企业微信复制时自己显示为「我」，导出工具的「我方」「本人」等） */
+export const SELF_WORDS = ['我', '我方', '本人', '自己', 'me', 'myself']
+
+const normName = (s: string) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/^[@＠]/, '')
+
+/** 这个名字 / 邮箱是不是用户本人 */
+export function isSelfParty(p: { name?: string | null; email?: string | null }, id: SelfIdentity): boolean {
+  const email = normName(p.email ?? '')
+  if (email && id.emails.some(e => normName(e) === email)) return true
+  const name = normName(p.name ?? '').replace(/[（(]我[)）]$/, '').trim()
+  if (!name) return false
+  if (SELF_WORDS.includes(name)) return true
+  if (/[（(]我[)）]$/.test(String(p.name ?? '').trim())) return true
+  return id.names.some(n => normName(n) && normName(n) === name)
+}
+
+/**
+ * 参与人里的「我」→ 用户本人：标 me，补上邮箱；名字是「我」这类代称时换成显示名（没有显示名就保留）。
+ * 聊天材料里出现了「我」/ 显示名、但参与人里还没有本人时，补一个本人（只在 speakers 给出时）。
+ */
+export function markSelfParties(parties: TraceParty[], id: SelfIdentity, speakers: string[] = []): TraceParty[] {
+  const display = String(id.display ?? '').trim()
+  const email = id.emails.map(e => String(e ?? '').trim().toLowerCase()).find(Boolean) ?? null
+  const out: TraceParty[] = []
+  let hasMe = false
+  for (const p of parties) {
+    if (!isSelfParty(p, id)) {
+      out.push(p)
+      continue
+    }
+    if (hasMe) continue // 同一个人写了两遍（「我」和显示名）：合并
+    hasMe = true
+    const isWord = SELF_WORDS.includes(normName(p.name ?? '').replace(/[（(]我[)）]$/, '').trim())
+    out.push({ name: (isWord && display ? display : String(p.name ?? '').replace(/[（(]我[)）]$/, '').trim()) || display || '我', email: p.email || email, me: true })
+  }
+  if (!hasMe && speakers.some(s => isSelfParty({ name: s }, id))) out.unshift({ name: display || '我', email, me: true })
+  return out
+}

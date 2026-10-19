@@ -22,7 +22,7 @@ import { ico, JobList, JobSettingsBlock } from './AutomationJobs'
 
 const AI_STATS = ['kb', 'kbMerged', 'memories', 'skills', 'brief', 'events']
 const isAiOutput = (a: AgentActivity) => a.source === 'skill' || a.source === 'chat' || AI_STATS.some(k => (a.stats?.[k] ?? 0) > 0)
-const SOURCE_LABEL: Record<AgentActivity['source'], string> = { job: '自动任务', skill: '技能', chat: '对话', onboarding: '首次整理', event: '事件' }
+const SOURCE_LABEL: Record<AgentActivity['source'], string> = { job: '自动任务', skill: '技能', chat: '对话', onboarding: '首次整理', event: '事件', share: '分享' }
 
 function ActivityItem(props: { a: AgentActivity; fresh: boolean }) {
   const a = props.a

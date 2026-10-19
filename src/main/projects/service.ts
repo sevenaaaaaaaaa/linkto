@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AISettings, Address, FinanceData, InsightRecord, ProjectData, ProjectStatus, ProjectSuggestion, ProjectSummary, TodoData } from '@shared/types'
 import {
-  buildTimeline, classifyAttachment, counterpartyKey, decideMatch, domainOf, extractKeywords, isPublicDomain, isRobotAddr,
+  buildTimeline, classifyAttachment, counterpartyKey, decideMatch, domainOf, extractKeywords, isPublicDomain, isRobotAddr, mergeMembers, type MemberSourceMail,
   normalizeSubject, PROJECT_COLORS, ruleSummary,
   type ContactTimeline, type MatchMessage, type MatchProject, type ProjectAttachment, type ProjectCandidate, type ProjectConversation,
   type ProjectDetail, type ProjectListItem, type ProjectMoneyTotal, type ProjectRecord, type ProjectStats, type TimelineEvent, type TLMessage
@@ -439,6 +439,16 @@ export class ProjectService {
     return [...new Set(all.filter(Boolean).map((a: string) => a.toLowerCase()))].filter(a => !mine.has(a))
   }
 
+  /** 邮件行 → 成员补全的输入 */
+  private memberMail(r: any): MemberSourceMail {
+    return {
+      from: r.from_addr ? { name: r.from_name ?? undefined, address: r.from_addr } : null,
+      to: j<Address[]>(r.to_json, []),
+      cc: j<Address[]>(r.cc_json, []),
+      isNewsletter: !!r.is_newsletter || r.category === 'newsletter'
+    }
+  }
+
   addMessages(projectId: string, messageIds: string[]): ProjectRecord | null {
     const p = this.get(projectId)
     if (!p) return null
@@ -459,7 +469,19 @@ export class ProjectService {
       const sug = other.data.suggestions ?? []
       if (sug.some(s => addedThreads.has(s.threadId))) this.write(other.id, { suggestions: sug.filter(s => !addedThreads.has(s.threadId)) })
     }
-    this.write(projectId, { threadIds: [...threads], messageIds: [...ids], excludedThreadIds: [...excluded], updatedAt: Date.now() })
+    // 归入的会话里的往来地址补进成员（排除自己 / 机器人 / 订阅 / 群发）
+    const rows: any[] = []
+    const seenThreads = new Set<string>()
+    for (const id of messageIds) {
+      const r = this.deps.store.getMessageRow(id)
+      if (!r) continue
+      if (r.thread_id && !seenThreads.has(r.thread_id)) {
+        seenThreads.add(r.thread_id)
+        rows.push(...(this.db.prepare(`SELECT ${COLS} FROM messages m WHERE m.thread_id = ? AND ${NOT_TRASH} LIMIT 200`).all(r.thread_id) as any[]))
+      } else if (!r.thread_id) rows.push(r)
+    }
+    const merged = mergeMembers(p.data.members ?? [], rows.map(r => this.memberMail(r)), this.myAddrs())
+    this.write(projectId, { threadIds: [...threads], messageIds: [...ids], excludedThreadIds: [...excluded], ...(merged.added || merged.members.length !== (p.data.members ?? []).length ? { members: merged.members } : {}), updatedAt: Date.now() })
     this.changed()
     return this.get(projectId)
   }
@@ -582,7 +604,13 @@ export class ProjectService {
     if (decision.action === 'auto') {
       if (r.thread_id) target.threadIds = [...target.threadIds, r.thread_id]
       target.messageIds = [...target.messageIds, r.id]
-      this.write(target.id, { threadIds: target.threadIds, messageIds: target.messageIds, updatedAt: Date.now() })
+      // 自动归入也补成员（与手动加入同一套排除规则）
+      const merged = mergeMembers(target.record.data.members ?? [], [this.memberMail(r)], mine)
+      if (merged.added) {
+        target.record.data.members = merged.members
+        target.members = merged.members.map(m => m.address)
+      }
+      this.write(target.id, { threadIds: target.threadIds, messageIds: target.messageIds, ...(merged.added ? { members: merged.members } : {}), updatedAt: Date.now() })
     } else {
       const sug = target.record.data.suggestions ?? []
       if (sug.some(s => s.threadId === input.threadId)) return 'none'

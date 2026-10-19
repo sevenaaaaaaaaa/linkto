@@ -4,16 +4,23 @@ import { api } from '../../lib/api'
 import { useMail } from '../../stores/mail'
 import { IconClose, IconSend, IconLink, IconFileText, IconSave, IconSettings, IconCloud, IconChat, IconBook, IconCheck } from '../../components/icons'
 import type { MenuItem } from '../../components/Menu'
-import { SHARE_FORMATS, SHARE_GROUP_LABEL, formatLabel, type ShareFormat, type ShareGroup, type SharePreview, type ShareSettings, type ShareTargetInfo } from '@shared/share'
+import { CONTENT_FORMATS, SHARE_FORMATS, SHARE_GROUP_LABEL, formatLabel, type ShareContent, type ShareFormat, type ShareGroup, type SharePreview, type ShareSettings, type ShareTargetInfo } from '@shared/share'
 
 /**
  * 导出与分享中心（渲染端）：
- * - ShareHost：主窗口全局挂一个，监听 'ms:share-open' 打开分享面板（左格式 · 中预览 · 右目标 · 底部发送 / 导出）
+ * - ShareHost：主窗口全局挂一个，监听 'ms:share-open' 打开分享面板（左格式 · 中预览 · 右目标 · 底部发送 / 导出）；
+ *   也接管订阅阅读区等派发的可取消事件 'ms:share-request'（detail：kind:'link', title, url, text, source, feedItemId?）→ 分享通用内容
  * - shareMenuItems：阅读页「分享 / 导出」菜单；shareCommands：⌘K 命令
  * 所有对外发送在面板底部二次确认（批量时一次确认）后才调用 shareSend(confirmed)。
  */
 
 const OPEN_EVENT = 'ms:share-open'
+const REQUEST_EVENT = 'ms:share-request'
+
+/** 分享通用内容（订阅文章 / 网页）：打开分享面板 */
+export function openShareContent(content: ShareContent, opts: { format?: ShareFormat; targetId?: string } = {}) {
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { ids: [], content, ...opts } }))
+}
 
 export function openShare(ids: string[], opts: { format?: ShareFormat; targetId?: string } = {}) {
   if (!ids.length) return toast('先选中一封邮件')
@@ -142,6 +149,8 @@ const GROUP_ORDER: ShareGroup[] = ['work-im', 'im', 'notes', 'local', 'drive', '
 
 interface OpenReq {
   ids: string[]
+  /** 通用内容（非邮件）：给出时 ids 为空 */
+  content?: ShareContent
   format?: ShareFormat
   targetId?: string
 }
@@ -152,18 +161,44 @@ export function ShareHost() {
     ensureLoaded()
     const onOpen = (e: Event) => {
       const d = (e as CustomEvent<OpenReq>).detail
-      if (d?.ids?.length) setReq({ ...d })
+      if (d?.ids?.length || d?.content) setReq({ ...d, ids: d.ids ?? [] })
+    }
+    // 订阅阅读区「分享」：可取消事件，接管后对方不再退回复制链接
+    const onRequest = (e: Event) => {
+      const d = (e as CustomEvent<Partial<ShareContent> | null>).detail
+      if (!d || d.kind !== 'link' || !(d.title || d.url)) return
+      e.preventDefault()
+      setReq({
+        ids: [],
+        content: {
+          kind: 'link',
+          title: String(d.title ?? ''),
+          url: d.url ?? null,
+          text: d.text ?? null,
+          source: d.source ?? null,
+          date: typeof d.date === 'number' ? d.date : null,
+          feedItemId: d.feedItemId ?? null
+        }
+      })
     }
     window.addEventListener(OPEN_EVENT, onOpen)
-    return () => window.removeEventListener(OPEN_EVENT, onOpen)
+    window.addEventListener(REQUEST_EVENT, onRequest)
+    return () => {
+      window.removeEventListener(OPEN_EVENT, onOpen)
+      window.removeEventListener(REQUEST_EVENT, onRequest)
+    }
   }, [])
   if (!req) return null
-  return <SharePanel key={req.ids.join('|') + (req.targetId ?? '') + (req.format ?? '')} req={req} onClose={() => setReq(null)} />
+  return <SharePanel key={req.ids.join('|') + (req.content ? `c:${req.content.feedItemId ?? req.content.url ?? req.content.title}` : '') + (req.targetId ?? '') + (req.format ?? '')} req={req} onClose={() => setReq(null)} />
 }
 
 function SharePanel(props: { req: OpenReq; onClose(): void }) {
   const ids = props.req.ids
-  const { targets, settings } = useShareTargets()
+  const content = props.req.content ?? null
+  const { targets: allTargets, settings } = useShareTargets()
+  // 通用内容：只保留文本类 + PDF / 长图（没有 EML），并去掉一个格式都不支持的目标
+  const formatsOf = (t: ShareTargetInfo) => (content ? t.formats.filter(f => CONTENT_FORMATS.includes(f)) : t.formats)
+  const targets = useMemo(() => (content ? allTargets.map(t => ({ ...t, formats: formatsOf(t) })).filter(t => t.formats.length) : allTargets), [allTargets, content])
   const [format, setFormat] = useState<ShareFormat>(props.req.format ?? 'text')
   const [targetId, setTargetId] = useState<string>(props.req.targetId ?? '')
   const [includeAtt, setIncludeAtt] = useState(false)
@@ -176,7 +211,8 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const messages = useMail(st => st.messages)
-  const subjects = ids.map(id => messages.find(m => m.id === id)?.subject || '').filter(Boolean)
+  const subjects = content ? [content.title || content.url || ''] : ids.map(id => messages.find(m => m.id === id)?.subject || '').filter(Boolean)
+  const formatList = content ? SHARE_FORMATS.filter(f => CONTENT_FORMATS.includes(f.id)) : SHARE_FORMATS
 
   const target = targets.find(t => t.id === targetId) ?? null
   const recent = recentTargets({ targets, settings, load: async () => {} }, 4)
@@ -218,7 +254,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
     setLoading(true)
     const timer = setTimeout(() => {
       void api
-        .sharePreview({ messageIds: ids, targetId, format, includeAttachments: includeAtt, merge, note })
+        .sharePreview({ messageIds: ids, content, targetId, format, includeAttachments: includeAtt, merge, note })
         .then(p => alive && setPreview(p))
         .catch(err => alive && setPreview({ ok: false, error: String(err), target: '', external: false, title: '', body: '', files: [], warnings: [] }))
         .finally(() => alive && setLoading(false))
@@ -228,7 +264,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, format, includeAtt, merge, note, ids.join('|')])
+  }, [targetId, format, includeAtt, merge, note, ids.join('|'), content])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -256,7 +292,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
     setBusy(true)
     setResult(null)
     try {
-      const r = await api.shareSend({ messageIds: ids, targetId, format, includeAttachments: includeAtt, merge, note: note.trim() || undefined, confirmed: external ? true : undefined })
+      const r = await api.shareSend({ messageIds: ids, content, targetId, format, includeAttachments: includeAtt, merge, note: note.trim() || undefined, confirmed: external ? true : undefined })
       if (r.canceled) return
       setResult({ ok: r.ok, text: r.ok ? r.message ?? '完成' : r.error ?? '失败' })
       if (r.ok) {
@@ -279,7 +315,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
     return m
   }, [targets])
 
-  const hasAtt = useMemo(() => ids.some(id => messages.find(m => m.id === id)?.hasAttachments), [ids, messages])
+  const hasAtt = useMemo(() => !content && ids.some(id => messages.find(m => m.id === id)?.hasAttachments), [ids, messages, content])
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[7vh] px-4 fade-in" style={{ background: 'var(--scrim)' }} onMouseDown={props.onClose}>
@@ -299,10 +335,10 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
           </span>
           <div className="min-w-0 flex-1">
             <h2 id="share-title" className="text-md font-semibold leading-tight" style={{ color: 'var(--fg)' }}>
-              分享 / 导出{ids.length > 1 ? ` · ${ids.length} 封` : ''}
+              分享 / 导出{content ? ` · ${content.source ? `订阅 · ${content.source}` : '网页内容'}` : ids.length > 1 ? ` · ${ids.length} 封` : ''}
             </h2>
             <div className="text-2xs truncate" style={{ color: 'var(--faint)' }}>
-              {subjects.slice(0, 2).join('、') || '当前邮件'}
+              {subjects.slice(0, 2).join('、') || (content ? content.url : '当前邮件')}
               {subjects.length > 2 ? ` 等 ${subjects.length} 封` : ''}
             </div>
           </div>
@@ -318,7 +354,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
           {/* 左：格式 */}
           <div className="w-[148px] shrink-0 border-r p-2 overflow-y-auto" style={{ borderColor: 'var(--border-soft)' }} role="radiogroup" aria-label="格式">
             <div className="caps px-2 pt-1 pb-1.5" style={{ color: 'var(--faint)' }}>格式</div>
-            {SHARE_FORMATS.map(f => {
+            {formatList.map(f => {
               const on = f.id === format
               const ok = !target || target.formats.includes(f.id)
               return (
@@ -397,7 +433,7 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
                 <input
                   value={note}
                   onChange={e => setNote(e.target.value)}
-                  placeholder="附言（可选），如「@产品组 请看这封客户反馈」"
+                  placeholder={content ? '附言（可选），如「这篇值得一读」' : '附言（可选），如「@产品组 请看这封客户反馈」'}
                   className="flex-1 min-w-[200px] h-7 px-2 rounded-[var(--r-sm)] text-xs outline-none border"
                   style={{ background: 'var(--bg-soft)', borderColor: 'var(--border)', color: 'var(--fg)' }}
                 />
@@ -436,7 +472,9 @@ function SharePanel(props: { req: OpenReq; onClose(): void }) {
                 {result.text}
               </>
             ) : confirming ? (
-              `确认把 ${ids.length} 封邮件的${formatLabel(format)}发到「${target?.name}」？发出后无法撤回。`
+              content
+                ? `确认把「${(content.title || content.url || '').slice(0, 30)}」的${formatLabel(format)}发到「${target?.name}」？发出后无法撤回。`
+                : `确认把 ${ids.length} 封邮件的${formatLabel(format)}发到「${target?.name}」？发出后无法撤回。`
             ) : external ? (
               '对外发送：点「发送」后会再确认一次'
             ) : (

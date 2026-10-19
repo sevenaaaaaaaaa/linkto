@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { Address, MessageFull, MailInsight } from '@shared/types'
 import {
   appLinkFor,
+  CONTENT_FORMATS,
   DEFAULT_SHARE_SETTINGS,
   dedupeName,
   FILE_FORMATS,
@@ -17,6 +18,7 @@ import {
   safeFileName,
   SHARE_KINDS,
   webLinksFor,
+  type ShareContent,
   type ShareFormat,
   type ShareLinks,
   type SharePreview,
@@ -58,6 +60,7 @@ import { buildPrintHtml, type PrintMail } from './print-html'
 import { renderPdf, renderPng } from './render'
 import { buildNotesJxa, notesErrorText } from './jxa'
 import { httpRequest, postJson, ShareHttpError } from './http'
+import { feedService } from '../feeds'
 
 /**
  * 导出与分享中心：把邮件导出为 EML / PDF / Markdown / 长图 / 文本，发到 IM / 工作 IM / 笔记 / 本地 / 网盘 / 系统分享。
@@ -95,6 +98,8 @@ interface Loaded {
   insight: MailInsight | null
   accountName: string
   provider: string
+  /** 通用内容（订阅文章 / 网页）：full 是按它拼出的占位邮件，展示时按 content 的字段来 */
+  content?: ShareContent
 }
 
 interface GenFile {
@@ -317,6 +322,60 @@ export class ShareService {
     return out
   }
 
+  /** 请求 → 要处理的条目：通用内容优先，否则按邮件 id 取 */
+  private async loadReq(req: Pick<ShareRequest, 'messageIds' | 'content'>): Promise<Loaded[]> {
+    if (req.content) return [this.loadContent(req.content)]
+    return this.load(req.messageIds)
+  }
+
+  /** 通用内容 → 占位邮件（主题 = 标题、正文 = 全文 / 订阅正文 / 摘要），复用邮件的各种生成逻辑 */
+  private loadContent(c: ShareContent): Loaded {
+    let title = String(c?.title ?? '').trim().slice(0, 300)
+    let url = String(c?.url ?? '').trim()
+    if (url && !/^https?:\/\//i.test(url)) url = ''
+    let html = typeof c?.html === 'string' ? c.html : ''
+    let text = String(c?.text ?? '').trim()
+    let source = String(c?.source ?? '').trim().slice(0, 120)
+    let date = Number(c?.date) || 0
+    if (c?.feedItemId) {
+      const it = feedService()?.item(String(c.feedItemId)) ?? null
+      if (it) {
+        html = it.fullHtml || it.contentHtml || html
+        if (!text) text = it.aiSummary || it.summary || ''
+        if (!url && it.url) url = it.url
+        if (!source) source = it.sourceTitle
+        if (!title) title = it.title
+        if (!date) date = it.publishedAt ?? it.sortAt ?? 0
+      }
+    }
+    if (!title && !url && !html && !text) throw new Error('没有可分享的内容')
+    const content: ShareContent = { kind: 'link', title: title || url || '（无标题）', url: url || null, text: text || null, html: html || null, source: source || null, date: date || null, feedItemId: c?.feedItemId ?? null }
+    const full = {
+      id: `content:${c?.feedItemId ?? ''}`,
+      accountId: '',
+      folderPath: '',
+      uid: 0,
+      messageId: null,
+      subject: content.title,
+      from: source ? { name: source, address: '' } : null,
+      to: [],
+      cc: [],
+      date: date || Date.now(),
+      html: html || null,
+      text: html ? null : text || null,
+      snippet: text,
+      attachments: []
+    } as unknown as MessageFull
+    // 摘要当作「要点」：IM / 笔记里显示在正文摘录之前（正文就是摘要时不重复）
+    const insight = html && text ? ({ gist: excerpt(text, 300), highlights: [] } as unknown as MailInsight) : null
+    return { full, insight, accountName: '', provider: '', content }
+  }
+
+  /** 发件人行（通用内容是来源） */
+  private fromText(m: Loaded): string {
+    return m.content ? m.content.source ?? '' : fmtAddr(m.full.from)
+  }
+
   private allowRemote(): boolean {
     const s = this.settings().remoteImages
     if (s === 'allow') return true
@@ -338,13 +397,15 @@ export class ShareService {
   }
 
   links(m: Loaded | MessageFull): ShareLinks {
+    if ('full' in m && m.content) return { app: m.content.url ?? '', gmail: null, outlook: null, outlookQuery: null }
     const full = 'full' in m ? m.full : m
     const provider = 'full' in m ? m.provider : ''
-    const web = webLinksFor(full.messageId, full.subject)
+    const web = webLinksFor(full.messageId, full.subject, provider)
     return {
       app: appLinkFor(full.messageId, full.id),
       gmail: provider === 'outlook' || provider === 'office365' ? null : web.gmail,
-      outlook: provider === 'gmail' ? null : web.outlook
+      outlook: provider === 'gmail' ? null : web.outlook,
+      outlookQuery: provider === 'gmail' ? null : web.outlookQuery
     }
   }
 
@@ -352,8 +413,13 @@ export class ShareService {
     const full = this.deps.store.getMessageFull(id)
     if (!full) return null
     const acc = this.deps.store.listAccounts().find(a => a.id === full.accountId)
-    const web = webLinksFor(full.messageId, full.subject)
-    return { app: appLinkFor(full.messageId, full.id), gmail: acc?.provider === 'outlook' || acc?.provider === 'office365' ? null : web.gmail, outlook: acc?.provider === 'gmail' ? null : web.outlook }
+    const web = webLinksFor(full.messageId, full.subject, acc?.provider)
+    return {
+      app: appLinkFor(full.messageId, full.id),
+      gmail: acc?.provider === 'outlook' || acc?.provider === 'office365' ? null : web.gmail,
+      outlook: acc?.provider === 'gmail' ? null : web.outlook,
+      outlookQuery: acc?.provider === 'gmail' ? null : web.outlookQuery
+    }
   }
 
   private realAttachments(m: Loaded) {
@@ -384,6 +450,22 @@ export class ShareService {
 
   private digestMail(m: Loaded): DigestMail {
     const links = this.links(m)
+    if (m.content) {
+      return {
+        kind: 'link',
+        subject: m.full.subject,
+        from: m.content.source ?? '',
+        to: '',
+        date: m.full.date,
+        dateText: m.content.date ? fmtDate(m.content.date) : '',
+        gist: m.insight?.gist || null,
+        highlights: [],
+        excerpt: excerpt(this.plain(m), this.settings().excerptChars),
+        attachments: [],
+        appLink: links.app,
+        webLink: null
+      }
+    }
     return {
       subject: m.full.subject,
       from: fmtAddr(m.full.from) || '（未知发件人）',
@@ -409,6 +491,10 @@ export class ShareService {
     return list
       .map(m => {
         const l = this.links(m)
+        if (m.content) {
+          const c = m.content
+          return [subj(m.full.subject), ...(c.source ? [`来源：${c.source}`] : []), ...(c.date ? [`时间：${fmtDate(c.date)}`] : []), ...(c.url ? [`链接：${c.url}`] : []), '', ...(m.insight?.gist ? [`摘要：${m.insight.gist}`, ''] : []), this.plain(m)].join('\n').trim()
+        }
         return [
           subj(m.full.subject),
           `发件人：${fmtAddr(m.full.from)}`,
@@ -428,7 +514,13 @@ export class ShareService {
     return list
       .map(m => {
         const l = this.links(m)
-        return [`${subj(m.full.subject)}（${fmtAddr(m.full.from)} · ${fmtDate(m.full.date)}）`, `本机打开：${l.app}`, ...(l.gmail ? [`Gmail 网页版：${l.gmail}`] : []), ...(l.outlook ? [`Outlook 网页版：${l.outlook}`] : [])].join('\n')
+        if (m.content) return [`${subj(m.full.subject)}${m.content.source ? `（${m.content.source}）` : ''}`, ...(l.app ? [l.app] : [])].join('\n')
+        return [
+          `${subj(m.full.subject)}（${fmtAddr(m.full.from)} · ${fmtDate(m.full.date)}）`,
+          `本机打开：${l.app}`,
+          ...(l.gmail ? [`Gmail 网页版：${l.gmail}`] : []),
+          ...(l.outlook ? [`Outlook 网页版：${l.outlook}${l.outlookQuery ? `（打开后在搜索框粘贴：${l.outlookQuery}）` : ''}`] : [])
+        ].join('\n')
       })
       .join('\n\n')
   }
@@ -438,7 +530,8 @@ export class ShareService {
       .map(m => {
         const l = this.links(m)
         const a = (u: string, t: string) => `<a href="${escapeHtml(u)}">${escapeHtml(t)}</a>`
-        return `<p><b>${escapeHtml(subj(m.full.subject))}</b>（${escapeHtml(fmtAddr(m.full.from))} · ${fmtDate(m.full.date)}）<br>${a(l.app, '在 LinkTo 中打开')}${l.gmail ? ` · ${a(l.gmail, 'Gmail 网页版')}` : ''}${l.outlook ? ` · ${a(l.outlook, 'Outlook 网页版')}` : ''}</p>`
+        if (m.content) return `<p>${l.app ? a(l.app, subj(m.full.subject)) : `<b>${escapeHtml(subj(m.full.subject))}</b>`}${m.content.source ? `（${escapeHtml(m.content.source)}）` : ''}</p>`
+        return `<p><b>${escapeHtml(subj(m.full.subject))}</b>（${escapeHtml(fmtAddr(m.full.from))} · ${fmtDate(m.full.date)}）<br>${a(l.app, '在 LinkTo 中打开')}${l.gmail ? ` · ${a(l.gmail, 'Gmail 网页版')}` : ''}${l.outlook ? ` · ${a(l.outlook, 'Outlook 网页版')}${l.outlookQuery ? `（搜索：${escapeHtml(l.outlookQuery)}）` : ''}` : ''}</p>`
       })
       .join('')
   }
@@ -448,6 +541,11 @@ export class ShareService {
     return list
       .map(m => {
         const row = (k: string, v: string) => `<tr><td style="color:#86909c;padding:1px 12px 1px 0;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:1px 0">${escapeHtml(v)}</td></tr>`
+        if (m.content) {
+          const c = m.content
+          const link = c.url ? `<tr><td style="color:#86909c;padding:1px 12px 1px 0;white-space:nowrap;vertical-align:top">链接</td><td style="padding:1px 0"><a href="${escapeHtml(c.url)}">${escapeHtml(c.url)}</a></td></tr>` : ''
+          return `<div><h2 style="margin:0 0 8px">${escapeHtml(subj(m.full.subject))}</h2><table style="border-collapse:collapse;font-size:13px;margin-bottom:12px">${c.source ? row('来源', c.source) : ''}${c.date ? row('时间', fmtDate(c.date)) : ''}${link}</table>${m.insight?.gist ? `<p><b>摘要</b>：${escapeHtml(m.insight.gist)}</p>` : ''}<div>${this.safeBodyHtml(m, allowRemote)}</div></div>`
+        }
         return `<div><h2 style="margin:0 0 8px">${escapeHtml(subj(m.full.subject))}</h2><table style="border-collapse:collapse;font-size:13px;margin-bottom:12px">${row('发件人', fmtAddr(m.full.from))}${row('收件人', fmtAddrs(m.full.to) || '—')}${m.full.cc.length ? row('抄送', fmtAddrs(m.full.cc)) : ''}${row('时间', fmtDate(m.full.date))}${this.realAttachments(m).length ? row('附件', this.realAttachments(m).map(a => a.filename).join('、')) : ''}</table><div>${this.safeBodyHtml(m, allowRemote)}</div></div>`
       })
       .join('<hr>')
@@ -455,6 +553,9 @@ export class ShareService {
 
   private printMails(list: Loaded[], allowRemote: boolean): PrintMail[] {
     return list.map(m => ({
+      ...(m.content
+        ? { meta: [...(m.content.source ? [{ label: '来源', value: m.content.source }] : []), ...(m.content.date ? [{ label: '时间', value: fmtDate(m.content.date) }] : []), ...(m.content.url ? [{ label: '链接', value: m.content.url }] : []), ...(m.insight?.gist ? [{ label: '摘要', value: m.insight.gist }] : [])] }
+        : {}),
       subject: subj(m.full.subject),
       from: fmtAddr(m.full.from),
       to: fmtAddrs(m.full.to),
@@ -462,7 +563,7 @@ export class ShareService {
       dateText: fmtDate(m.full.date),
       html: this.safeBodyHtml(m, allowRemote, true),
       attachments: this.realAttachments(m).map(a => ({ name: a.filename, size: a.size })),
-      gist: m.insight?.gist || null
+      gist: m.content ? null : m.insight?.gist || null
     }))
   }
 
@@ -515,6 +616,16 @@ export class ShareService {
   markdownOf(m: Loaded, assetDir?: string | null, assets: { name: string }[] = []): string {
     const l = this.links(m)
     const y = (v: string) => JSON.stringify(v)
+    if (m.content) {
+      const c = m.content
+      const fm = ['---', `title: ${y(subj(m.full.subject))}`, ...(c.source ? [`source: ${y(c.source)}`] : []), ...(c.url ? [`url: ${y(c.url)}`] : []), ...(c.date ? [`date: ${isoLocal(c.date)}`] : []), `saved: ${isoLocal(Date.now())}`, 'tags: [feed]', '---'].join('\n')
+      const body = m.full.html ? htmlToMarkdown(m.full.html) : this.plain(m)
+      const parts = [fm, '', `# ${subj(m.full.subject)}`, '']
+      if (m.insight?.gist) parts.push(`> **摘要**：${m.insight.gist}`, '')
+      parts.push(body || '（无正文）')
+      if (c.url) parts.push('', `[原文链接](<${c.url}>)`)
+      return parts.join('\n').replace(/\n{3,}/g, '\n\n') + '\n'
+    }
     const atts = this.realAttachments(m)
     const fm = [
       '---',
@@ -607,8 +718,9 @@ export class ShareService {
 
   async exportFiles(req: ShareRequest): Promise<ShareResult> {
     try {
-      const list = await this.load(req.messageIds)
-      const files = await this.generate(list, req.format, { merge: req.merge, includeAttachments: req.includeAttachments ?? req.format === 'md' })
+      if (req.content && !CONTENT_FORMATS.includes(req.format)) return { ok: false, error: `网页内容不支持导出 ${formatLabel(req.format)}` }
+      const list = await this.loadReq(req)
+      const files = await this.generate(list, req.format, { merge: req.merge, includeAttachments: req.content ? false : req.includeAttachments ?? req.format === 'md' })
       const s = this.settings()
       const where = req.where ?? (s.askWhere ? 'ask' : 'quick')
       let dir: string
@@ -648,10 +760,14 @@ export class ShareService {
     if (!silent) {
       try {
         logActivity({
-          source: 'job',
+          source: 'share',
           title: message.slice(0, 80),
-          detail: list.length > 1 ? `${list.length} 封：${list.slice(0, 3).map(m => subj(m.full.subject)).join('、')}${list.length > 3 ? '…' : ''}` : null,
-          refs: list.slice(0, 6).map(m => ({ type: 'mail' as const, id: m.full.id, label: subj(m.full.subject) }))
+          detail: list.some(m => m.content)
+            ? list.map(m => `${subj(m.full.subject)}${m.content?.url ? `\n${m.content.url}` : ''}`).join('\n')
+            : list.length > 1
+              ? `${list.length} 封：${list.slice(0, 3).map(m => subj(m.full.subject)).join('、')}${list.length > 3 ? '…' : ''}`
+              : null,
+          refs: list.filter(m => !m.content).slice(0, 6).map(m => ({ type: 'mail' as const, id: m.full.id, label: subj(m.full.subject) }))
         })
       } catch {
         /* 活动记录失败不影响结果 */
@@ -664,7 +780,14 @@ export class ShareService {
 
   async copy(ids: string[], kind: 'text' | 'rich' | 'link' | 'png'): Promise<ShareResult> {
     try {
-      const list = await this.load(ids)
+      return await this.copyList(await this.load(ids), kind)
+    } catch (err) {
+      return { ok: false, error: `复制失败：${errText(err)}` }
+    }
+  }
+
+  private async copyList(list: Loaded[], kind: 'text' | 'rich' | 'link' | 'png'): Promise<ShareResult> {
+    try {
       // Electron 44 的异步剪贴板：一次 write 里的多种 MIME 原子提交（富文本 = HTML + 纯文本双格式）
       if (kind === 'text') await clipboard.writeText(this.textOf(list))
       else if (kind === 'rich') await clipboard.write([new ClipboardItem({ 'text/plain': this.textOf(list), 'text/html': this.richHtml(list) })])
@@ -687,10 +810,11 @@ export class ShareService {
     const base: SharePreview = { ok: false, target: t?.name ?? req.targetId, external: !!t?.external, title: '', body: '', files: [], warnings: [] }
     if (!t) return { ...base, error: '分享目标不存在' }
     if (!t.formats.includes(req.format)) return { ...base, error: `「${t.name}」不支持 ${formatLabel(req.format)}` }
+    if (req.content && !CONTENT_FORMATS.includes(req.format)) return { ...base, error: `网页内容不支持${formatLabel(req.format)}` }
     try {
-      const list = await this.load(req.messageIds)
+      const list = await this.loadReq(req)
       const warn: string[] = []
-      if (req.messageIds.length > MAX_MAILS) warn.push(`一次最多 ${MAX_MAILS} 封，超出的不会处理`)
+      if (!req.content && req.messageIds.length > MAX_MAILS) warn.push(`一次最多 ${MAX_MAILS} 封，超出的不会处理`)
       if (!this.allowRemote() && ['pdf', 'png', 'rich'].includes(req.format) && list.some(m => /<img[^>]+src=["']?https?:/i.test(m.full.html ?? ''))) warn.push('远程图片按设置不加载（设置 → 分享与导出 可改）')
       const fileNames = () => {
         const ext = formatExt(req.format)
@@ -698,7 +822,7 @@ export class ShareService {
         if (merge && list.length > 1 && !['eml', 'md'].includes(req.format)) return [this.mergedName(list, ext)]
         return list.map(m => this.nameOf(m, ext))
       }
-      const attNames = req.includeAttachments ? list.flatMap(m => this.realAttachments(m).map(a => a.filename)) : []
+      const attNames = req.includeAttachments && !req.content ? list.flatMap(m => this.realAttachments(m).map(a => a.filename)) : []
       const cfg = t.config
       const isFile = FILE_FORMATS.includes(req.format)
       const title = list.length === 1 ? subj(list[0].full.subject) : `${list.length} 封邮件`
@@ -713,7 +837,7 @@ export class ShareService {
         const d = this.digest(req.merge ? list : list.slice(0, 1), req, files.map(f => ({ name: f, where: drive?.name ?? null })))
         return { ...base, ok: true, title, body: digestMarkdown(d), files, warnings: warn }
       }
-      if (cfg?.kind === 'notion') return { ...base, ok: true, title, body: list.map(m => `# ${subj(m.full.subject)}\n${fmtAddr(m.full.from)} · ${fmtDate(m.full.date)}\n\n${excerpt(req.format === 'md' && m.full.html ? htmlToMarkdown(m.full.html) : this.plain(m), 1200)}`).join('\n\n'), files: [], warnings: [`将在 Notion 新建 ${list.length} 个页面`, ...warn] }
+      if (cfg?.kind === 'notion') return { ...base, ok: true, title, body: list.map(m => `# ${subj(m.full.subject)}\n${this.fromText(m)} · ${fmtDate(m.full.date)}\n\n${excerpt(req.format === 'md' && m.full.html ? htmlToMarkdown(m.full.html) : this.plain(m), 1200)}`).join('\n\n'), files: [], warnings: [`将在 Notion 新建 ${list.length} 个页面`, ...warn] }
       if (cfg?.kind === 'flomo') return { ...base, ok: true, title, body: list.map(m => flomoPayload(this.digest([m], req), cfg.tags).content).join('\n\n— — —\n\n'), files: [], warnings: [`将新建 ${list.length} 条 memo`, ...warn] }
       if (cfg?.kind === 'apple-notes') return { ...base, ok: true, title, body: this.textOf(list).slice(0, 4000), files: [], warnings: [`将在备忘录「${cfg.notesFolder || '默认文件夹'}」新建 ${list.length} 条备忘录`, ...warn] }
       if (cfg?.kind === 'md-folder') {
@@ -753,18 +877,19 @@ export class ShareService {
     if (!t.formats.includes(req.format)) return { ok: false, error: `「${t.name}」不支持 ${formatLabel(req.format)}` }
     if (t.external && !req.confirmed) return { ok: false, error: '对外发送需要先在界面上确认' }
     const silent = opts.via === 'agent' // Agent 运行时自己记活动
+    if (req.content && !CONTENT_FORMATS.includes(req.format)) return { ok: false, error: `网页内容不支持${formatLabel(req.format)}` }
     try {
-      const list = await this.load(req.messageIds)
+      const list = await this.loadReq(req)
       const cfg = t.config
       if (req.targetId === 'sys:export') return this.exportFiles(req)
       if (cfg?.kind === 'local-folder') return this.exportFiles({ ...req, where: 'dir', dir: cfg.folder })
       if (req.targetId === 'sys:clipboard') {
-        const r = await this.copy(req.messageIds, req.format === 'png' || req.format === 'rich' || req.format === 'link' ? req.format : 'text')
+        const r = await this.copyList(list, req.format === 'png' || req.format === 'rich' || req.format === 'link' ? req.format : 'text')
         if (r.ok) this.done(list, r.message ?? '已复制', [], req.targetId, {}, true)
         return r
       }
       if (req.targetId === 'sys:wechat') {
-        const r = await this.copy(req.messageIds, req.format === 'png' || req.format === 'rich' || req.format === 'link' ? req.format : 'text')
+        const r = await this.copyList(list, req.format === 'png' || req.format === 'rich' || req.format === 'link' ? req.format : 'text')
         if (!r.ok) return r
         await shell.openExternal('weixin://').catch(() => {})
         return this.done(list, `已复制${req.format === 'png' ? '长图' : '内容'}并打开微信：到聊天里粘贴发送`, [], req.targetId, {}, silent)
@@ -1003,7 +1128,9 @@ export class ShareService {
 
   private async toNotes(cfg: ShareTarget, list: Loaded[], req: ShareRequest, silent: boolean): Promise<ShareResult> {
     for (const m of list) {
-      const head = `<h1>${escapeHtml(subj(m.full.subject))}</h1><div>发件人：${escapeHtml(fmtAddr(m.full.from))}</div><div>时间：${fmtDate(m.full.date)}</div>${req.note?.trim() ? `<div><i>${escapeHtml(req.note.trim())}</i></div>` : ''}<div><br></div>`
+      const head = m.content
+        ? `<h1>${escapeHtml(subj(m.full.subject))}</h1>${m.content.source ? `<div>来源：${escapeHtml(m.content.source)}</div>` : ''}${m.content.date ? `<div>时间：${fmtDate(m.content.date)}</div>` : ''}${req.note?.trim() ? `<div><i>${escapeHtml(req.note.trim())}</i></div>` : ''}<div><br></div>`
+        : `<h1>${escapeHtml(subj(m.full.subject))}</h1><div>发件人：${escapeHtml(fmtAddr(m.full.from))}</div><div>时间：${fmtDate(m.full.date)}</div>${req.note?.trim() ? `<div><i>${escapeHtml(req.note.trim())}</i></div>` : ''}<div><br></div>`
       const body = req.format === 'link' ? this.linkHtml([m]) : req.format === 'rich' ? this.safeBodyHtml(m, false) : textToHtml(this.plain(m))
       const tail = `<div><br></div><div>${escapeHtml(this.links(m).app)}</div>`
       await this.runJxa(buildNotesJxa({ title: subj(m.full.subject), html: head + body + tail, folder: cfg.notesFolder }))

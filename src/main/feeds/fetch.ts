@@ -1,6 +1,14 @@
+import { request as httpReq, type IncomingMessage } from 'node:http'
+import { request as httpsReq } from 'node:https'
+import { Readable } from 'node:stream'
+import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
+import { BlockedAddressError, checkPublicUrl, guardedLookup, type Resolver } from './net-guard'
+
 /**
  * 安全抓取（订阅 / 全文 / 新闻搜索 / 搜索 API 共用）：
  *  - 只允许 http / https（file: / data: / ftp: 等一律拒绝，重定向的每一跳都检查）
+ *  - 拒绝内网 / 本机地址（SSRF）：每一跳先解析域名预检，真正建连时 socket lookup 再判一次（防 DNS 重绑定）；
+ *    开发 / 测试可设 LINKTO_FEEDS_ALLOW_PRIVATE=1 放行（见 net-guard.ts）
  *  - 超时、重定向次数上限、响应大小上限（边读边数，超出即中止）
  *  - 条件请求：If-None-Match / If-Modified-Since → 304
  * fetchImpl 可注入（单测用）；默认用 Node 自带 fetch。
@@ -17,6 +25,10 @@ export interface SafeFetchOptions {
   maxRedirects?: number
   accept?: string
   fetchImpl?: typeof fetch
+  /** 域名解析（单测注入）；默认系统 DNS */
+  resolver?: Resolver
+  /** 用户自己配置的地址（如自建搜索 API）：不做内网拦截，与分享 Webhook 同理 */
+  allowPrivate?: boolean
 }
 
 export interface SafeFetchResult {
@@ -34,7 +46,7 @@ export interface SafeFetchResult {
 export class FetchError extends Error {
   constructor(
     message: string,
-    public readonly code: 'protocol' | 'timeout' | 'too-large' | 'redirects' | 'http' | 'network',
+    public readonly code: 'protocol' | 'timeout' | 'too-large' | 'redirects' | 'http' | 'network' | 'blocked',
     public readonly status?: number
   ) {
     super(message)
@@ -67,8 +79,53 @@ export function normalizeInputUrl(raw: string): string {
 
 const HTTP_TEXT: Record<number, string> = { 401: '需要登录（401）', 403: '拒绝访问（403）', 404: '地址不存在（404）', 410: '订阅已下线（410）', 429: '请求太频繁（429）' }
 
+/**
+ * 默认的底层请求：Node http / https + 带内网判定的 lookup（建连时的真实地址也检查），
+ * 返回标准 Response（gzip / deflate / br 自动解压），接口与 fetch 一致、redirect 一律手动。
+ */
+export const guardedFetch: typeof fetch = (input, init) =>
+  new Promise<Response>((resolve, reject) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
+    const headers: Record<string, string> = { 'Accept-Encoding': 'gzip, deflate, br' }
+    new Headers(init?.headers).forEach((v, k) => (headers[k] = v))
+    const body = typeof init?.body === 'string' ? init.body : undefined
+    if (body != null) headers['Content-Length'] = String(Buffer.byteLength(body))
+    const signal = init?.signal ?? undefined
+    if (signal?.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    const req = (url.protocol === 'https:' ? httpsReq : httpReq)(url, { method: init?.method ?? 'GET', headers, lookup: guardedLookup as never, signal })
+    req.on('error', reject)
+    req.on('response', (res: IncomingMessage) => {
+      const h = new Headers()
+      for (const [k, v] of Object.entries(res.headers)) {
+        if (v == null) continue
+        for (const x of Array.isArray(v) ? v : [v]) h.append(k, x)
+      }
+      const status = res.statusCode ?? 0
+      const enc = String(res.headers['content-encoding'] ?? '').toLowerCase()
+      let stream: NodeJS.ReadableStream = res
+      if (enc === 'gzip' || enc === 'x-gzip') stream = res.pipe(createGunzip())
+      else if (enc === 'deflate') stream = res.pipe(createInflate())
+      else if (enc === 'br') stream = res.pipe(createBrotliDecompress())
+      if (enc && stream !== res) {
+        // 解压后长度变了：去掉 content-length / content-encoding，避免按压缩前的长度判断
+        h.delete('content-length')
+        h.delete('content-encoding')
+      }
+      const nullBody = status === 204 || status === 304 || (status >= 100 && status < 200) || (init?.method ?? 'GET') === 'HEAD'
+      if (nullBody) res.resume()
+      try {
+        const webBody = nullBody ? null : (Readable.toWeb(stream as Readable) as unknown as ReadableStream<Uint8Array>)
+        resolve(new Response(webBody, { status: status < 200 || status > 599 ? 502 : status, statusText: res.statusMessage ?? '', headers: h }))
+      } catch (err) {
+        reject(err)
+      }
+    })
+    if (body != null) req.write(body)
+    req.end()
+  })
+
 export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Promise<SafeFetchResult> {
-  const f = opts.fetchImpl ?? fetch
+  const f = opts.fetchImpl ?? (opts.allowPrivate ? fetch : guardedFetch)
   const maxBytes = opts.maxBytes ?? 5 * 1024 * 1024
   const maxRedirects = opts.maxRedirects ?? 5
   const timeoutMs = opts.timeoutMs ?? 15_000
@@ -88,11 +145,16 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
       }
       if (opts.etag) headers['If-None-Match'] = opts.etag
       if (opts.lastModified) headers['If-Modified-Since'] = opts.lastModified
+      // 内网 / 本机地址：每一跳（含重定向目标）都先预检
+      const blocked = opts.allowPrivate ? null : await checkPublicUrl(url, opts.resolver)
+      if (blocked) throw new FetchError(blocked.message, 'blocked')
       let res: Response
       try {
         res = await f(url, { method, headers, body, redirect: 'manual', signal: ctrl.signal })
       } catch (err) {
         if (ctrl.signal.aborted) throw new FetchError(`超时（${Math.round(timeoutMs / 1000)} 秒没有响应）`, 'timeout')
+        const blockedErr = err instanceof BlockedAddressError ? err : err instanceof Error && err.cause instanceof BlockedAddressError ? err.cause : null
+        if (blockedErr) throw new FetchError(blockedErr.message, 'blocked')
         const msg = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err)
         throw new FetchError(/ENOTFOUND|EAI_AGAIN/.test(msg) ? '找不到这个网站（域名解析失败）' : /ECONNREFUSED/.test(msg) ? '连接被拒绝' : /certificate|SSL|TLS/i.test(msg) ? '证书有问题，无法安全连接' : `网络错误：${msg.slice(0, 120)}`, 'network')
       }

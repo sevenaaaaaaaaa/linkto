@@ -7,7 +7,7 @@ import { useTodos, useTodoEvents } from '../lib/todos'
 import { toastAIError } from '../lib/ai-error'
 import {
   schedule, parseQuickAdd, fmtClock, fmtDue, loadScheduleConfig, saveScheduleConfig, minutesOf,
-  type Planned, type Bucket, type ScheduleConfig
+  type Planned, type Bucket, type ScheduleConfig, type BusyBlock, DEFAULT_SCHEDULE
 } from '../lib/scheduler'
 import { IconSparkles, IconClose, IconPlus } from '../components/icons'
 import type { InsightRecord, TodoData, TodoChecklistItem } from '@shared/types'
@@ -126,7 +126,9 @@ export function TodoView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const plan = useMemo(() => schedule(todos, now, cfg, manual), [todos, now, cfg, manual])
+  // 日历忙碌时段（已在「设置 → 待办 → 日历」开了忙碌时段的才有）：排程避开它们，周视图显示同一份数据
+  const calendar = useCalendarBusy(now)
+  const plan = useMemo(() => schedule(todos, now, cfg, manual, calendar), [todos, now, cfg, manual, calendar])
   const matches = (t: InsightRecord) => {
     const d = dataOf(t)
     return (
@@ -203,7 +205,7 @@ export function TodoView() {
     await new Promise(r => setTimeout(r, reducedMotion() ? 0 : 900))
     captureFirst()
     writeJson(ORDER_KEY, null)
-    const next = schedule(useTodos.getState().todos, Date.now(), cfg)
+    const next = schedule(useTodos.getState().todos, Date.now(), cfg, undefined, calendar)
     const d: Record<string, number> = {}
     next.items.forEach((it, idx) => {
       const old = before.indexOf(it.id)
@@ -218,7 +220,7 @@ export function TodoView() {
     const hours = (next.items.filter(i => i.start && new Date(i.start).toDateString() === new Date().toDateString()).reduce((s, i) => s + i.minutes, 0) / 60).toFixed(1)
     if (!aiFailed) showToast(
       `已按截止 · 重要度 · 时长重新排布 ${next.items.length} 项${moved ? `，调整了 ${moved} 项位置` : '，顺序已是最优'}` +
-        `${next.movedToToday ? `，${next.movedToToday} 项逾期挪到今天` : ''}；今天约 ${hours} 小时，还空 ${(next.freeToday / 60).toFixed(1)} 小时`
+        `${next.movedToToday ? `，${next.movedToToday} 项逾期挪到今天` : ''}${next.meetingsToday ? `，避开了今天 ${next.meetingsToday} 个日历会议` : ''}；今天约 ${hours} 小时，还空 ${(next.freeToday / 60).toFixed(1)} 小时`
     )
     setTimeout(() => {
       setPhase('idle')
@@ -463,7 +465,7 @@ export function TodoView() {
           </>
         )}
         {view === 'board' && <BoardView items={visible} now={now} projects={projects} onUpdate={update} onDone={t => void complete(t)} onOpen={id => { setView('list'); setEditing(id) }} />}
-        {view === 'week' && <WeekView items={visible} now={now} onUpdate={update} onOpen={id => { setView('list'); setEditing(id) }} />}
+        {view === 'week' && <WeekView items={visible} now={now} busy={calendar} onUpdate={update} onOpen={id => { setView('list'); setEditing(id) }} />}
         {view === 'matrix' && <MatrixView items={visible} now={now} onUpdate={update} onOpen={id => { setView('list'); setEditing(id) }} />}
       </div>
 
@@ -571,6 +573,19 @@ function ScheduleSettings(props: { cfg: ScheduleConfig; onChange(c: ScheduleConf
       <label className="flex items-center justify-between">
         避开午休 12:00–13:00
         <input type="checkbox" checked={!!cfg.lunch} onChange={e => props.onChange({ ...cfg, lunch: e.target.checked ? [12, 13] : null })} />
+      </label>
+      <label className="flex items-center justify-between" title="只对已在「设置 → 待办」里开了「忙碌时段」的日历生效">
+        会议前后留
+        <select
+          value={cfg.meetingBuffer ?? DEFAULT_SCHEDULE.meetingBuffer}
+          onChange={e => props.onChange({ ...cfg, meetingBuffer: Number(e.target.value) })}
+          className="h-7 px-1.5 rounded-[var(--r-xs)] border border-[var(--border)]"
+          style={{ background: 'var(--bg-soft)', color: 'var(--fg)' }}
+        >
+          {[0, 5, 10, 15, 30].map(m => (
+            <option key={m} value={m}>{m ? `${m} 分钟` : '不留'}</option>
+          ))}
+        </select>
       </label>
       <label className="flex items-center justify-between">
         周末也排
@@ -1102,19 +1117,15 @@ function BoardView(props: {
 
 // ---------------------------------------------------------------- 本周
 
-function WeekView(props: { items: Planned[]; now: number; onUpdate(id: string, patch: Parameters<typeof api.updateTodo>[1]): Promise<void>; onOpen(id: string): void }) {
+function WeekView(props: { items: Planned[]; now: number; busy: BusyBlock[]; onUpdate(id: string, patch: Parameters<typeof api.updateTodo>[1]): Promise<void>; onOpen(id: string): void }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(props.now)
     d.setDate(d.getDate() + i)
     d.setHours(0, 0, 0, 0)
     return d.getTime()
   })
-  const [busy, setBusy] = useState<{ start: number; end: number; title: string }[]>([])
-  useEffect(() => {
-    // 系统日历的忙碌时段（打通日历后可用；未接入时为空）
-    const fn = (api as unknown as { calendarBusyBlocks?: (from: number, to: number) => Promise<{ start: number; end: number; title: string }[]> }).calendarBusyBlocks
-    if (fn) void fn(days[0], days[6] + 864e5).then(setBusy).catch(() => {})
-  }, [days[0]])
+  // 忙碌时段与排程用的是同一份（TodoView 统一取），这里只显示
+  const busy = props.busy
   const WD = '日一二三四五六'
   return (
     <div className="flex-1 min-w-0 overflow-x-auto px-6 pb-6 flex gap-2.5">
@@ -1139,8 +1150,8 @@ function WeekView(props: { items: Planned[]; now: number; onUpdate(id: string, p
             }}
           >
             {blocks.map((b, j) => (
-              <div key={`b${j}`} className="rounded-[var(--r-sm)] px-2 py-1.5 text-2xs" style={{ background: 'var(--hover-strong)', color: 'var(--muted)' }} title="系统日历">
-                {fmtClock(b.start)} {b.title}
+              <div key={`b${j}`} className="rounded-[var(--r-sm)] px-2 py-1.5 text-2xs" style={{ background: 'var(--hover-strong)', color: 'var(--muted)' }} title="日历忙碌时段：自动排程会避开它（含前后缓冲）">
+                <span className="tnum">{fmtClock(b.start)}–{fmtClock(b.end)}</span> {b.title || '忙碌'}
               </div>
             ))}
             {items.map(p => (
@@ -1265,4 +1276,44 @@ function Timeline(props: { items: Planned[]; now: number; version: number }) {
       </div>
     </aside>
   )
+}
+
+// ---------------------------------------------------------------- 日历忙碌时段
+
+/**
+ * 今天起两周内的日历忙碌时段（主进程缓存 2 分钟）：跨天、回到窗口、日历连接变化、每 5 分钟刷新。
+ * 没开日历 / 没开「忙碌时段」时为空数组，排程行为与以前一致。
+ */
+function useCalendarBusy(now: number): BusyBlock[] {
+  const [blocks, setBlocks] = useState<BusyBlock[]>([])
+  const day = new Date(now).setHours(0, 0, 0, 0)
+  const slot = Math.floor(now / (5 * 60_000))
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setTick(t => t + 1)
+    const off = api.onEvent(raw => {
+      if ((raw as { type?: string }).type === 'todo-integrations-changed') bump()
+    })
+    window.addEventListener('focus', bump)
+    return () => {
+      off?.()
+      window.removeEventListener('focus', bump)
+    }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    void api
+      .calendarBusyBlocks(day, day + 14 * 864e5)
+      .then(list => {
+        if (!alive) return
+        const next = (list ?? []).map(b => ({ start: b.start, end: b.end, title: b.title }))
+        // 内容没变就不换引用，免得排程 useMemo 白算
+        setBlocks(cur => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [day, slot, tick])
+  return blocks
 }

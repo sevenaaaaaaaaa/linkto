@@ -279,8 +279,34 @@ export const DEFAULT_SHARE_SETTINGS: ShareSettings = {
   recent: []
 }
 
+/**
+ * 通用内容（非邮件）：订阅文章、网页等。由订阅阅读区的 ms:share-request 事件或 Agent 带入。
+ * 正文优先用 feedItemId 在主进程取（全文 > 订阅自带正文），其次 html，再次 text。
+ */
+export interface ShareContent {
+  kind: 'link'
+  title: string
+  url?: string | null
+  /** 摘要 / AI 摘要（纯文本） */
+  text?: string | null
+  /** 正文 HTML（会再消毒） */
+  html?: string | null
+  /** 来源（订阅源名称 / 网站） */
+  source?: string | null
+  /** 发布时间 */
+  date?: number | null
+  /** 订阅条目 id */
+  feedItemId?: string | null
+}
+
+/** 通用内容可用的格式（没有 EML 原文） */
+export const CONTENT_FORMATS: ShareFormat[] = ['text', 'rich', 'md', 'link', 'pdf', 'png']
+
 export interface ShareRequest {
+  /** 邮件 id；分享通用内容时传空数组并给 content */
   messageIds: string[]
+  /** 通用内容（订阅文章 / 网页）：给出时忽略 messageIds */
+  content?: ShareContent | null
   targetId: string
   format: ShareFormat
   /** 连同附件（Markdown 导出到同名文件夹 / Telegram 逐个发送 / Webhook 归档到网盘后附链接） */
@@ -323,7 +349,10 @@ export interface ShareResult {
 export interface ShareLinks {
   app: string
   gmail: string | null
+  /** Outlook 网页版邮箱入口（没有公开的搜索深链，见 webLinksFor） */
   outlook: string | null
+  /** 在 Outlook 网页版搜索框里粘贴的搜索词 */
+  outlookQuery?: string | null
 }
 
 // ---------------------------------------------------------------- 纯函数
@@ -404,13 +433,23 @@ export function parseAppLink(url: string): { mid?: string; id?: string } | null 
   return null
 }
 
-/** 跨设备备选：Gmail 按 Message-ID 精确搜索；Outlook 网页版按主题搜索 */
-export function webLinksFor(messageId: string | null | undefined, subject: string): { gmail: string | null; outlook: string | null } {
+/**
+ * 跨设备备选链接：
+ *  - Gmail：按 Message-ID 精确搜索。rfc822msgid: 是 Gmail 官方搜索运算符
+ *    （https://support.google.com/mail/answer/7190），#search/<查询> 是网页版搜索页的地址格式。
+ *  - Outlook 网页版：微软没有公开「按条件搜索」的深链（Learn 文档只给了 /mail/deeplink/compose 撰写深链；
+ *    社区实测 /mail/deeplink/search?query= 与 /mail/0/search?q= 都不会自动执行搜索，见
+ *    https://learn.microsoft.com/en-us/answers/questions/721762/generating-a-link-to-an-advanced-query-search ）。
+ *    因此链接只打开对应的网页版邮箱（个人账户 outlook.live.com/mail/0/，工作 / 学校账户 outlook.office.com/mail/），
+ *    搜索词另给出（outlookQuery），由用户粘贴到搜索框。
+ */
+export function webLinksFor(messageId: string | null | undefined, subject: string, provider?: string | null): { gmail: string | null; outlook: string | null; outlookQuery: string | null } {
   const mid = String(messageId ?? '').trim().replace(/^<|>$/g, '')
   const subj = String(subject ?? '').trim()
   return {
     gmail: mid ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`rfc822msgid:${mid}`)}` : null,
-    outlook: subj ? `https://outlook.live.com/mail/0/search?q=${encodeURIComponent(`subject:"${subj.slice(0, 120)}"`)}` : null
+    outlook: subj ? (provider === 'office365' ? 'https://outlook.office.com/mail/' : 'https://outlook.live.com/mail/0/') : null,
+    outlookQuery: subj ? `subject:"${subj.slice(0, 120).replace(/"/g, '')}"` : null
   }
 }
 

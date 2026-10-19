@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Address, AgentRef, AISettings, ComposeFollowup, TodoData } from '@shared/types'
 import type { TraceUpdatePatch } from '@shared/ipc'
 import {
-  agreementLine, buildConfirmEmail, chatToText, classifyReply, emptyLinks, explicitDateOf, isTraceStatus, materialsText, summaryFromAi,
+  agreementLine, buildConfirmEmail, chatToText, classifyReply, emptyLinks, explicitDateOf, isTraceStatus, markSelfParties, materialsText, parseChat, type SelfIdentity, summaryFromAi,
   templateSummary, traceTransition, TRACE_MATERIAL_LABEL, TRACE_CHANNEL_LABEL, fmtTraceTime,
   type TraceConfirm, type TraceData, type TraceInput, type TraceLinks, type TraceMaterial, type TraceParty, type TraceRecord, type TraceStatus, type TraceSummary
 } from '@shared/trace'
@@ -108,9 +108,29 @@ export class TraceService {
     return set
   }
 
-  private markMe(parties: TraceParty[]): TraceParty[] {
-    const mine = this.myAddrs()
-    return parties.map(p => (p.email && mine.has(p.email.toLowerCase()) ? { ...p, me: true } : p))
+  /** 用户本人：账户显示名（发信 From 名）+ 邮箱 */
+  private identity(): SelfIdentity {
+    const accounts = this.deps.store.listAccounts()
+    const emails = [...this.myAddrs()]
+    // 已发邮件里最常用的 From 名（真实姓名）；账户名称常是「工作」这类标签，只用来认人、不用来显示
+    let sent: string[] = []
+    try {
+      if (emails.length)
+        sent = (
+          this.deps.store.db
+            .prepare(`SELECT from_name AS n, COUNT(*) AS c FROM messages WHERE lower(from_addr) IN (${emails.map(() => '?').join(',')}) AND COALESCE(from_name, '') != '' GROUP BY from_name ORDER BY c DESC LIMIT 3`)
+            .all(...emails) as { n: string }[]
+        ).map(r => String(r.n).trim())
+    } catch {
+      /* 查不到就只用账户名称 */
+    }
+    const names = [...new Set([...sent, ...accounts.map(a => String(a.name ?? '').trim())].filter(Boolean))]
+    return { names, emails, display: sent[0] ?? null }
+  }
+
+  /** 参与人里的本人：邮箱是自己的、名字是「我 / 本人」或账户显示名 → 标 me；聊天里「我」说过话但没列本人时补上 */
+  private markMe(parties: TraceParty[], speakers: string[] = []): TraceParty[] {
+    return markSelfParties(parties, this.identity(), speakers)
   }
 
   private accountFor(r: { accountId?: string | null; data: TraceData } | null): string | null {
@@ -135,7 +155,8 @@ export class TraceService {
 
   create(input: TraceInput, accountId: string | null = null): string {
     const now = Date.now()
-    const { title, data } = newTraceData({ ...input, parties: this.markMe(input.parties ?? []) }, now)
+    const speakers = (input.materials ?? []).flatMap(m => parseChat(String(m?.text ?? ''), now).speakers)
+    const { title, data } = newTraceData({ ...input, parties: this.markMe(input.parties ?? [], speakers) }, now)
     data.device = this.deps.device?.() ?? null
     const id = `trace-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     let acct = accountId
@@ -164,6 +185,13 @@ export class TraceService {
       const drop = new Set(patch.removeMaterialIds ?? [])
       const added = (patch.addMaterials ?? []).map(m => normMaterial(m, now)).filter((m): m is TraceMaterial => !!m)
       content.materials = [...r.data.materials.filter(m => !drop.has(m.id)), ...added]
+      // 新加的聊天里「我」说过话：参与人补上本人
+      const speakers = added.flatMap(m => (m.lines ?? []).map(l => l.speaker))
+      const base = content.parties ?? r.data.parties
+      if (speakers.length && !base.some(p => p.me)) {
+        const next = this.markMe(base, speakers)
+        if (next.some(p => p.me)) content.parties = next
+      }
     }
     let title = r.title
     let data = r.data

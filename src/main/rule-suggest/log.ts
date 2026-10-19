@@ -214,3 +214,70 @@ export function beginUserAction(db: DatabaseSync, method: string, args: unknown[
     return null
   }
 }
+
+// ---------------------------------------------------------------- 阅读停留信号（打开后马上关掉、没读）
+
+export interface ReadSignal {
+  messageId: string
+  /** 渲染端判定结果（lib/read-dwell.ts）：noRead = 打开几秒就切走且没互动；read = 读了 */
+  verdict: 'noRead' | 'read'
+  /** 可见停留（毫秒） */
+  dwellMs?: number
+}
+
+/**
+ * 记一次阅读停留信号（只记元数据：发件人 / 主题模板 / List-Id / 分类 + 停留秒数，不存正文）。
+ * 只记收件箱里的邮件；同一封同一判定 10 分钟内只记一次（来回切换不重复计数）。
+ */
+export function logReadSignal(db: DatabaseSync, sig: ReadSignal, now = Date.now()): boolean {
+  try {
+    const id = String(sig?.messageId ?? '')
+    if (!id || (sig.verdict !== 'noRead' && sig.verdict !== 'read')) return false
+    ensure(db)
+    const action = sig.verdict === 'noRead' ? 'openNoRead' : 'openRead'
+    const dup = db.prepare('SELECT 1 FROM user_action_log WHERE message_id = ? AND action = ? AND at > ? LIMIT 1').get(id, action, now - 10 * 60_000)
+    if (dup) return false
+    const r = db
+      .prepare(
+        `SELECT m.id, m.account_id, m.from_addr, m.subject, m.list_id, m.category, m.is_newsletter, m.date, f.special,
+                (SELECT data FROM mail_ai WHERE message_id = m.id) AS ai
+         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`
+      )
+      .get(id) as any
+    if (!r || r.special !== 'inbox') return false
+    let section: string | null = null
+    try {
+      section = r.ai ? JSON.parse(r.ai)?.section ?? null : null
+    } catch {
+      /* ignore */
+    }
+    const from = String(r.from_addr ?? '').toLowerCase()
+    const dwell = Number(sig.dwellMs)
+    insertEvents(db, [
+      {
+        at: now,
+        action,
+        messageId: r.id,
+        accountId: r.account_id,
+        fromAddr: from,
+        fromDomain: hostOf(from),
+        subject: r.subject ?? '',
+        subjectPattern: subjectPattern(r.subject),
+        listId: r.list_id ?? null,
+        category: r.category ?? null,
+        isNewsletter: !!r.is_newsletter,
+        section,
+        value: Number.isFinite(dwell) ? String(Math.max(0, Math.round(dwell / 100) / 10)) : null,
+        ageMs: r.date ? Math.max(0, now - r.date) : null,
+        // 渲染端只上报打开时还是未读的邮件
+        wasUnread: true,
+        batchId: null,
+        batchSize: 1
+      }
+    ])
+    return true
+  } catch (err) {
+    console.error('[rule-suggest] read signal failed', err)
+    return false
+  }
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -127,7 +127,8 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
       Link.configure({ openOnClick: false }),
       Image,
-      Placeholder.configure({ placeholder: '正文…' })
+      Placeholder.configure({ placeholder: '正文…' }),
+      ComposeKeys
     ],
     content: prefill?.html ?? '',
     editorProps: { attributes: { class: 'compose-editor', 'aria-label': '正文' } },
@@ -645,7 +646,7 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
           return !v || cc.length > 0
         })
       } else if (mod && e.shiftKey && (e.key === 'b' || e.key === 'B')) {
-        // 编辑器内 ⌘⇧B 原为引用块（工具栏仍可用），撰写窗统一为「密送」
+        // ⌘⇧B = 显示密送（与 Gmail 一致）；TipTap 默认的 ⌘⇧B 引用块改到 ⌘⇧9（见 ComposeKeys）
         e.preventDefault()
         e.stopPropagation()
         setShowBcc(v => {
@@ -1023,6 +1024,21 @@ export function ComposeWindow({ prefill: rawPrefill }: { prefill?: Partial<Compo
   )
 }
 
+/**
+ * 撰写窗编辑器快捷键：⌘⇧B 让给「显示密送」，引用块改为 ⌘⇧9（Gmail 同款；TipTap 默认键位里 ⌘⇧9 只有任务列表在用，本编辑器没装）。
+ * 优先级高于 StarterKit，确保 ⌘⇧B 不会再落到引用块上。
+ */
+const ComposeKeys = Extension.create({
+  name: 'composeKeys',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      'Mod-Shift-9': () => this.editor.commands.toggleBlockquote(),
+      'Mod-Shift-b': () => true
+    }
+  }
+})
+
 function EditorToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null
   const btn = (label: React.ReactNode, title: string, active: boolean, onClick: () => void, textCls = '') => (
@@ -1047,7 +1063,7 @@ function EditorToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
       <span className="cmp-tool-sep" />
       {btn(<IconList width={14} height={14} />, '无序列表', editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
       {btn(<IconListOrdered width={14} height={14} />, '有序列表', editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-      {btn(<IconQuote width={13} height={13} />, '引用块', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
+      {btn(<IconQuote width={13} height={13} />, '引用块 ⌘⇧9', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
       {btn(<IconLink width={13} height={13} />, '链接', editor.isActive('link'), () => {
         const url = window.prompt('链接地址')
         if (url) editor.chain().focus().setLink({ href: url }).run()

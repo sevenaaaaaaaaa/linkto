@@ -1207,7 +1207,8 @@ export interface AgentJobInfo {
 export interface AgentActivity {
   id: string
   at: number
-  source: 'job' | 'skill' | 'chat' | 'onboarding' | 'event'
+  /** share：分享中心（导出 / 发到 IM / 存笔记）的记录 */
+  source: 'job' | 'skill' | 'chat' | 'onboarding' | 'event' | 'share'
   title: string
   detail?: string | null
   refs?: AgentRef[]

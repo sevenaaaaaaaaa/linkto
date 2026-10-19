@@ -735,3 +735,54 @@ export function projectHue(color: string | null | undefined, seed = ''): number 
   for (const ch of seed) h = (h * 31 + (ch.codePointAt(0) ?? 0)) % PROJECT_COLORS.length
   return PROJECT_COLORS[h].hue
 }
+
+// =====================================================================
+// 成员补全（后续归入的会话把往来地址补进成员）
+// =====================================================================
+
+/** 项目成员上限（再多就是群发 / 抄送大户，不再自动补） */
+export const MAX_PROJECT_MEMBERS = 60
+/** 一封邮件的收件人超过这个数：当作群发，不从它补成员 */
+export const BULK_RECIPIENTS = 12
+
+export interface MemberSourceMail {
+  from?: { name?: string; address: string } | null
+  to?: { name?: string; address: string }[]
+  cc?: { name?: string; address: string }[]
+  isNewsletter?: boolean
+}
+
+/**
+ * 把邮件里的往来地址并进成员：排除自己、机器人地址（noreply / notifications…）、订阅邮件、群发（收件人过多）；
+ * 已有成员保留原顺序，没有名字的补上名字；总数封顶。返回新列表与新增数。
+ */
+export function mergeMembers(
+  existing: { name?: string; address: string }[],
+  mails: MemberSourceMail[],
+  mine: Set<string>,
+  max = MAX_PROJECT_MEMBERS
+): { members: { name?: string; address: string }[]; added: number } {
+  const out = existing.map(m => ({ ...m, address: m.address.toLowerCase() }))
+  const idx = new Map(out.map((m, i) => [m.address, i]))
+  let added = 0
+  for (const mail of mails) {
+    if (mail.isNewsletter) continue
+    const recipients = [...(mail.to ?? []), ...(mail.cc ?? [])]
+    if (recipients.length > BULK_RECIPIENTS) continue
+    for (const a of [mail.from, ...recipients]) {
+      const addr = String(a?.address ?? '').trim().toLowerCase()
+      if (!addr || !addr.includes('@') || mine.has(addr) || isRobotAddr(addr)) continue
+      const name = String(a?.name ?? '').trim() || undefined
+      const i = idx.get(addr)
+      if (i != null) {
+        if (!out[i].name && name) out[i] = { ...out[i], name }
+        continue
+      }
+      if (out.length >= max) continue
+      idx.set(addr, out.length)
+      out.push({ ...(name ? { name } : {}), address: addr })
+      added++
+    }
+  }
+  return { members: out, added }
+}

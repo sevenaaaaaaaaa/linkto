@@ -4,7 +4,8 @@ import type { Rule, RuleAction, RuleActionType, RuleCondition, RuleField, RuleOp
 import type { MailStore } from '../db'
 import { ruleMatches, type RuleEvalContext } from '../rules/engine'
 import { logActivity } from '../agent/hooks'
-import { ensureRuleSuggestTables, loadEvents, pruneLog } from './log'
+import { ensureRuleSuggestTables, loadEvents, logReadSignal, pruneLog, type ReadSignal } from './log'
+import { mineOpenNoRead } from './dwell'
 import { blockedByHistory, coveredByRules, DAY_MS, messageCtx, mineSuggestions, WINDOW_DAYS, type Candidate, type MineMessage, type SuggestionHistory } from './mine'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -149,7 +150,9 @@ export class RuleSuggestService {
     const events = loadEvents(db, now - WINDOW_DAYS * DAY_MS)
     const msgs = this.messages(now - 365 * DAY_MS)
     const inbox = msgs.filter(m => m.special === 'inbox' && m.date >= now - WINDOW_DAYS * DAY_MS)
-    const cands = mineSuggestions({ now, events, inbox, knownContacts: store.getKnownSenders(), folderNames: this.folderNames() })
+    const known = store.getKnownSenders()
+    // 手动操作的习惯 + 阅读停留（打开后马上关掉、没读）→ 自动标已读
+    const cands = [...mineSuggestions({ now, events, inbox, knownContacts: known, folderNames: this.folderNames() }), ...mineOpenNoRead({ now, events, knownContacts: known })].sort((a, b) => b.score - a.score)
     const rules = store.listRules()
     const history = this.history()
     const fresh = cands.filter(c => !coveredByRules(c, rules) && !blockedByHistory(c, history, now)).slice(0, MAX_OPEN)
@@ -235,6 +238,11 @@ export class RuleSuggestService {
     this.deps.event({ type: 'rule-suggestions' })
     this.deps.event({ type: 'messages-changed' })
     return { ok: true, ruleId: rule?.id, applied }
+  }
+
+  /** 阅读页上报的停留信号（只记元数据） */
+  readSignal(sig: ReadSignal): boolean {
+    return logReadSignal(this.deps.db, sig)
   }
 
   /** 忽略：forever = 永不建议（同指纹、同发件域的同类动作都不再提）；否则 30 天内不提 */
