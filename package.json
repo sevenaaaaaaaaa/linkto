@@ -41,5 +41,9 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^7.3.7"
+  },
+  "overrides": {
+    "simple-git": "4.0.2",
+    "global-agent": "4.1.3"
   }
 }
