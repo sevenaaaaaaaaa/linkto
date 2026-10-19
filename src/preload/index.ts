@@ -60,7 +60,10 @@ const METHOD_NAMES = [
   'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity',
   // 项目 / 时间线
   'listProjects', 'getProject', 'saveProject', 'deleteProject', 'projectFromMessage', 'projectAddMessages', 'projectRemoveMessages',
-  'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects'
+  'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects',
+  // 导出与分享中心
+  'shareTargets', 'shareSaveTarget', 'shareRemoveTarget', 'shareTestTarget', 'shareSettings', 'shareSetSettings',
+  'sharePreview', 'shareSend', 'shareExport', 'shareCopy', 'shareLinks', 'shareOpenLink'
 ] as const
 
 const api = {} as LinkToApi

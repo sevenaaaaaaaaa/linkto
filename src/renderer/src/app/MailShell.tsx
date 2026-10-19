@@ -26,6 +26,7 @@ import { OnboardingScanHost } from './agent/AutomationPanel'
 import { SkillRunHost } from './agent/skill-ui'
 import { ContentAccessHost } from './attachments/ContentAccess'
 import { CommandPalette } from './CommandPalette'
+import { ShareHost, openShare, currentShareIds } from './share/SharePanel'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
 import { api } from '../lib/api'
@@ -151,6 +152,12 @@ export function MailShell() {
         setPaletteOpen(o => !o)
         return
       }
+      // ⌘⇧E：分享 / 导出面板（当前邮件或多选）
+      if (meta && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault()
+        openShare(currentShareIds())
+        return
+      }
       // ⌘J：阅读页右侧栏切到 Agent（再按一次收起）
       if (meta && (e.key === 'j' || e.key === 'J')) {
         e.preventDefault()
@@ -268,6 +275,7 @@ export function MailShell() {
       <SkillRunHost />
       <OnboardingScanHost />
       <ContentAccessHost />
+      <ShareHost />
 
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (

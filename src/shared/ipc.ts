@@ -632,3 +632,29 @@ export interface LinkToApi {
   /** 清除已提取的附件正文缓存（PDF 文本层 / 纯文本 / 识字结果），之后按需重新提取 */
   clearAttachmentTextCache(): Promise<{ removed: number }>
 }
+
+// ---------- 导出与分享中心（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  /** 全部分享目标：已配置的 IM / 工作 IM / 笔记 / 本地文件夹 + 网盘 + 内置（系统分享、微信、WhatsApp、剪贴板、导出） */
+  shareTargets(): Promise<import('./share').ShareTargetInfo[]>
+  /** 新建 / 更新目标；url / secret / token 留空 = 保持原值（密钥经钥匙串加密保存） */
+  shareSaveTarget(input: import('./share').ShareTargetInput): Promise<{ ok: boolean; error?: string; id?: string }>
+  shareRemoveTarget(id: string): Promise<void>
+  /** 测试发送（Webhook / Telegram 发一条测试消息；Notion / 备忘录只检查连接与权限，不写入） */
+  shareTestTarget(id: string): Promise<import('./share').ShareResult>
+  shareSettings(): Promise<import('./share').ShareSettings>
+  shareSetSettings(patch: Partial<import('./share').ShareSettings>): Promise<import('./share').ShareSettings>
+  /** 发送前预览：将发出的文字、生成的文件名与提示 */
+  sharePreview(req: import('./share').ShareRequest): Promise<import('./share').SharePreview>
+  /** 发送到目标（对外发送必须带 confirmed: true，界面确认后才调用） */
+  shareSend(req: import('./share').ShareRequest): Promise<import('./share').ShareResult>
+  /** 导出到本地：where = ask（保存对话框）/ quick（默认导出目录）/ dir（指定目录） */
+  shareExport(req: import('./share').ShareRequest): Promise<import('./share').ShareResult>
+  /** 复制到剪贴板：纯文本 / 富文本（HTML + 纯文本双格式）/ 链接 / 长图 */
+  shareCopy(messageIds: string[], kind: 'text' | 'rich' | 'link' | 'png'): Promise<import('./share').ShareResult>
+  /** 一封邮件的链接：linkto:// 内部链接 + Gmail / Outlook 网页版备选 */
+  shareLinks(messageId: string): Promise<import('./share').ShareLinks | null>
+  /** 打开 linkto://open?mid=… 链接：在主窗口定位到这封邮件 */
+  shareOpenLink(url: string): Promise<{ ok: boolean; error?: string; id?: string }>
+}

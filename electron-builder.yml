@@ -59,6 +59,11 @@ linux:
     - target: AppImage
       arch:
         - x64
+# linkto://open?mid=<Message-ID> internal mail links (Share & Export center)
+protocols:
+  - name: LinkTo Mail Link
+    schemes:
+      - linkto
 npmRebuild: false
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

@@ -19,6 +19,7 @@ import { useSearch } from '../stores/search'
 import { ProjectTag } from './projects/ProjectBits'
 import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
 import { RuleSuggestionCard } from './RuleSuggestionCard'
+import { openShare, currentShareIds } from './share/SharePanel'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -1311,6 +1312,7 @@ function BulkBar(props: {
           <BulkBtn onClick={props.onSnooze}>稍后</BulkBtn>
         </>
       )}
+      <BulkBtn onClick={() => openShare(currentShareIds())}>分享</BulkBtn>
       <div className="relative" ref={ref}>
         <BulkBtn onClick={() => props.setMoveMenu(!props.moveMenu)}>移动</BulkBtn>
         {props.moveMenu && (

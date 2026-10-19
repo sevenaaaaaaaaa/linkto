@@ -23,6 +23,7 @@ import { followupService } from '../followups'
 import { lifeAgentTools } from '../life/agent-tools'
 import { clampWaitDays, FOLLOWUP_KIND_LABEL, FOLLOWUP_STATUS_LABEL, isFollowupKind, waitedDays } from '@shared/followups'
 import { ruleSuggestService } from '../rule-suggest'
+import { shareAgentTools } from '../share/agent-tools'
 
 /**
  * Agent 工具注册表：每个工具 = 名称 / 中文标题 / 说明 / JSON Schema 参数 / 风险 / 领域 / 执行函数。
@@ -1740,7 +1741,10 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
     },
 
     // ======================================================== 生活档案（life_list / life_create / life_update）
-    ...lifeAgentTools({ store, fail: m => new ToolError(m) })
+    ...lifeAgentTools({ store, fail: m => new ToolError(m) }),
+
+    // ======================================================== 导出与分享（list_share_targets / share_mail）
+    ...shareAgentTools({ store, fail: m => new ToolError(m) })
   ]
 
   // 写操作统一要求 reason（说明理由），没声明的补上

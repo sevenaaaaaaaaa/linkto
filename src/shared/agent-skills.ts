@@ -940,6 +940,28 @@ export const BUILTIN_SKILLS: AgentSkill[] = [
 - 小节：已过期 / 该开始办了 / 未来几个月（每条：对象 · 机构 · 到期日（相对说法）· 下一步 · 准备材料）。
 - 没找到的常见项（每条一句话 + 建议）。
 - 「待确认动作」：为该开始办的事生成待办、更新档案里缺的日期或费用（life_update）、把邮件里发现但还没收录的事务加入生活档案（life_create）。`
+  }),
+  // ------------------------------------------------------------------ 导出与分享
+  skill({
+    id: 'share-to-team',
+    name: '把这封邮件同步到团队群',
+    category: '项目',
+    icon: 'Forward',
+    output: 'actions',
+    contextKind: 'message',
+    params: [{ key: 'target', label: '发到哪个群（目标名称，可留空）', kind: 'text', default: '' }],
+    description: '提炼当前邮件的要点、需要谁做什么，配一句附言发到团队的企业微信 / 钉钉 / 飞书 / Slack / Teams 群（发送前由你确认）。',
+    instructions: `把当前邮件（context.messageId）同步到团队群，让没收到这封邮件的同事一眼看懂。
+步骤：
+1. 读邮件与邮件理解：谁发的、关于什么、要我们做什么、截止时间、涉及的金额 / 单号 / 附件。
+2. list_share_targets：找工作 IM 目标（企业微信 / 钉钉 / 飞书 / Slack / Teams）。用户指定了「{{target}}」就用名字最接近的；没指定且只有一个工作 IM 目标就用它；有多个时列出来让用户选，不要猜。
+3. 写一句附言（≤80 字）：结论先行 + 需要谁做什么 + 截止，如「客户 Northwind 要求周五前确认报价，@销售组 请回复」。不要编造邮件里没有的人名或日期。
+4. 作为「待确认动作」调用 share_mail：target = 选定目标 id，format = text，note = 附言；邮件带附件且同事需要看时 include_attachments = true（目标没设置网盘时说明附件不会发出）。
+输出格式：
+- 一句话：这封邮件讲什么、为什么要同步。
+- 将发出的附言。
+- 「待确认动作」：share_mail（发送前用户确认）。
+- 没有可用的工作 IM 目标时：告诉用户在 设置 → 分享与导出 里添加群机器人，不要调用 share_mail。`
   })
 ]
 

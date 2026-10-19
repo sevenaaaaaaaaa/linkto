@@ -9,6 +9,7 @@ import { askAgent } from '../lib/agent-ask'
 import type { MessageSummary } from '@shared/types'
 import { projectCommands } from './projects/ProjectBits'
 import { agentCommands } from './agent/AgentNav'
+import { shareCommands } from './share/SharePanel'
 
 interface Command {
   id: string
@@ -140,7 +141,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'act-preset', group: '外观', label: '主题预设…', run: () => { props.onClose(); emit('ms:toggle-theme-menu') } },
       { id: 'act-style', group: '外观', label: '阅读风格…', run: () => { props.onClose(); emit('ms:toggle-style-menu') } }
     ]
-    return [...actions.filter(c => c.group !== '列表'), ...nav, ...agentCommands(props.onClose), ...projectCommands(props.onClose), ...actions.filter(c => c.group === '列表')]
+    return [...actions.filter(c => c.group !== '列表'), ...nav, ...agentCommands(props.onClose), ...projectCommands(props.onClose), ...shareCommands(props.onClose), ...actions.filter(c => c.group === '列表')]
   }, [props.open, props.onClose])
 
   const filtered = useMemo(() => {

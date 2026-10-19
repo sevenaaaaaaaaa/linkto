@@ -42,6 +42,7 @@ import { AiBudget } from './jobs/budget'
 import { initFollowups, followupService } from './followups'
 import { initRuleSuggest } from './rule-suggest'
 import { initLife, lifeService } from './life'
+import { initShare, listenAppLinks } from './share'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -160,6 +161,8 @@ if (!gotLock) {
       mainWindow.focus()
     }
   })
+  // 导出与分享：linkto:// 内部链接（open-url / 二次启动参数）定位邮件
+  listenAppLinks()
 }
 
 function broadcast(payload: unknown) {
@@ -729,6 +732,16 @@ async function bootstrap() {
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   registerProjectIpc(projects)
   registerFinanceIpc(finance)
+  // 导出与分享中心（IPC share* · 离屏渲染 PDF / 长图 · IM / 笔记 / 网盘目标 · linkto:// 链接）
+  initShare({
+    store: mailStore,
+    appStore,
+    engine: () => engine,
+    call: internal.call,
+    event: payload => broadcast(payload),
+    mainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    openMessage: id => focusMainForNotification(id)
+  })
   // 跟进闭环：发出后在等对方（IPC followup* · 登记钩子 · 发件队列订阅；到期检查由自动任务「跟进检查」驱动）
   initFollowups({
     store: mailStore,

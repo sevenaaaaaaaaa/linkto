@@ -11,10 +11,11 @@ import { BackupTab } from './tabs/BackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
 import { TodoSyncSection } from './tabs/TodoSyncSection'
 import { AttachmentsTab } from './tabs/AttachmentsTab'
+import { ShareTab } from './tabs/ShareTab'
 import { parseSettingsTab } from './account-focus'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook, IconSearch,
-  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare, IconAttach
+  IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare, IconAttach, IconSend
 } from '../components/icons'
 
 interface Page {
@@ -49,7 +50,8 @@ const GROUPS: { title: string; pages: Page[] }[] = [
     title: '智能',
     pages: [
       { id: 'ai', label: 'AI 模型', desc: '云端 API、本地模型、内置引擎与自定义咒语', icon: IconSparkles, keywords: 'AI 模型 API Key DeepSeek GLM OpenAI Ollama LM Studio 本地 内置引擎 咒语 提示词' },
-      { id: 'integrations', label: '集成', desc: 'MCP 服务、连接器、网盘', icon: IconPlug, keywords: '集成 MCP Claude Code 连接器 网盘 WebDAV Dropbox Proton Drive Webhook' }
+      { id: 'integrations', label: '集成', desc: 'MCP 服务、连接器、网盘', icon: IconPlug, keywords: '集成 MCP Claude Code 连接器 网盘 WebDAV Dropbox Proton Drive Webhook' },
+      { id: 'share', label: '分享与导出', desc: '把邮件发到 IM、工作 IM、笔记与网盘；导出 PDF / 长图 / EML / Markdown', icon: IconSend, keywords: '分享 导出 PDF 长图 EML Markdown 企业微信 钉钉 飞书 Lark Slack Teams Discord Telegram 微信 WhatsApp Notion flomo 备忘录 笔记 Webhook 机器人 群 命名模板 导出目录' }
     ]
   },
   {
@@ -162,6 +164,7 @@ export default function SettingsApp() {
           {tab === 'rules' && <AutomationTab />}
           {tab === 'ai' && <AiTab />}
           {tab === 'integrations' && <IntegrationsTab />}
+          {tab === 'share' && <ShareTab />}
           {tab === 'backup' && <BackupTab />}
           {tab === 'todo' && <TodoSettingsPage />}
           {tab === 'attachments' && <AttachmentsTab />}

@@ -10,7 +10,7 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot
+  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot, IconSend
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { AttachmentBadge } from './attachments/AttachmentBadge'
@@ -31,6 +31,7 @@ import { EventStrip } from './agent/EventStrip'
 import { useProjectIndex } from '../lib/projects'
 import { FollowupStrip } from './followups/FollowupStrip'
 import { LifeStrip } from './life/LifeStrip'
+import { shareMenuItems, useShareTargets } from './share/SharePanel'
 
 interface AIState {
   text: string
@@ -47,6 +48,7 @@ export function Reader() {
   const [connectors, setConnectors] = useState<ConnectorInstance[]>([])
   const [manifests, setManifests] = useState<ConnectorManifest[]>([])
   const [drives, setDrives] = useState<CloudDriveConfig[]>([])
+  useShareTargets(st => st.settings?.recent) // 分享菜单「最近使用」随发送刷新
   const [driveMenu, setDriveMenu] = useState(false)
   const [connectorMenu, setConnectorMenu] = useState(false)
   const [styleMenu, setStyleMenu] = useState(false)
@@ -580,13 +582,17 @@ export function Reader() {
     { kind: 'action', label: msg.unread ? '标为已读' : '标为未读', icon: <IconMailDot width={13} height={13} />, onSelect: () => void (msg.unread ? api.markRead([msg.id], true).then(() => loadMessages()) : act('unread')) },
     { kind: 'sep' },
     { kind: 'action', label: '存入知识库', icon: <IconSave width={13} height={13} />, onSelect: () => void saveToKb() },
-    ...connectors.map(c => ({ kind: 'action' as const, label: `分享到 ${manifests.find(m => m.id === c.manifestId)?.name ?? c.manifestId}`, icon: <IconPlug width={13} height={13} />, onSelect: () => void shareConnector(c.id, 'forward') })),
-    ...drives.map(d => ({ kind: 'action' as const, label: `eml 原文 → ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'eml') })),
-    ...(atts.length ? drives.map(d => ({ kind: 'action' as const, label: `全部附件（${atts.length}）→ ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'attachments') })) : []),
     ...(canUnsub ? [{ kind: 'sep' as const }, { kind: 'action' as const, label: '退订此发件人', icon: <IconUnsub width={13} height={13} />, onSelect: () => void unsubscribe() }] : []),
     { kind: 'sep' },
     { kind: 'action', label: '删除', icon: <IconTrash width={13} height={13} />, hint: '⌫', danger: true, onSelect: () => void act('trash') }
   ]
+
+  // 「分享 / 导出」统一菜单：最近使用的目标 + 导出 / 复制 + 既有的连接器与网盘项
+  const shareItems = shareMenuItems([msg.id], [
+    ...connectors.map(c => ({ kind: 'action' as const, label: `分享到 ${manifests.find(m => m.id === c.manifestId)?.name ?? c.manifestId}`, icon: <IconPlug width={13} height={13} />, onSelect: () => void shareConnector(c.id, 'forward') })),
+    ...drives.map(d => ({ kind: 'action' as const, label: `eml 原文 → ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'eml') })),
+    ...(atts.length ? drives.map(d => ({ kind: 'action' as const, label: `全部附件（${atts.length}）→ ${d.name}`, icon: <IconCloud width={13} height={13} />, onSelect: () => void uploadToDrive(d.id, d.name, 'attachments') })) : [])
+  ])
 
   return (
     <div className="flex-1 min-w-0 h-full flex flex-col relative">
@@ -671,6 +677,9 @@ export function Reader() {
             </div>
           )}
         </div>
+        <MenuButton title="分享 / 导出（⌘⇧E 打开分享面板）" items={shareItems} width={240}>
+          <IconSend width={14} height={14} />
+        </MenuButton>
         <MenuButton title="更多操作" items={moreItems} width={232}>
           <IconMore width={15} height={15} />
         </MenuButton>
