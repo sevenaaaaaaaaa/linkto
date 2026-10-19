@@ -579,7 +579,7 @@ export interface TodoData {
 }
 
 /** swipe：营销灵感收藏（公司洞察挑出的范本邮件）；finance：账单 / 订阅 / 订单 / 企业往来款项；project：项目（一件事的多封邮件）；followup：发出后在等对方的跟进 */
-export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project' | 'followup' | 'life'
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project' | 'followup' | 'life' | 'trace'
 
 export interface InsightRecord {
   id: string
@@ -1094,7 +1094,7 @@ export interface AgentToolInfo {
 
 /** Agent 回答里引用的对象，界面渲染成可点击的来源胶囊 */
 export interface AgentRef {
-  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'followup' | 'life'
+  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'followup' | 'life' | 'trace'
   id: string
   label: string
 }
@@ -1595,3 +1595,7 @@ export interface AttachmentOcrProgress {
   done: number
   total: number
 }
+
+// ---------- 留痕（数据模型与纯函数见 ./trace） ----------
+
+export type { TraceRecord, TraceData, TraceStatus, TraceChannel, TraceInput, TraceSyncStatus } from './trace'

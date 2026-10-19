@@ -32,6 +32,7 @@ import { useProjectIndex } from '../lib/projects'
 import { FollowupStrip } from './followups/FollowupStrip'
 import { LifeStrip } from './life/LifeStrip'
 import { shareMenuItems, useShareTargets } from './share/SharePanel'
+import { TraceStrip, traceMenuItems } from './trace/TraceStrip'
 
 interface AIState {
   text: string
@@ -573,6 +574,7 @@ export function Reader() {
       onSelect: () => void api.todoFromMessage(msg.id).then(id => showToast(id ? '已加入待办' : '没能转成待办'))
     },
     { kind: 'action', label: '加入财务', icon: <IconTask width={13} height={13} />, onSelect: () => void addMessageToFinance(msg.id) },
+    ...traceMenuItems(msg),
     { kind: 'sep' },
     { kind: 'action', label: '全部回复', icon: <IconReplyAll width={13} height={13} />, onSelect: () => reply(true) },
     { kind: 'action', label: '转发', icon: <IconForward width={13} height={13} />, onSelect: forward },
@@ -743,6 +745,7 @@ export function Reader() {
       <LifeStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
       <EventStrip messageId={msg.id} />
       <FollowupStrip msg={msg} />
+      <TraceStrip msg={msg} />
 
       {/* 验证码 / 登录链接直达气泡 */}
       {auth && !authDismissed && (

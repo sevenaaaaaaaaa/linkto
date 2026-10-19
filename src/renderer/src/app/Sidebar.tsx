@@ -9,6 +9,8 @@ import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import { FinanceNavRow, IconWallet } from './finance/FinanceNav'
 import { LifeNavRow } from './life/LifeStrip'
 import { IconLife } from './life/icons'
+import { TraceNavRow } from './trace/TraceStrip'
+import { IconTrace } from './trace/icons'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconClock, IconShield,
@@ -306,6 +308,7 @@ export function Sidebar() {
             <FeedNavSection Row={Row} ico={ico} />
             <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
             <LifeNavRow render={(label, count) => <Row icon={<IconLife {...ico} />} label={label} unread={count} muteCount active={view === 'life'} onClick={() => goView('life')} />} />
+            <TraceNavRow render={(label, count) => <Row icon={<IconTrace {...ico} />} label={label} unread={count} active={view === 'trace'} onClick={() => goView('trace')} />} />
             <AgentNavSection Row={Row} ico={ico} />
             {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
             <Row icon={<IconAttach {...ico} />} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />

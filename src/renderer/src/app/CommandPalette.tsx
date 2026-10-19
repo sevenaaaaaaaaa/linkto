@@ -11,6 +11,7 @@ import { projectCommands } from './projects/ProjectBits'
 import { agentCommands } from './agent/AgentNav'
 import { shareCommands } from './share/SharePanel'
 import { openFeeds } from '../lib/feeds'
+import { openTraceCapture } from '../lib/trace'
 
 interface Command {
   id: string
@@ -84,6 +85,8 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
       { id: 'nav-life', group: '前往', label: '生活档案（证件 / 保险 / 年检 / 域名 / 会员 / 保修到期）', keywords: 'life admin 生活档案 到期 续期 续保 护照 证件 保险 年检 域名 会员 保修 合同 租房 个税 体检 renewal expire passport', run: () => { goView('life'); props.onClose() } },
+      { id: 'nav-trace', group: '前往', label: '留痕（口头约定 / 书面确认）', keywords: 'trace 留痕 口头 约定 书面确认 凭据 微信 电话 会议 聊天记录', run: () => { goView('trace'); props.onClose() } },
+      { id: 'act-trace-capture', group: '前往', label: '记一笔留痕…', keywords: 'trace capture 记一笔 留痕 聊天 截图 口头 约定', run: () => { props.onClose(); openTraceCapture() } },
       { id: 'act-life-scan', group: '前往', label: '生活档案：扫描最近 2 年邮件', keywords: 'life scan 到期 续期 回填', run: () => { goView('life'); props.onClose(); void api.lifeScan(730) } },
       { id: 'nav-feeds', group: '前往', label: '订阅（RSS / AI 搜索订阅）', keywords: 'feeds rss atom feed 订阅源 资讯 新闻 博客 AI 搜索 主题 行业动态', run: () => { openFeeds(); props.onClose() } },
       { id: 'nav-feeds-digest', group: '前往', label: '订阅：今日精华', keywords: 'feeds digest rss 精华 汇总', run: () => { openFeeds({ kind: 'digest' }); props.onClose() } },

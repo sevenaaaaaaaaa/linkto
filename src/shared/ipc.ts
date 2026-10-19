@@ -708,3 +708,58 @@ export interface LinkToApi {
   feedDigest(day?: string | null): Promise<import('./feeds').FeedDigest | null>
   feedGenerateDigest(): Promise<{ ok: boolean; digest?: import('./feeds').FeedDigest; error?: string }>
 }
+
+// ---------- 留痕（与上面的 LinkToApi 声明合并；数据模型见 ./trace） ----------
+
+export interface TraceUpdatePatch {
+  title?: string
+  channel?: import('./trace').TraceChannel
+  occurredAt?: number | null
+  parties?: import('./trace').TraceParty[]
+  summary?: import('./trace').TraceSummary | null
+  /** 追加原始材料 */
+  addMaterials?: Omit<import('./trace').TraceMaterial, 'id' | 'addedAt'>[]
+  /** 移除原始材料（旧内容进版本历史，可追溯） */
+  removeMaterialIds?: string[]
+  /** 手动改状态 */
+  status?: import('./trace').TraceStatus
+  /** 关联（项目 / 款项 / 邮件 / 待办） */
+  link?: Partial<import('./trace').TraceLinks>
+  unlink?: Partial<import('./trace').TraceLinks>
+}
+
+export interface LinkToApi {
+  traceList(): Promise<import('./trace').TraceRecord[]>
+  /** 新建；organize = 'ai' / 'template' 时随后整理一次（AI 不可用时退回模板） */
+  traceCreate(input: import('./trace').TraceInput, opts?: { organize?: 'ai' | 'template' | null }): Promise<{ id: string; organized?: { ok: boolean; by?: 'ai' | 'template'; error?: string; warnings?: string[] } }>
+  /** 内容改动会把旧内容压进版本历史并重算哈希；reason 写进历史 */
+  traceUpdate(id: string, patch: TraceUpdatePatch, reason?: string): Promise<{ ok: boolean; error?: string }>
+  /** 删除 = 墓碑（跨设备同步可传播），不出现在列表里 */
+  traceDelete(id: string): Promise<void>
+  /** 整理：ai = AI 整理（不编造；金额 / 日期必须来自材料）；template = 按模板摘录 */
+  traceOrganize(id: string, mode: 'ai' | 'template'): Promise<{ ok: boolean; by?: 'ai' | 'template'; error?: string; warnings?: string[]; excluded?: number }>
+  /** 截图识字（用户主动粘贴 / 拖入；仍受附件内容读取与 OCR、云端 AI 授权约束） */
+  traceOcrImage(input: { dataUrl: string; name?: string | null }): Promise<{ ok: boolean; text?: string; method?: string; note?: string | null; error?: string; blocked?: import('./types').AttachmentAccessBlock }>
+  /** 起草书面确认邮件（打开撰写窗，不发送）并登记跟进（kind=reply） */
+  traceConfirmDraft(id: string, opts?: { to?: string[]; waitDays?: number }): Promise<{ ok: boolean; error?: string; draftId?: string; followupId?: string | null; reopened?: boolean }>
+  /** 立即检查书面确认的发出 / 回信状态；返回有变化的条数 */
+  traceCheckReplies(): Promise<number>
+  /** 阅读页「记为留痕」：已记过返回原记录 */
+  traceFromMessage(messageId: string): Promise<{ id: string | null; created: boolean }>
+  /** 由约定事项生成待办（index 为空 = 整条留痕一个待办） */
+  traceMakeTodo(id: string, index?: number | null): Promise<string | null>
+  /** 把一条约定记进 Agent 记忆（承诺），由用户点击确认 */
+  traceRemember(id: string, index: number): Promise<{ ok: boolean; id?: string; error?: string }>
+  traceVerify(id: string): Promise<{ ok: boolean; hash: string; computed: string; versions: boolean[] } | null>
+  /** 导出存档（系统保存对话框） */
+  traceExport(id: string, format: 'md' | 'pdf'): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
+  /** 发给自己一封存档邮件：打开撰写窗（收件人 = 自己），不自动发送 */
+  traceArchiveMail(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 打开「记一笔留痕」浮层（全局快捷键 / Dock / 托盘同一入口） */
+  traceOpenCapture(): Promise<void>
+  /** AI 整理 / 截图识字是否可用 */
+  traceCapabilities(): Promise<{ ai: boolean; aiReason?: string | null; cloud: boolean; cloudAllowed: boolean; ocr: import('./types').OcrAvailability | null }>
+  traceSyncStatus(): Promise<import('./trace').TraceSyncStatus>
+  traceSyncConfigure(input: { enabled: boolean }): Promise<{ ok: boolean; error?: string; status: import('./trace').TraceSyncStatus }>
+  traceSyncNow(): Promise<import('./trace').TraceSyncStatus>
+}

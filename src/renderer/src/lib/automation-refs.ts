@@ -5,6 +5,7 @@ import { openContactTimeline, openProject } from './projects'
 import { useMail } from '../stores/mail'
 import { openFollowups } from './followups'
 import { openLife } from './life'
+import { openTrace } from './trace'
 
 const toast = (detail: string) => window.dispatchEvent(new CustomEvent('ms:toast', { detail }))
 
@@ -46,6 +47,9 @@ export function openAgentRef(ref: AgentRef) {
       return
     case 'life':
       openLife(ref.id)
+      return
+    case 'trace':
+      openTrace(ref.id)
       return
     default:
       toast('暂时打不开这个对象')

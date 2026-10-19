@@ -9,6 +9,8 @@ import { TodoView } from './TodoView'
 import { FinanceView } from './finance/FinanceView'
 import { LifeView } from './life/LifeView'
 import { FeedsView } from './feeds/FeedsView'
+import { TraceView } from './trace/TraceView'
+import { TraceCaptureHost } from './trace/TraceCapture'
 import { openFinance } from '../lib/finance'
 import { ContextRail } from './ContextRail'
 import { MovePalette } from './MovePalette'
@@ -261,7 +263,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />
@@ -277,6 +279,7 @@ export function MailShell() {
       <OnboardingScanHost />
       <ContentAccessHost />
       <ShareHost />
+      <TraceCaptureHost />
 
       {/* 发件队列（延迟 / 定时发送）：右下角浮条，可逐条撤销 */}
       {outbox.length > 0 && (

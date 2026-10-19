@@ -12,6 +12,7 @@ import { isNotifiableArrival } from '../notify-policy'
 import { parseEmailRaw } from './parse-pool'
 import type { FolderPref, Rule, RuleAction } from '@shared/types'
 import { isTodoSyncFolder } from '../todo-sync/protocol'
+import { isTraceSyncFolder } from '@shared/trace'
 
 const SEP = '::'
 export const folderIdOf = (accountId: string, path: string) => `${accountId}${SEP}${path}`
@@ -434,7 +435,7 @@ export class AccountWorker {
       const virtual = f.specialUse === '\\Flagged' || f.flags?.has('\\Important')
       if (special === 'all') this.allMailPath = f.path
       // 待办同步的隐藏文件夹：不当邮件同步、不进侧栏 / 文件夹管理（顺带清掉可能存在的旧行）
-      if (special === 'drafts' || special === 'all' || virtual || isTodoSyncFolder(f.path)) {
+      if (special === 'drafts' || special === 'all' || virtual || isTodoSyncFolder(f.path) || isTraceSyncFolder(f.path)) {
         // 本地管理草稿；All Mail 与其他文件夹重复，不同步（顺带清掉旧版本误同步的副本）
         this.store.deleteFolder(id)
         continue

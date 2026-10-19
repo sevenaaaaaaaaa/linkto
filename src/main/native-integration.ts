@@ -7,6 +7,8 @@ export interface NativeIntegrationOptions {
   unreadTotal(): number
   /** 打开主窗口并聚焦「添加待办」 */
   quickAddTodo?(): void
+  /** 打开主窗口里的「记一笔留痕」浮层 */
+  quickTrace?(): void
 }
 
 /** 解析 mailto:URL → 预填写信（地址/主题/正文） */
@@ -25,6 +27,9 @@ export function parseMailto(url: string): { to: string; subject: string; body: s
 }
 
 let tray: Tray | null = null
+
+/** 记一笔留痕的全局快捷键 */
+const TRACE_SHORTCUT = 'Alt+Shift+CommandOrControl+L'
 
 /**
  * 原生系统集成：mailto 协议接管、Dock 菜单、菜单栏托盘、全局快捷键。
@@ -52,6 +57,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
       Menu.buildFromTemplate([
         { label: '写邮件', click: () => opts.openCompose({}) },
         { label: '新建待办…', click: () => opts.quickAddTodo?.() },
+        ...(opts.quickTrace ? [{ label: '记一笔留痕…', click: () => opts.quickTrace?.() }] : []),
         { label: '打开 LinkTo', click: () => opts.showMain() }
       ])
     )
@@ -84,6 +90,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
           { label: '打开 LinkTo', click: () => opts.showMain() },
           { label: '写邮件', click: () => opts.openCompose({}) },
           { label: '新建待办…', accelerator: 'Alt+CommandOrControl+T', click: () => opts.quickAddTodo?.() },
+          ...(opts.quickTrace ? [{ label: '记一笔留痕…', accelerator: TRACE_SHORTCUT, click: () => opts.quickTrace?.() }] : []),
           { type: 'separator' },
           {
             id: 'unread',
@@ -104,6 +111,14 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
   globalShortcut.register('CommandOrControl+Shift+L', () => opts.showMain())
   // 随时记一笔：⌥⌘T 打开 LinkTo 的「添加待办」
   if (opts.quickAddTodo) globalShortcut.register('Alt+CommandOrControl+T', () => opts.quickAddTodo!())
+  // 记一笔留痕：⌥⇧⌘L（⌥⌘L 是 Finder / Safari / Chrome 的「下载」，全局注册会抢走它们）；被占用时只跳过，不影响其他快捷键
+  if (opts.quickTrace) {
+    try {
+      if (!globalShortcut.register(TRACE_SHORTCUT, () => opts.quickTrace!())) console.warn(`[shortcut] ${TRACE_SHORTCUT} 已被占用，跳过`)
+    } catch {
+      /* 平台不支持该组合 */
+    }
+  }
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()

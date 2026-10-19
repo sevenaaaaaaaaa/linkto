@@ -44,6 +44,7 @@ import { initRuleSuggest } from './rule-suggest'
 import { initLife, lifeService } from './life'
 import { initShare, listenAppLinks } from './share'
 import { initFeeds } from './feeds'
+import { initTrace, traceOnArrival, stopTrace, openTraceCapture } from './trace'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -589,6 +590,8 @@ async function bootstrap() {
         jobs?.events.markArrival(messageId)
         // 跟进闭环：对方回信 → 结束对应的跟进
         followupService()?.onArrival(messageId)
+        // 留痕：书面确认的回信 → 对方已确认 / 有异议
+        traceOnArrival(messageId)
         // 邮件理解：新到收件箱邮件排入后台 AI 队列（启发式结果按需即时计算）
         try {
           understand.onArrival(messageId)
@@ -776,6 +779,38 @@ async function bootstrap() {
   })
   // 订阅：RSS / Atom / JSON Feed 与 AI 搜索订阅（IPC feed*；抓取由自动任务「订阅源更新 / AI 搜索订阅 / 今日订阅精华」驱动）
   initFeeds({ db, store: mailStore, appStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
+  // 留痕：口头 / 聊天里说定的事 → 可追溯记录（IPC trace* · 书面确认对账 · LinkTo-Trace 跨设备同步）
+  initTrace({
+    store: mailStore,
+    appStore,
+    ai: aiService,
+    engine,
+    getAISettings: () => appStore.getAI(),
+    event: payload => broadcast(payload),
+    openCompose: prefill => createComposeWindow(prefill),
+    onTodosChanged: () => {
+      notifyLocalChange()
+      notifyIntegrationChange()
+    },
+    openCapture: () => {
+      // 用户主动触发（Dock / 托盘 / 全局快捷键）：显示主窗口后在窗口内打开浮层（不另开新窗口）
+      if (!mainWindow || mainWindow.isDestroyed()) createMainWindow()
+      else {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+      const win = mainWindow
+      if (!win) return
+      const send = () => !win.isDestroyed() && win.webContents.send('event', { type: 'trace-capture' })
+      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(send, 1500))
+      else send()
+    },
+    openTrace: id => {
+      focusMainForNotification()
+      mainWindow?.webContents.send('event', { type: 'open-trace', id })
+    }
+  })
   // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
   const agentRuntime = new AgentRuntime({
       store: mailStore,
@@ -846,7 +881,8 @@ async function bootstrap() {
     quickAddTodo: () => {
       showMainWindow()
       mainWindow?.webContents.send('event', { type: 'quick-add-todo' })
-    }
+    },
+    quickTrace: () => openTraceCapture()
   })
   // 待办提醒：会议 / 固定时间开始前 5 分钟、带时刻的截止前 15 分钟（跟随通知总开关）
   startTodoReminders({
@@ -932,6 +968,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   todoSync?.stop()
+  stopTrace()
   jobs?.stop()
   attachmentService()?.stop()
   engine?.stopAll()

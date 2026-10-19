@@ -57,6 +57,8 @@ export async function syncRound(opts: {
   now?: number
   limit?: number
   stats?: RoundStats
+  /** 同步文件夹（默认待办的 LinkTo-Sync；留痕用 LinkTo-Trace，同一协议） */
+  folder?: string
 }): Promise<RoundStats> {
   const { transport: tx, local: db, keyring } = opts
   const now = opts.now ?? Date.now()
@@ -64,7 +66,7 @@ export async function syncRound(opts: {
   const stats = opts.stats ?? newStats()
   const indexKey = keyring ? await keyring.indexKey() : null
 
-  const folder = await tx.ensureFolder(SYNC_FOLDER_NAME)
+  const folder = await tx.ensureFolder(opts.folder ?? SYNC_FOLDER_NAME)
   const remote: RemoteHeader[] = (await tx.fetchHeaders(folder, ['X-LinkTo-Todo', 'X-LinkTo-Updated', 'X-LinkTo-Encrypted']))
     .map(m => headerMeta(m.uid, m.headers))
     .filter((h): h is RemoteHeader => !!h)

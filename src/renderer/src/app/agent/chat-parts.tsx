@@ -7,6 +7,8 @@ import { openContactTimeline, openProject } from '../../lib/projects'
 import { openFollowups } from '../../lib/followups'
 import { openLife } from '../../lib/life'
 import { IconLife } from '../life/icons'
+import { IconTrace } from '../trace/icons'
+import { openTrace } from '../../lib/trace'
 import { IconAttach, IconBook, IconBrain, IconCheck, IconCheckSquare, IconChevronRight, IconClock, IconClose, IconFileText, IconFolder, IconSearch, IconSparkles, IconUser } from '../../components/icons'
 
 /**
@@ -95,7 +97,8 @@ const REF_ICON: Record<AgentRef['type'], (p: P) => ReactNode> = {
   memory: IconBrain,
   contact: IconUser,
   followup: IconClock,
-  life: IconLife
+  life: IconLife,
+  trace: IconTrace
 }
 
 // ---------------------------------------------------------------- 参数要点
@@ -334,6 +337,9 @@ export function openRef(r: AgentRef) {
       return
     case 'life':
       openLife(r.id)
+      return
+    case 'trace':
+      openTrace(r.id)
       return
   }
 }
