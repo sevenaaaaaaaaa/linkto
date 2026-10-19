@@ -579,7 +579,7 @@ export interface TodoData {
 }
 
 /** swipe：营销灵感收藏（公司洞察挑出的范本邮件）；finance：账单 / 订阅 / 订单 / 企业往来款项；project：项目（一件事的多封邮件）；followup：发出后在等对方的跟进 */
-export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project' | 'followup'
+export type InsightKind = 'todo' | 'reading' | 'daily' | 'memo' | 'company' | 'swipe' | 'finance' | 'project' | 'followup' | 'life'
 
 export interface InsightRecord {
   id: string
@@ -1421,4 +1421,102 @@ export interface ComposeFollowup {
 export interface ComposeDraft {
   /** 发出后跟进（可选） */
   followup?: ComposeFollowup | null
+}
+
+// ---------- 主动建议规则（观察用户反复的手动操作，提议建规则） ----------
+
+/** 用户的一次手动操作（只记元数据，不存正文），用于挖掘规律 */
+export interface UserActionEvent {
+  at: number
+  /** archive / trash / markRead / moveFolder / snooze / flag / pin / unsubscribe / setCategory / createTodo / openNoRead（打开后立刻关闭、没读） */
+  action: string
+  messageId: string
+  accountId: string
+  fromAddr: string
+  fromDomain: string
+  /** 主题去掉编号 / 日期 / 金额后的模板，如「您的账单 {n} 月已出」 */
+  subjectPattern: string
+  listId?: string | null
+  category?: string | null
+  /** moveFolder 的目标文件夹 id / snooze 的小时数 / setCategory 的分类 */
+  value?: string | null
+  /** 收到到被处理的时长（ms），用于「从来不读就归档」判断 */
+  ageMs?: number | null
+  /** 处理时是否未读 */
+  wasUnread?: boolean
+}
+
+/** 一条规则建议：可直接转成 Rule */
+export interface RuleSuggestion {
+  id: string
+  /** 给人看的一句话：「你最近 30 天把 12 封来自 shop.example 的促销邮件不读就归档了」 */
+  title: string
+  /** 为什么建议（证据）：次数、时间范围、一致率 */
+  evidence: string
+  /** 建议的规则（name / conditions / actions；enabled 由用户接受时决定） */
+  rule: Omit<Rule, 'id' | 'order' | 'enabled'>
+  /** 观察到的次数与一致率（0~1） */
+  support: number
+  confidence: number
+  /** 现有邮件里会命中的数量（预览） */
+  matchCount?: number
+  /** 证据邮件（最多 10 封） */
+  sampleMessageIds: string[]
+  createdAt: number
+  status: 'new' | 'accepted' | 'dismissed' | 'snoozed'
+  /** 用户拒绝后同类不再提（指纹） */
+  fingerprint: string
+}
+
+// ---------- 生活档案（证件 / 保单 / 年检 / 会员 / 域名 / 保修等到期事务） ----------
+
+export type LifeCategory =
+  | 'id-document'
+  | 'insurance'
+  | 'vehicle'
+  | 'membership'
+  | 'domain'
+  | 'warranty'
+  | 'contract'
+  | 'tax'
+  | 'health'
+  | 'housing'
+  | 'education'
+  | 'card'
+  | 'other'
+
+/**
+ * insights kind='life' 的 data：一件「到期 / 续期 / 定期要办」的生活事务。
+ * insights 行的 dueAt = 下一个关键日期（到期 / 续期 / 截止），status open = 待处理，done = 已办妥（循环事务办妥后滚到下一期）。
+ */
+export interface LifeData {
+  category: LifeCategory
+  /** 对象：如「护照（张三）」「车牌 苏A·12345」「example.com」「家庭财产险」 */
+  subject: string
+  /** 机构 / 商家 */
+  provider?: string | null
+  /** 到期日（证件 / 保单 / 域名 / 会员 / 保修） */
+  expiresAt?: number | null
+  /** 建议开始办理的日期（如护照提前 6 个月、年检提前 1 个月） */
+  actionFrom?: number | null
+  /** 循环：每年 / 每 N 月 / 不循环 */
+  repeat?: { every: 'year' | 'month'; interval: number } | null
+  /** 提前几天提醒（默认按类别给，如 [30, 7, 1]） */
+  remindDays: number[]
+  /** 已发出的提醒（目标日期 + 提前天数），防重复 */
+  reminded?: string[]
+  /** 编号（保单号 / 证件尾号 / 订单号），只存用户可见的部分 */
+  reference?: string | null
+  /** 预计费用 */
+  amount?: number | null
+  currency?: string | null
+  /** 来源 */
+  messageIds: string[]
+  attachmentIds?: string[]
+  financeId?: string | null
+  todoId?: string | null
+  source: 'heuristic' | 'ai' | 'manual'
+  confidence?: number
+  notes?: string | null
+  updatedAt?: number
 }

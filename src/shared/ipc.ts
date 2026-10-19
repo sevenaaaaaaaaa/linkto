@@ -579,3 +579,23 @@ export interface LinkToApi {
   /** 附件正文（PDF 文本层 / 纯文本）；未提取过时现取并缓存 */
   readAttachmentText(attachmentId: string, maxChars?: number): Promise<{ ok: boolean; text?: string; info?: import('./types').AttachmentTextInfo; error?: string }>
 }
+
+// ---------- 规则建议 / 生活档案（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  /** 当前的规则建议（status=new，按价值排序） */
+  ruleSuggestions(): Promise<import('./types').RuleSuggestion[]>
+  /** 接受：按（可能被用户改过的）规则创建并启用；applyExisting=true 时对现有命中邮件执行一次 */
+  ruleSuggestionAccept(id: string, opts?: { rule?: Omit<import('./types').Rule, 'id' | 'order' | 'enabled'>; applyExisting?: boolean }): Promise<{ ok: boolean; ruleId?: string; applied?: number; error?: string }>
+  /** 忽略：forever=true 同类（同指纹）不再建议；否则 30 天内不再提 */
+  ruleSuggestionDismiss(id: string, forever?: boolean): Promise<void>
+
+  lifeList(): Promise<import('./types').InsightRecord[]>
+  lifeCreate(input: { title: string; dueAt?: number | null; data: Partial<import('./types').LifeData> }): Promise<string>
+  lifeUpdate(id: string, patch: { title?: string; dueAt?: number | null; status?: 'open' | 'done'; data?: Partial<import('./types').LifeData> }): Promise<void>
+  lifeDelete(id: string): Promise<void>
+  /** 从最近 N 天邮件里识别生活事务（进度经 'life-scan' 事件推送） */
+  lifeScan(days: number): Promise<{ created: number; merged: number; scanned: number }>
+  /** 导出 .ics（系统保存对话框） */
+  lifeExportIcs(ids?: string[] | null): Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>
+}
