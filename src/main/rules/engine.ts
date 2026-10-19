@@ -102,3 +102,9 @@ export async function evalAiRules(
 }
 
 export const CATEGORY_VALUES: MessageCategory[] = ['personal', 'notification', 'newsletter', 'noise']
+
+/** 单条规则（不含 AI 条件部分）是否命中：规则建议用来预览命中数、判断已有规则是否已覆盖 */
+export function ruleMatches(rule: Pick<Rule, 'conditions'>, ctx: RuleEvalContext): boolean {
+  const plain = rule.conditions.filter(c => c.field !== 'ai')
+  return plain.length > 0 && plain.every(c => matchCondition(c, ctx))
+}

@@ -144,6 +144,24 @@ export const BUILTIN_SKILLS: AgentSkill[] = [
 - 以「待确认动作」输出每一组的批量动作，用户可逐组确认。`
   }),
   skill({
+    id: 'habit-rules',
+    name: '习惯自动化建议',
+    category: '收件箱',
+    icon: 'Layers',
+    output: 'actions',
+    tools: ['rule_suggestions', 'accept_rule_suggestion', 'search_mail', 'read_message', 'list_folders', 'contact_profile'],
+    description: '看看你反复手动做的事（总把某类通知归档、总把某人的邮件移到某文件夹、总给某人加旗标），确认后一键变成规则。',
+    instructions: `帮用户把反复手动做的邮件操作变成规则，确认后才创建。
+步骤：
+1. 规则建议：用 rule_suggestions 取出系统根据近 30 天手动操作挖掘出的建议（每条有证据：次数、跨越天数、一致率，以及收件箱里现在会命中几封、样本邮件）。
+2. 核对：对每条建议看样本邮件（必要时 read_message），确认条件不会误伤——样本里出现真人往来、账单金额、合同、安全告警时，提醒用户这条要谨慎或建议收窄条件，不要推荐接受。
+3. 没有建议时直说「暂时没有足够稳定的习惯」，并说明系统需要同一类邮件在近 30 天里、至少 3 天、被同样处理 4 次以上才会建议；不要自己编造规则。
+输出格式：
+- 总览：「发现 N 条可以自动化的习惯」。
+- 每条一行：一句话描述 · 证据 · 会怎么处理（以后新到的邮件 / 现有 M 封）· 建议（推荐 / 谨慎）。
+- 「待确认动作」：对推荐的每条调用 accept_rule_suggestion（id = 建议 id；用户明确说要顺便处理现有邮件时 apply_existing=true，默认 false）。不想要的提醒用户可以在「设置 → 自动化 → 建议的规则」里点「永不建议」。`
+  }),
+  skill({
     id: 'unsubscribe-advice',
     name: '退订建议',
     category: '收件箱',

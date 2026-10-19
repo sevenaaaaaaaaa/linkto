@@ -20,6 +20,7 @@ import { htmlToText, parseMailQuery, parseWhen, resolveDate, textToHtml, ymd, ty
 import { registerFollowup } from './hooks'
 import { followupService } from '../followups'
 import { clampWaitDays, FOLLOWUP_KIND_LABEL, FOLLOWUP_STATUS_LABEL, isFollowupKind, waitedDays } from '@shared/followups'
+import { ruleSuggestService } from '../rule-suggest'
 
 /**
  * Agent 工具注册表：每个工具 = 名称 / 中文标题 / 说明 / JSON Schema 参数 / 风险 / 领域 / 执行函数。
@@ -928,6 +929,71 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         if (!f) throw new ToolError(`找不到跟进 ${a.id}；先用 followup_list 查看`)
         svc.update(f.id, { status: a.outcome === 'cancel' ? 'cancelled' : 'closed' })
         return { data: { ok: true }, summary: a.outcome === 'cancel' ? '已取消跟进' : '已标记为已解决', refs: [{ type: 'followup', id: f.id, label: subj(f.data.subject) }] }
+      }
+    },
+
+    // ======================================================== 规则建议（习惯自动化）
+    {
+      name: 'rule_suggestions',
+      title: '查规则建议',
+      domain: 'mail',
+      risk: 'read',
+      description: '列出从用户反复的手动操作里挖掘出的规则建议（如「总把某发件人的促销邮件不读就归档」）：一句话描述、证据（次数 / 天数 / 一致率）、建议的条件与动作、收件箱里现在会命中几封、样本邮件。',
+      params: { type: 'object', properties: {} },
+      run() {
+        const svc = ruleSuggestService()
+        if (!svc) throw new ToolError('规则建议模块尚未就绪')
+        const list = svc.list()
+        return {
+          data: {
+            count: list.length,
+            suggestions: list.map(s => ({
+              id: s.id,
+              title: s.title,
+              evidence: s.evidence,
+              rule_name: s.rule.name,
+              conditions: s.rule.conditions.map(c => `${c.field} ${c.op} ${c.value}`),
+              actions: s.rule.actions.map(x => `${x.type}${x.value ? `(${x.value})` : ''}`),
+              inbox_matches: s.matchCount ?? 0,
+              samples: (s.samples ?? []).slice(0, 5).map(m => `${subj(m.subject)} · ${m.from}`)
+            }))
+          },
+          summary: list.length ? `${list.length} 条规则建议` : '暂时没有规则建议',
+          refs: list.flatMap(s => (s.samples ?? []).slice(0, 2).map(m => mailRef(m.id, m.subject))).slice(0, 8)
+        }
+      }
+    },
+    {
+      name: 'accept_rule_suggestion',
+      title: '按建议建规则',
+      domain: 'mail',
+      risk: 'write',
+      description: '接受一条规则建议：按建议的条件与动作新建并启用规则（之后新到的邮件自动处理）。apply_existing=true 时同时对收件箱里现有命中的邮件执行一次。',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '建议 id（rule_suggestions 返回）' },
+          apply_existing: { type: 'boolean', default: false, description: '是否同时处理收件箱里现有命中的邮件' },
+          reason: REASON
+        },
+        required: ['id']
+      },
+      preview: a => {
+        const s = ruleSuggestService()?.get(String(a.id))
+        if (!s) return [String(a.id)]
+        return [
+          s.title,
+          ...s.rule.conditions.map(c => `当 ${c.field} ${c.op} ${c.value}`),
+          ...s.rule.actions.map(x => `执行 ${x.type}${x.value ? `（${x.value}）` : ''}`),
+          a.apply_existing ? `同时处理收件箱里现有 ${s.matchCount ?? 0} 封` : '只作用于之后新到的邮件'
+        ]
+      },
+      async run(a) {
+        const svc = ruleSuggestService()
+        if (!svc) throw new ToolError('规则建议模块尚未就绪')
+        const r = await svc.accept(String(a.id), { applyExisting: !!a.apply_existing })
+        if (!r.ok) throw new ToolError(r.error || '创建失败；先用 rule_suggestions 看看建议是否还在')
+        return { data: r, summary: `已新建规则${r.applied ? `，并处理了现有 ${r.applied} 封` : ''}` }
       }
     },
 

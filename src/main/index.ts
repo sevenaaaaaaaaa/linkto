@@ -40,6 +40,7 @@ import { registerAgentIpc } from './agent/ipc'
 import { initJobs } from './jobs'
 import { AiBudget } from './jobs/budget'
 import { initFollowups, followupService } from './followups'
+import { initRuleSuggest } from './rule-suggest'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -738,6 +739,8 @@ async function bootstrap() {
       mainWindow?.webContents.send('event', { type: 'open-followups' })
     }
   })
+  // 主动建议规则：从反复的手动操作里挖掘可自动化的习惯（IPC ruleSuggestion*；挖掘由自动任务「规则建议」每天驱动）
+  initRuleSuggest({ db, store: mailStore, call: internal.call, runRuleActions: internal.runRuleActions, event: payload => broadcast(payload) })
   // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
   const agentRuntime = new AgentRuntime({
       store: mailStore,

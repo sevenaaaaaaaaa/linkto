@@ -57,6 +57,7 @@ import { DEFAULT_FOLDER_PREF, readFolderPrefs, writeFolderPref } from './mail/fo
 import { notifyLocalChange as notifySyncChange, isTodoSyncEnabled, type TodoSyncService } from './todo-sync'
 import { initTodoIntegrations, notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
 import { attachmentService } from './attachments'
+import { beginUserAction } from './rule-suggest/log'
 
 /** 待办有本地改动：通知跨设备同步与外部服务同步 */
 function notifyLocalChange(id?: string) {
@@ -1663,7 +1664,11 @@ export function registerIpc(ctx: AppContext) {
   for (const [method, handler] of Object.entries(handlers)) {
     ipcMain.handle(`api:${method}`, async (event, ...args) => {
       try {
-        return await handler(args, event.sender as unknown as BrowserWindow)
+        // 规则建议：记录界面上的手动操作（Agent / 规则走内部调用，不经过这里）
+        const noted = beginUserAction(store.db, method, args)
+        const res = await handler(args, event.sender as unknown as BrowserWindow)
+        noted?.(res)
+        return res
       } catch (err) {
         console.error(`[ipc:${method}]`, err)
         throw err

@@ -137,7 +137,8 @@ export function RulesTab() {
   )
 }
 
-function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void }) {
+/** 规则编辑器（「建议的规则」接受前编辑也复用它：saveLabel 改按钮文字，hideEnabled 隐藏启用开关，footer 放在按钮左边） */
+export function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void; saveLabel?: string; hideEnabled?: boolean; footer?: React.ReactNode }) {
   const { rule: r } = props
   const isBool = (f: RuleField) => f === 'hasAttachment' || f === 'isNewsletter'
   // 「移到文件夹」的可选项：所有账户的非收件箱文件夹
@@ -172,8 +173,12 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
           onChange={e => props.onChange({ ...r, name: e.target.value })}
           className="flex-1 text-md font-semibold outline-none bg-transparent"
         />
-        <span className="text-xs text-zinc-500">启用</span>
-        <Toggle checked={r.enabled} onChange={v => props.onChange({ ...r, enabled: v })} />
+        {!props.hideEnabled && (
+          <>
+            <span className="text-xs text-zinc-500">启用</span>
+            <Toggle checked={r.enabled} onChange={v => props.onChange({ ...r, enabled: v })} />
+          </>
+        )}
       </div>
 
       <SectionTitle>当邮件满足所有条件</SectionTitle>
@@ -329,9 +334,10 @@ function RuleEditor(props: { rule: Rule; onChange(r: Rule): void; onSave(): void
         </button>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {props.footer}
         <button onClick={props.onSave} className="text-sm font-medium px-4 py-2 rounded-xl bg-blue-600 text-on-accent hover:bg-blue-700">
-          保存规则
+          {props.saveLabel ?? '保存规则'}
         </button>
       </div>
     </div>

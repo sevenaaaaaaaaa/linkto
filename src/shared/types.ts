@@ -1520,3 +1520,13 @@ export interface LifeData {
   notes?: string | null
   updatedAt?: number
 }
+
+// ---------- 规则建议：追加的可选字段（接口声明合并） ----------
+
+export interface RuleSuggestion {
+  /** 样本邮件（现在能找到的、会命中的，最多 10 封；含已归档的证据邮件） */
+  samples?: { id: string; subject: string; from: string; date: number; folder?: string; inInbox?: boolean }[]
+  /** 跨越天数 / 分母（同组邮件总数） */
+  days?: number
+  total?: number
+}

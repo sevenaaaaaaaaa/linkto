@@ -18,6 +18,7 @@ import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './Mail
 import { useSearch } from '../stores/search'
 import { ProjectTag } from './projects/ProjectBits'
 import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
+import { RuleSuggestionCard } from './RuleSuggestionCard'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -1055,6 +1056,7 @@ export function MessageList() {
             </div>
           </div>
         )}
+        {(scope.kind === 'unified' || scope.kind === 'account') && !searchActive && <RuleSuggestionCard />}
         {scope.kind === 'followup' && <FollowupBoard passiveCount={total} />}
         {scope.kind === 'screener' && screenerSenders.length > 0 && (
           <div className="px-3 py-2 space-y-1.5 fade-in">

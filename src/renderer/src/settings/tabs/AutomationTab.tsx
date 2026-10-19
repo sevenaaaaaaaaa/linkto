@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { SectionTitle, SettingRow, Toggle } from './GeneralTab'
 import { RulesTab } from './RulesTab'
+import { RuleSuggestionsSection } from './RuleSuggestionsSection'
 import { JobList, JobSettingsBlock } from '../../app/agent/AutomationJobs'
 import { useAgentJobs } from '../../lib/automation'
 import type { AISettings, GeneralSettings, Rule, RuleAction, RuleCondition } from '@shared/types'
@@ -178,6 +179,10 @@ export function AutomationTab() {
       </div>
       <JobList compact />
       <BackgroundAiSettings />
+
+      <SectionTitle>建议的规则</SectionTitle>
+      <div className="text-xs mb-3" style={{ color: 'var(--faint)' }}>从你反复的手动操作里发现的习惯。接受后才会建规则；改了条件也行。</div>
+      <RuleSuggestionsSection onAccepted={() => setRulesKey(k => k + 1)} />
 
       <SectionTitle>一键配方</SectionTitle>
       <div className="text-xs mb-3" style={{ color: 'var(--faint)' }}>点「启用」生成一条规则，只作用于之后新到的邮件；标了「AI」的需要先配置好 AI 模型。</div>
