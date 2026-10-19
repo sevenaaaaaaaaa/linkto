@@ -1,9 +1,10 @@
 import { app, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
+import { allows } from './access'
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
-import type { AttachmentInvoiceFields, AttachmentTextInfo, FinanceData } from '@shared/types'
+import type { AttachmentAccessBlock, AttachmentInvoiceFields, AttachmentTextInfo, FinanceData } from '@shared/types'
 import type { MailStore } from '../db'
 import type { FinanceService } from '../finance/service'
 import { setAttachmentTextReader } from '../agent/hooks'
@@ -73,6 +74,8 @@ export interface ReadResult {
   text?: string
   info?: AttachmentTextInfo
   error?: string
+  /** 被授权拦下（界面据此引导用户去授权） */
+  blocked?: AttachmentAccessBlock
 }
 
 function parseInvoice(s: string | null): AttachmentInvoiceFields | null {
@@ -289,6 +292,9 @@ export class AttachmentTextService {
     const ext = (idx?.ext || /\.([a-z0-9]{1,10})$/i.exec(filename)?.[1] || '').toLowerCase()
     const kind = textKindOf(ext, idx?.content_type ?? att?.contentType)
     if (!kind) return { ok: false, error: '这种格式暂不支持读取文字（支持 PDF 与 txt / csv / md / html / eml 等纯文本）' }
+    // 授权：用户同意前不读取任何附件内容（缓存的正文同样不返回）
+    const gate = allows(kind === 'pdf' ? 'pdf' : 'text', { accountId: idx?.account_id ?? null, reason: filename })
+    if (!gate.ok) return { ok: false, error: gate.error, blocked: gate.block }
     const cached = this.row(id)
     // 缓存有效：文件哈希没变；失败的（超时 / 解析出错）10 分钟后允许重试，扫描件判定不重试
     if (cached && (!cached.hash || !idx?.hash || cached.hash === idx.hash)) {

@@ -608,3 +608,10 @@ export interface LinkToApi {
   /** 阅读页「加入生活档案」：已收返回所在条目；否则识别（规则 → AI）后新建 */
   lifeFromMessage(messageId: string): Promise<{ id: string | null; created: boolean }>
 }
+
+// ---------- 附件内容读取授权（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  contentAccessGet(): Promise<import('./types').AttachmentAccessSettings>
+  contentAccessSet(patch: Partial<import('./types').AttachmentAccessSettings>): Promise<import('./types').AttachmentAccessSettings>
+}

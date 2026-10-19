@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { initAttachmentAccess } from './access'
 import type { LinkToApi } from '@shared/ipc'
 import { AttachmentService, type AttachmentDeps } from './service'
 import { initAttachmentText } from './text'
@@ -56,6 +57,8 @@ export function initAttachments(deps: AttachmentDeps): AttachmentService {
     })
   }
   svc.start()
+  // 附件内容读取授权（同意前不读任何附件内容）：api:contentAccess*
+  initAttachmentAccess({ appStore: deps.appStore, getAISettings: deps.getAISettings, event: deps.event })
   // 附件正文（PDF 文本层 / 纯文本）：api:readAttachmentText + hooks 读取器
   initAttachmentText({ db: deps.db, store: deps.store, attachments: svc, finance: deps.finance, event: deps.event })
   return svc

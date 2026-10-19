@@ -1531,3 +1531,35 @@ export interface RuleSuggestion {
   days?: number
   total?: number
 }
+
+// ---------- 附件内容读取授权 ----------
+
+/** pdf = PDF 文本层；office = Word / Excel / PowerPoint；text = 纯文本 / HTML / eml；ocr = 扫描件与图片识字 */
+export type AttachmentContentKind = 'pdf' | 'office' | 'text' | 'ocr'
+
+/** OCR 引擎：off 关闭；local 本机识别（macOS 文字识别，不出本机）；ai 用 AI 视觉模型；local+ai 本机先识别，AI 校对与还原结构 */
+export type OcrEngine = 'off' | 'local' | 'ai' | 'local+ai'
+
+/**
+ * 附件内容读取授权（用户同意前不读取任何附件的内容；只看文件名 / 类型 / 大小的功能不受影响）。
+ * 本机解析与「把内容发给云端 AI」分开授权：sendToCloudAI=false 时只有本机 / 本地模型能用到附件内容。
+ */
+export interface AttachmentAccessSettings {
+  /** 总开关：允许 LinkTo 在本机读取附件内容 */
+  readContent: boolean
+  /** 分类型开关（总开关打开后生效） */
+  kinds: Record<AttachmentContentKind, boolean>
+  /** 允许把附件内容（或扫描页图片）发给云端 AI；本地模型（Ollama / LM Studio / 内置引擎）不受此限 */
+  sendToCloudAI: boolean
+  ocrEngine: OcrEngine
+  /** AI 视觉模型名（为空则用 AI 设置里的模型）；baseURL / Key 复用 AI 设置 */
+  visionModel?: string | null
+  /** 不读取这些账户的附件内容 */
+  excludedAccounts: string[]
+  /** 是否已经问过用户（首次需要读取时弹出授权说明） */
+  asked: boolean
+  updatedAt?: number
+}
+
+/** 读取被拦下的原因：consent = 还没授权；kind = 该类型被关闭；account = 该账户被排除；cloud = 不允许发给云端 AI */
+export type AttachmentAccessBlock = 'consent' | 'kind' | 'account' | 'cloud'

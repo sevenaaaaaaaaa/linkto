@@ -44,6 +44,7 @@ const METHOD_NAMES = [
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
   'todoIntegrationSyncNow', 'todoIntegrationDisconnect', 'calendarBusyBlocks',
+  'contentAccessGet', 'contentAccessSet',
   'ruleSuggestions', 'ruleSuggestionAccept', 'ruleSuggestionDismiss',
   'lifeList', 'lifeCreate', 'lifeUpdate', 'lifeDelete', 'lifeScan', 'lifeExportIcs', 'lifeMakeTodo', 'lifeFromMessage',
   'agentEventsFor', 'followupList', 'followupCreate', 'followupUpdate', 'followupNudge', 'readAttachmentText',
