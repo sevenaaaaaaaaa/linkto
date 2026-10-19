@@ -71,7 +71,9 @@ const METHOD_NAMES = [
   // 留痕
   'traceList', 'traceCreate', 'traceUpdate', 'traceDelete', 'traceOrganize', 'traceOcrImage', 'traceConfirmDraft', 'traceCheckReplies',
   'traceFromMessage', 'traceMakeTodo', 'traceRemember', 'traceVerify', 'traceExport', 'traceArchiveMail', 'traceOpenCapture', 'traceCapabilities',
-  'traceSyncStatus', 'traceSyncConfigure', 'traceSyncNow'
+  'traceSyncStatus', 'traceSyncConfigure', 'traceSyncNow',
+  // 升级向导 / 侧栏
+  'upgradeState', 'upgradeSetSeen', 'upgradeLater', 'sidebarUsage'
 ] as const
 
 const api = {} as LinkToApi

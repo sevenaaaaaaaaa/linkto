@@ -45,6 +45,7 @@ import { initLife, lifeService } from './life'
 import { initShare, listenAppLinks } from './share'
 import { initFeeds } from './feeds'
 import { initTrace, traceOnArrival, stopTrace, openTraceCapture } from './trace'
+import { registerUpgradeIpc } from './upgrade'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -777,6 +778,12 @@ async function bootstrap() {
       mainWindow?.webContents.send('event', { type: 'open-life', id })
     }
   })
+  // 升级向导状态 + 侧栏入口数据量（IPC upgrade* / sidebarUsage）
+  try {
+    registerUpgradeIpc({ appStore, db })
+  } catch (err) {
+    console.error('[upgrade] init failed:', err)
+  }
   // 订阅：RSS / Atom / JSON Feed 与 AI 搜索订阅（IPC feed*；抓取由自动任务「订阅源更新 / AI 搜索订阅 / 今日订阅精华」驱动）
   initFeeds({ db, store: mailStore, appStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   // 留痕：口头 / 聊天里说定的事 → 可追溯记录（IPC trace* · 书面确认对账 · LinkTo-Trace 跨设备同步）

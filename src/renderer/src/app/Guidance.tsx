@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useMail } from '../stores/mail'
-import { api } from '../lib/api'
-import { goAgent } from '../lib/route'
-import { IconClose } from '../components/icons'
+import { useOverlayTurn, OVERLAY_PRIORITY } from '../lib/overlays'
 
-const DISMISS_KEY = 'ms_onboard_dismissed'
+/*
+ * 原侧栏底部「让 LinkTo 认识你」引导卡已并入升级向导（app/upgrade），侧栏不再常驻引导卡。
+ * 这里只留情境提示（快捷键教学），经「首次」浮层协调器排队，不与向导 / 授权说明同时出现。
+ */
+
 export const TRIAGE_DONE_KEY = 'ms_triage_cleared'
 
 function safeGet(k: string) {
@@ -20,76 +21,6 @@ function safeSet(k: string, v: string) {
   } catch {
     /* 存储不可用时只影响本次 */
   }
-}
-
-/**
- * 「让 LinkTo 认识你」：五步清单，完成情况自动检测（不靠用户手动勾）。
- * 全部完成或关闭后不再出现；每一步点击直接跳到对应位置。
- */
-export function OnboardingCard() {
-  const accounts = useMail(st => st.accounts)
-  const [hidden, setHidden] = useState(() => safeGet(DISMISS_KEY) === '1')
-  const [state, setState] = useState({ ai: false, memory: false, mcp: false })
-  const triageDone = safeGet(TRIAGE_DONE_KEY) === '1'
-
-  useEffect(() => {
-    if (hidden) return
-    const check = () => {
-      void Promise.all([
-        api.aiStatus().catch(() => ({ ready: false })),
-        api.memoryStats().catch(() => ({ total: 0 })),
-        api.getMcpStatus().catch(() => ({ enabled: false }))
-      ]).then(([ai, mem, mcp]) => setState({ ai: ai.ready, memory: (mem as { total: number }).total > 0, mcp: (mcp as { enabled: boolean }).enabled }))
-    }
-    check()
-    window.addEventListener('focus', check)
-    return () => window.removeEventListener('focus', check)
-  }, [hidden])
-
-  if (hidden) return null
-  const steps = [
-    { label: '连接你的邮箱', done: accounts.length > 0, go: () => api.openSettings('accounts') },
-    { label: '选择 AI 模型（云端或本地）', done: state.ai, go: () => api.openSettings('ai') },
-    { label: '用「逐封处理」清空一次', done: triageDone, go: () => useMail.getState().setTriage(true) },
-    { label: '教 Agent 记住一件事', done: state.memory, go: () => goAgent('memory') },
-    { label: '把 LinkTo 接到 Claude Code（MCP）', done: state.mcp, go: () => api.openSettings('integrations') }
-  ]
-  const doneCount = steps.filter(s => s.done).length
-  if (doneCount === steps.length) return null
-  const dismiss = () => {
-    safeSet(DISMISS_KEY, '1')
-    setHidden(true)
-  }
-
-  return (
-    <div className="mx-2 mb-2 rounded-[var(--r-md)] p-3 flex flex-col gap-2" style={{ background: 'var(--rail-bg)', color: 'var(--rail-fg)' }}>
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold flex-1">让 LinkTo 认识你</span>
-        <span className="text-2xs tnum" style={{ color: 'var(--ai)', fontFamily: 'var(--font-mono)' }}>
-          {doneCount} / {steps.length}
-        </span>
-        <button onClick={dismiss} aria-label="不再显示" title="不再显示" className="w-5 h-5 inline-flex items-center justify-center rounded-[var(--r-xs)]" style={{ color: 'var(--rail-muted)' }}>
-          <IconClose width={10} height={10} />
-        </button>
-      </div>
-      <div className="h-1 rounded-full" style={{ background: 'var(--rail-line)' }}>
-        <div className="h-1 rounded-full" style={{ width: `${(doneCount / steps.length) * 100}%`, background: 'var(--ai)' }} />
-      </div>
-      <div className="flex flex-col gap-0.5">
-        {steps.map(s => (
-          <button
-            key={s.label}
-            onClick={s.go}
-            disabled={s.done}
-            className="text-left text-xs leading-5 rounded-[var(--r-xs)] px-1 -mx-1 hover:bg-[var(--rail-line)] disabled:hover:bg-transparent"
-            style={{ color: s.done ? 'var(--rail-muted)' : 'var(--rail-fg)', textDecoration: s.done ? 'line-through' : 'none' }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 const MOUSE_KEY = 'ms_mouse_actions'
@@ -136,7 +67,8 @@ export function CoachTip() {
     return () => window.removeEventListener('ms:mouse-action', on)
   }, [])
 
-  if (!tip) return null
+  const turn = useOverlayTurn('coach-tip', !!tip, OVERLAY_PRIORITY.tip)
+  if (!tip || !turn) return null
   return (
     <div
       role="status"

@@ -2,27 +2,27 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
-import { OnboardingCard } from './Guidance'
 import { SyncStatus } from './AccountIssues'
-import { usePrefs } from '../lib/prefs'
+import { usePrefs, getPrefs, setPrefs } from '../lib/prefs'
 import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
-import { FinanceNavRow, IconWallet } from './finance/FinanceNav'
-import { LifeNavRow } from './life/LifeStrip'
-import { IconLife } from './life/icons'
-import { TraceNavRow } from './trace/TraceStrip'
-import { IconTrace } from './trace/icons'
+import { useFinanceBadge } from './finance/FinanceNav'
+import { useLifeBadge } from './life/LifeStrip'
+import { useTraceBadge } from './trace/TraceStrip'
 import {
-  IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconRefresh, IconPin, IconSparkles, IconClock, IconShield,
-  IconReplyAll, IconSave, IconClose, IconSearch, IconCheckSquare, IconAttach
+  IconFlag, IconTrash, IconArchive, IconSend, IconFolder, IconCompose, IconSettings,
+  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
 import { PinnedProjects, useProjectBadge, useProjectsRowActive } from './projects/ProjectBits'
-import { IconLayers } from '../components/icons'
 import { AgentNavSection } from './agent/AgentNav'
 import { FeedNavSection } from './feeds/FeedNav'
 import { useOverdueCount } from '../lib/followups'
+import { useFeedEvents, useFeeds, unreadOf } from '../lib/feeds'
+import { OrganizeStatus } from './agent/AutomationPanel'
+import { computeNavLayout, moreBadge, usagePins, type Badge, type NavId } from '../lib/sidebar-layout'
+import { navIcon } from './upgrade/nav-meta'
+import { SidebarEditor } from './upgrade/SidebarEditor'
 
 /**
  * 侧边栏行组件与分组（v3 结构见 Sidebar）
@@ -72,7 +72,7 @@ function Row(props: {
 }
 
 /** 可折叠分组标题（mono 大写 · 11px） */
-function GroupHeader(props: { label: string; open: boolean; onToggle(): void; count?: number; actions?: React.ReactNode }) {
+function GroupHeader(props: { label: string; open: boolean; onToggle(): void; count?: number; countMuted?: boolean; dot?: boolean; actions?: React.ReactNode }) {
   return (
     <div className="group mt-4 mb-0.5 h-6 flex items-center px-2">
       <button onClick={props.onToggle} className="caps flex-1 flex items-center gap-1 text-left hover:opacity-80" style={{ color: 'var(--faint)' }}>
@@ -82,9 +82,10 @@ function GroupHeader(props: { label: string; open: boolean; onToggle(): void; co
         </span>
       </button>
       {props.actions}
+      {!props.open && props.dot && <span className="w-1.5 h-1.5 rounded-full ml-1" style={{ background: 'var(--accent)' }} aria-label="当前页面在这里" />}
       {!props.open && !!props.count && (
-        <span className="text-2xs tnum" style={{ color: 'var(--muted)' }}>
-          {props.count}
+        <span className="text-2xs tnum ml-1.5" style={{ color: props.countMuted ? 'var(--faint)' : 'var(--muted)', fontWeight: props.countMuted ? 400 : 500 }}>
+          {props.count > 999 ? '999+' : props.count}
         </span>
       )}
     </div>
@@ -159,24 +160,34 @@ function folderIcon(f: Folder, color?: string) {
 }
 
 /**
- * 侧栏（v3）：账户切换交给左侧账户栏，这里只回答「在这个账户里看什么」。
- * - 核心：收件箱（AI 分区）· 项目 · 等待对方 · 稍后 · 旗标 · 置顶；待审批只在有人排队时出现
- * - 文件夹：只显示「常用」（管理面板里钉选）；选中账户时附带它的已发送 / 归档 / 废纸篓
- * - 智能：今日简报 · 待办 · 财务 · Agent · 知识库 · 附件 · 我的视图（待办 / 财务由 AI 从邮件自动收集，归在这里）
+ * 侧栏（v4 · 可自定义）：账户切换交给左侧账户栏，这里只回答「在这个账户里看什么」。
+ * - 每个入口「钉在侧栏 / 收进更多 / 隐藏」+ 排序，见 lib/sidebar-layout（纯函数）与 upgrade/SidebarEditor
+ * - 默认（克制）：核心 收件箱 · 待办 · 等待对方 · 项目；智能 今日简报 · Agent · 财务；其余在「更多」里
+ * - 升级用户已经在用（有数据）的入口默认钉住；「更多」收起时把里面入口的角标汇总到「更多」上
+ * - 导航可滚动区与底部状态区（整理进度 / 离线 / 账户出错）分开布局，小窗口下导航仍可滚动、不被遮挡
  */
 export function Sidebar() {
   const { accounts, folders, scope, setScope, accountCtx } = useMail()
   const view = useView()
   const prefs = useFolderPrefs()
-  const sb = usePrefs().sidebar
+  const ui = usePrefs()
+  const layout = useMemo(() => computeNavLayout(ui.nav, ui.sidebar), [ui.nav, ui.sidebar])
+  useAutoPinSeed(ui.nav.autoPinned === null)
   useTodoEvents()
   const todoToday = todayCount(useTodos(st => st.todos))
   const projectBadge = useProjectBadge()
   const projectsActive = useProjectsRowActive()
   const followupOverdue = useOverdueCount()
+  const financeBadge = useFinanceBadge()
+  const lifeBadge = useLifeBadge()
+  const traceBadge = useTraceBadge()
+  useFeedEvents()
+  const feedUnread = unreadOf(useFeeds(st => st.sources))
   const [pendingCount, setPendingCount] = useState(0)
   const [foldersOpen, toggleFolders] = useGroupOpen('folders', true)
   const [smartOpen, toggleSmart] = useGroupOpen('smart', true)
+  const [moreOpen, toggleMore] = useGroupOpen('more', false)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     const load = () => void api.screenerPendingCount().then(setPendingCount).catch(() => {})
@@ -185,6 +196,13 @@ export function Sidebar() {
       if ((ev as { type: string }).type === 'messages-changed') load()
     })
     return () => void off()
+  }, [])
+
+  // ⌘K「编辑侧栏」/ 升级向导里的入口
+  useEffect(() => {
+    const on = () => setEditing(true)
+    window.addEventListener(EDIT_SIDEBAR_EVENT, on)
+    return () => window.removeEventListener(EDIT_SIDEBAR_EVENT, on)
   }, [])
 
   const ctxAccount = accountCtx ? accounts.find(a => a.id === accountCtx) ?? null : null
@@ -209,6 +227,62 @@ export function Sidebar() {
     go(ctxAccount ? { kind: 'account', accountId: ctxAccount.id, title: ctxAccount.name } : { kind: 'unified', title: '收件箱' })
   const ico = { width: 15, height: 15 }
 
+  /** 各入口角标（muted = 只是未读量这类弱提示） */
+  const badges: Partial<Record<NavId, Badge>> = {
+    todo: { count: todoToday },
+    followup: { count: followupOverdue },
+    projects: { count: projectBadge },
+    finance: { count: financeBadge, muted: true },
+    feeds: { count: feedUnread, muted: true },
+    life: { count: lifeBadge, muted: true },
+    trace: { count: traceBadge }
+  }
+  // 财务 / 生活档案的角标在侧栏里是弱色（muteCount），但汇总到「更多」时算提醒（到期 / 逾期）
+  const moreSum = moreBadge(layout.more, { ...badges, finance: { count: financeBadge }, life: { count: lifeBadge } })
+
+  const entry = (id: NavId): React.ReactNode => {
+    switch (id) {
+      case 'inbox':
+        return <Row key={id} icon={navIcon(id)} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
+      case 'todo':
+        return <Row key={id} icon={navIcon(id)} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
+      case 'followup':
+        return <Row key={id} icon={navIcon(id)} label="等待对方" unread={followupOverdue} active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />
+      case 'projects':
+        return (
+          <div key={id}>
+            <Row icon={navIcon(id)} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
+            <PinnedProjects Row={Row} />
+          </div>
+        )
+      case 'brief':
+        return <Row key={id} icon={navIcon(id)} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />
+      case 'agent':
+        return <AgentNavSection key={id} Row={Row} ico={ico} />
+      case 'finance':
+        return <Row key={id} icon={navIcon(id)} label="财务" unread={financeBadge} muteCount active={view === 'finance'} onClick={() => goView('finance')} />
+      case 'feeds':
+        return <FeedNavSection key={id} Row={Row} ico={ico} />
+      case 'life':
+        return <Row key={id} icon={navIcon(id)} label="生活档案" unread={lifeBadge} muteCount active={view === 'life'} onClick={() => goView('life')} />
+      case 'trace':
+        return <Row key={id} icon={navIcon(id)} label="留痕" unread={traceBadge} active={view === 'trace'} onClick={() => goView('trace')} />
+      case 'kb':
+        return <Row key={id} icon={navIcon(id)} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />
+      case 'attachments':
+        return <Row key={id} icon={navIcon(id)} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />
+      case 'snoozed':
+        return <Row key={id} icon={navIcon(id)} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />
+      case 'flagged':
+        return <Row key={id} icon={navIcon(id)} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />
+      case 'pinned':
+        return <Row key={id} icon={navIcon(id)} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />
+    }
+  }
+
+  // 「更多」收起时，当前所在页面如果在「更多」里，也给「更多」一个激活提示
+  const moreHasActive = layout.more.some(id => isEntryActive(id, view, scope.kind))
+
   return (
     <div className="relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--bg)' }}>
       <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 pl-5 pr-3">
@@ -227,7 +301,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="px-2 pb-2">
+      <div className="px-2 pb-2 shrink-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
           title="命令面板：执行命令、跳转视图，或把文字交给邮件搜索 / Agent（⌘K）；只搜邮件用列表上方的搜索框（⌘F）"
@@ -240,14 +314,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
-        <Row icon={<IconInbox {...ico} />} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />
-        <Row icon={<IconLayers {...ico} />} label="项目" unread={projectBadge} active={projectsActive} onClick={() => goView('projects')} />
-        <PinnedProjects Row={Row} />
-        {sb.followup && <Row icon={<IconReplyAll {...ico} />} label="等待对方" unread={followupOverdue} active={is('followup')} onClick={() => go({ kind: 'followup', title: '等待对方回复' })} />}
-        {sb.snoozed && <Row icon={<IconClock {...ico} />} label="稍后处理" active={is('snoozed')} onClick={() => go({ kind: 'snoozed', title: '稍后处理' })} />}
-        {sb.flagged && <Row icon={<IconFlag {...ico} />} label="旗标" active={is('flagged')} onClick={() => go({ kind: 'flagged', title: '旗标' })} />}
-        {sb.pinned && <Row icon={<IconPin {...ico} />} label="置顶" active={is('pinned')} onClick={() => go({ kind: 'pinned', title: '置顶' })} />}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
+        {layout.core.map(entry)}
         {pendingCount > 0 && (
           <Row icon={<IconShield {...ico} />} label="待审批发件人" unread={pendingCount} active={is('screener')} onClick={() => go({ kind: 'screener', title: '待审批发件人' })} />
         )}
@@ -300,21 +368,37 @@ export function Sidebar() {
           </>
         )}
 
-        <GroupHeader label="智能" open={smartOpen} onToggle={toggleSmart} />
-        {smartOpen && (
+        {layout.smart.length > 0 && (
           <>
-            {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
-            <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
-            <FeedNavSection Row={Row} ico={ico} />
-            <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
-            <LifeNavRow render={(label, count) => <Row icon={<IconLife {...ico} />} label={label} unread={count} muteCount active={view === 'life'} onClick={() => goView('life')} />} />
-            <TraceNavRow render={(label, count) => <Row icon={<IconTrace {...ico} />} label={label} unread={count} active={view === 'trace'} onClick={() => goView('trace')} />} />
-            <AgentNavSection Row={Row} ico={ico} />
-            {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
-            <Row icon={<IconAttach {...ico} />} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />
-            <SmartViewsSection />
+            <GroupHeader label="智能" open={smartOpen} onToggle={toggleSmart} />
+            {smartOpen && layout.smart.map(entry)}
           </>
         )}
+
+        {layout.more.length > 0 && (
+          <>
+            <GroupHeader
+              label="更多"
+              open={moreOpen}
+              onToggle={toggleMore}
+              count={moreSum?.count}
+              countMuted={moreSum?.muted}
+              dot={!moreOpen && moreHasActive}
+              actions={
+                <button
+                  onClick={() => setEditing(true)}
+                  className="text-2xs px-1.5 h-5 rounded-[var(--r-xs)] hover:bg-[var(--hover)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  编辑
+                </button>
+              }
+            />
+            {moreOpen && layout.more.map(entry)}
+          </>
+        )}
+
+        <SmartViewsSection />
 
         {!accounts.length && (
           <div className="mt-4 px-2 text-xs" style={{ color: 'var(--faint)' }}>
@@ -326,12 +410,27 @@ export function Sidebar() {
         )}
       </nav>
 
-      {sb.onboarding && <OnboardingCard />}
-      <SyncFooter />
+      {/* 底部状态区：整理进度（点开浮在侧栏上方）+ 离线 / 账户出错；限高可滚动，不挤占导航 */}
+      <div className="shrink-0 pt-1.5 border-t border-[var(--border-soft)]">
+        <OrganizeStatus />
+        <div className="max-h-[32vh] overflow-y-auto">
+          <SyncFooter />
+        </div>
+      </div>
 
-      <div className="shrink-0 h-11 border-t border-[var(--border)] px-2 flex items-center gap-0.5">
+      <div className="relative shrink-0 h-11 border-t border-[var(--border)] px-2 flex items-center gap-0.5">
         <ThemeMenu />
         <div className="flex-1" />
+        <button
+          onClick={() => setEditing(e => !e)}
+          title="编辑侧栏：钉住、收进更多、隐藏与排序"
+          aria-label="编辑侧栏"
+          aria-expanded={editing}
+          className="icon-btn w-7 h-7 inline-flex items-center justify-center"
+          style={{ color: editing ? 'var(--accent-ink)' : 'var(--faint)' }}
+        >
+          <IconList width={15} height={15} />
+        </button>
         <button
           onClick={() => api.openGhost()}
           title="幽灵信 · 端到端加密阅后即焚"
@@ -347,8 +446,97 @@ export function Sidebar() {
         <button onClick={() => api.openSettings()} title="设置（⌘,）" className="icon-btn w-7 h-7 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
           <IconSettings width={15} height={15} />
         </button>
+        {editing && <SidebarEditPopover onClose={() => setEditing(false)} />}
       </div>
     </div>
+  )
+}
+
+/** ⌘K「编辑侧栏…」等入口打开侧栏编辑浮层 */
+export const EDIT_SIDEBAR_EVENT = 'ms:edit-sidebar'
+export function openSidebarEditor() {
+  window.dispatchEvent(new CustomEvent(EDIT_SIDEBAR_EVENT))
+}
+
+/** 当前页面是否就是这个入口（「更多」收起时给「更多」一个激活点） */
+function isEntryActive(id: NavId, view: string, scopeKind: Scope['kind']): boolean {
+  const mail = (k: Scope['kind']) => view === 'mail' && scopeKind === k
+  switch (id) {
+    case 'feeds':
+    case 'life':
+    case 'trace':
+    case 'kb':
+    case 'attachments':
+    case 'finance':
+    case 'todo':
+    case 'projects':
+    case 'agent':
+      return view === id
+    case 'brief':
+      return view === 'insights'
+    case 'snoozed':
+    case 'flagged':
+    case 'pinned':
+    case 'followup':
+      return mail(id)
+    default:
+      return false
+  }
+}
+
+/** 升级 / 首次启动时算一次「已经在用」的入口（有数据就默认钉住），之后不随数据变化 */
+function useAutoPinSeed(needed: boolean) {
+  useEffect(() => {
+    if (!needed) return
+    let alive = true
+    void api
+      .sidebarUsage()
+      .then(u => {
+        if (!alive || getPrefs().nav.autoPinned !== null) return
+        setPrefs({ nav: { ...getPrefs().nav, autoPinned: usagePins(u) } })
+      })
+      .catch(() => {
+        // 统计失败：按默认方案，不再重试
+        if (alive && getPrefs().nav.autoPinned === null) setPrefs({ nav: { ...getPrefs().nav, autoPinned: [] } })
+      })
+    return () => {
+      alive = false
+    }
+  }, [needed])
+}
+
+/** 编辑侧栏浮层：锚在侧栏底部按钮上方；Esc / 点外面关闭 */
+function SidebarEditPopover(props: { onClose(): void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        props.onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [props.onClose])
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onMouseDown={props.onClose} aria-hidden />
+      <div
+        role="dialog"
+        aria-label="编辑侧栏"
+        className="absolute left-2 bottom-full mb-1.5 z-50 w-[420px] max-w-[calc(100vw-80px)] max-h-[min(640px,calc(100vh-80px))] overflow-y-auto rounded-[var(--r-lg)] border border-[var(--border)] px-3.5 pt-3 pb-3 pop-in"
+        style={{ background: 'var(--surface-strong)', boxShadow: 'var(--shadow-float)' }}
+      >
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <span className="text-sm font-semibold flex-1" style={{ color: 'var(--fg)' }}>
+            编辑侧栏
+          </span>
+          <button onClick={props.onClose} aria-label="关闭" className="w-6 h-6 grid place-items-center rounded-[var(--r-xs)] hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }}>
+            <IconClose width={12} height={12} />
+          </button>
+        </div>
+        <SidebarEditor />
+      </div>
+    </>
   )
 }
 
@@ -361,6 +549,7 @@ export type { SpecialFolder }
 
 /** 我的视图：保存的 Smart Views，点击应用（范围+过滤+排序+聚合一体还原） */
 function SmartViewsSection() {
+  const [open, toggle] = useGroupOpen('views', true)
   const [views, setViews] = useState<{ id: string; name: string; view: Record<string, unknown> }[]>([])
 
   useEffect(() => {
@@ -394,7 +583,8 @@ function SmartViewsSection() {
 
   return (
     <div>
-      {views.map(v => (
+      <GroupHeader label="我的视图" open={open} onToggle={toggle} count={views.length} countMuted />
+      {open && views.map(v => (
         <div key={v.id} className="relative group">
           <Row
             icon={<IconSave width={13} height={13} />}

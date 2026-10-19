@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DEFAULT_NAV_PREFS, type NavPrefs } from './sidebar-layout'
 
 /**
  * 个性化偏好（纯界面层，按设备保存在 localStorage）。
@@ -23,12 +24,14 @@ export interface UiPrefs {
   defaultRail: 'context' | 'agent' | 'none'
   /** 界面字体：Geist + 苹方 / 纯系统字体 */
   uiFont: 'geist' | 'system'
-  /** 侧栏显示的入口 */
+  /** 旧版侧栏开关（只读兼容：关掉过的入口在新侧栏里默认隐藏；新设置写在 nav） */
   sidebar: { followup: boolean; snoozed: boolean; flagged: boolean; pinned: boolean; brief: boolean; kb: boolean; onboarding: boolean }
   /** 单键快捷键（E / S / R / V / J / K）——与输入法冲突时可关闭 */
   singleKey: boolean
   /** 列表行显示所属项目的小标签 */
   projectTags: boolean
+  /** 侧栏入口：钉在侧栏 / 收进更多 / 隐藏 + 顺序（见 sidebar-layout） */
+  nav: NavPrefs
 }
 
 export const DEFAULT_PREFS: UiPrefs = {
@@ -43,7 +46,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   uiFont: 'geist',
   sidebar: { followup: true, snoozed: true, flagged: true, pinned: true, brief: true, kb: true, onboarding: true },
   singleKey: true,
-  projectTags: true
+  projectTags: true,
+  nav: DEFAULT_NAV_PREFS
 }
 
 const KEY = 'ms_ui_prefs'
@@ -51,7 +55,13 @@ const KEY = 'ms_ui_prefs'
 export function getPrefs(): UiPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<UiPrefs>
-    return { ...DEFAULT_PREFS, ...raw, sidebar: { ...DEFAULT_PREFS.sidebar, ...(raw.sidebar ?? {}) } }
+    const nav = raw.nav ?? DEFAULT_NAV_PREFS
+    return {
+      ...DEFAULT_PREFS,
+      ...raw,
+      sidebar: { ...DEFAULT_PREFS.sidebar, ...(raw.sidebar ?? {}) },
+      nav: { placement: nav.placement ?? {}, order: Array.isArray(nav.order) ? nav.order : [], autoPinned: Array.isArray(nav.autoPinned) ? nav.autoPinned : null }
+    }
   } catch {
     return DEFAULT_PREFS
   }

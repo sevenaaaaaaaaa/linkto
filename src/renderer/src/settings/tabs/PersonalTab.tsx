@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
-import { usePrefs, setPrefs, type UiPrefs } from '../../lib/prefs'
+import { usePrefs, setPrefs } from '../../lib/prefs'
+import { SidebarEditor } from '../../app/upgrade/SidebarEditor'
 import { SectionTitle, SettingRow, Toggle } from './GeneralTab'
 import { ACCOUNT_COLORS } from '@shared/presets'
 import type { AccountWithStatus } from '@shared/types'
@@ -44,7 +45,7 @@ const SHORTCUTS: [string, string][] = [
 ]
 
 /**
- * 个性化：列表、阅读、侧栏、账户颜色、字体与快捷键。
+ * 个性化：列表、阅读、侧栏（入口钉住 / 更多 / 隐藏与排序）、账户颜色、字体与快捷键。
  * 都是本机界面偏好，改完立即在主窗口生效。
  */
 export function PersonalTab() {
@@ -53,7 +54,6 @@ export function PersonalTab() {
   useEffect(() => {
     void api.listAccounts().then(setAccounts)
   }, [])
-  const sidebar = (k: keyof UiPrefs['sidebar'], v: boolean) => setPrefs({ sidebar: { ...p.sidebar, [k]: v } })
 
   return (
     <div className="max-w-[640px]">
@@ -104,22 +104,9 @@ export function PersonalTab() {
       </SettingRow>
 
       <SectionTitle>侧栏</SectionTitle>
-      <div className="grid grid-cols-2 gap-x-6">
-        {(
-          [
-            ['followup', '等待对方'],
-            ['snoozed', '稍后处理'],
-            ['flagged', '旗标'],
-            ['pinned', '置顶'],
-            ['brief', '今日简报'],
-            ['kb', '知识库'],
-            ['onboarding', '入门清单']
-          ] as [keyof UiPrefs['sidebar'], string][]
-        ).map(([k, label]) => (
-          <SettingRow key={k} label={label}>
-            <Toggle checked={p.sidebar[k]} onChange={v => sidebar(k, v)} />
-          </SettingRow>
-        ))}
+      <div className="text-xs mb-2" style={{ color: 'var(--faint)' }}>每个入口可以钉在侧栏、收进「更多」或隐藏，拖动排序；主窗口侧栏底部「编辑侧栏」是同一份设置。</div>
+      <div className="rounded-[var(--r-md)] border border-[var(--border)] p-3" style={{ background: 'var(--surface-strong)' }}>
+        <SidebarEditor />
       </div>
 
       {accounts.length > 0 && (

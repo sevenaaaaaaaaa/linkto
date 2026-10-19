@@ -45,7 +45,12 @@ export function traceMenuItems(msg: MessageFull): MenuItem[] {
 
 /** 侧栏「留痕」：角标 = 有异议的条数（行组件由侧栏提供） */
 export function TraceNavRow(props: { render(label: string, count: number): React.ReactNode }) {
+  return <>{props.render('留痕', useTraceBadge())}</>
+}
+
+/** 侧栏角标：有异议的留痕 */
+export function useTraceBadge(): number {
   useTraceEvents()
   const records = useTrace(st => st.records)
-  return <>{props.render('留痕', records.filter(r => r.data.status === 'disputed').length)}</>
+  return records.filter(r => r.data.status === 'disputed').length
 }

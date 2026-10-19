@@ -763,3 +763,16 @@ export interface LinkToApi {
   traceSyncConfigure(input: { enabled: boolean }): Promise<{ ok: boolean; error?: string; status: import('./trace').TraceSyncStatus }>
   traceSyncNow(): Promise<import('./trace').TraceSyncStatus>
 }
+
+// ---------- 升级向导 · 侧栏（与上面的 LinkToApi 声明合并；纯函数与类型见 ./upgrade） ----------
+
+export interface LinkToApi {
+  /** 升级向导状态（启动时已定下 fresh / upgrade 身份） */
+  upgradeState(): Promise<import('./upgrade').UpgradeState>
+  /** 完成或跳过向导：记下看过的功能版本（默认当前向导版本） */
+  upgradeSetSeen(input?: { edition?: string | null; outcome?: 'done' | 'skipped' }): Promise<import('./upgrade').UpgradeState>
+  /** 「稍后」：本次启动不再出现，计数 +1 */
+  upgradeLater(): Promise<import('./upgrade').UpgradeState>
+  /** 各侧栏入口的数据量（只读计数），用于升级用户「已经在用的入口默认钉住」 */
+  sidebarUsage(): Promise<Record<'feeds' | 'life' | 'trace' | 'finance' | 'kb' | 'attachments' | 'snoozed' | 'flagged' | 'pinned', number>>
+}

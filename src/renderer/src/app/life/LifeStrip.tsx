@@ -52,12 +52,16 @@ export function LifeStrip(props: { messageId: string; insight?: MailInsight; tex
 
 /** 侧栏「生活档案」：角标 = 已过期 + 30 天内到期的件数（行组件由侧栏提供，保持同一视觉） */
 export function LifeNavRow(props: { render(label: string, count: number): React.ReactNode }) {
+  return <>{props.render('生活档案', useLifeBadge())}</>
+}
+
+/** 侧栏角标：已过期 / 快到期的事务 */
+export function useLifeBadge(): number {
   useLifeEvents()
   const records = useLife(st => st.records)
   const now = Date.now()
-  const count = records.filter(r => {
+  return records.filter(r => {
     const u = lifeUrgency(r, now)
     return u === 'overdue' || u === 'soon'
   }).length
-  return <>{props.render('生活档案', count)}</>
 }

@@ -12,6 +12,8 @@ import { agentCommands } from './agent/AgentNav'
 import { shareCommands } from './share/SharePanel'
 import { openFeeds } from '../lib/feeds'
 import { openTraceCapture } from '../lib/trace'
+import { openSidebarEditor } from './Sidebar'
+import { openUpgradeWizard } from './upgrade/UpgradeWizard'
 
 interface Command {
   id: string
@@ -75,12 +77,13 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-pinned', group: '前往', label: '置顶', run: go({ kind: 'pinned' }, '置顶') },
       { id: 'nav-snoozed', group: '前往', label: '稍后处理', keywords: 'snooze 队列', run: go({ kind: 'snoozed' }, '稍后处理') },
       { id: 'nav-screener', group: '前往', label: '待审批发件人', keywords: 'screener 队列', run: go({ kind: 'screener' }, '待审批发件人') },
-      { id: 'nav-followup', group: '前往', label: '待跟进（我发未回）', keywords: 'followup 队列', run: go({ kind: 'followup' }, '待跟进（我发未回）') },
+      { id: 'nav-followup', group: '前往', label: '待跟进（我发未回）', keywords: 'followup 队列 等待对方 等待回复', run: go({ kind: 'followup' }, '待跟进（我发未回）') },
       { id: 'nav-personal', group: '前往', label: '个人邮件', keywords: '分类', run: go({ kind: 'category', category: 'personal' }, '个人邮件') },
       { id: 'nav-notification', group: '前往', label: '通知', keywords: '分类', run: go({ kind: 'category', category: 'notification' }, '通知') },
       { id: 'nav-newsletter', group: '前往', label: '订阅（Newsletter）', keywords: 'newsletter 分类', run: go({ kind: 'newsletter' }, '订阅') },
       { id: 'nav-noise', group: '前往', label: '噪声', keywords: '分类', run: go({ kind: 'category', category: 'noise' }, '噪声') },
-      { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', run: () => { goView('insights'); props.onClose() } },
+      { id: 'nav-todo', group: '前往', label: '待办', keywords: 'todo task 任务 清单 今天', run: () => { goView('todo'); props.onClose() } },
+      { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', keywords: '今日简报 brief daily 简报', run: () => { goView('insights'); props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
       { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
@@ -92,6 +95,9 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-feeds-digest', group: '前往', label: '订阅：今日精华', keywords: 'feeds digest rss 精华 汇总', run: () => { openFeeds({ kind: 'digest' }); props.onClose() } },
       { id: 'act-feeds-refresh', group: '前往', label: '订阅：立即更新全部订阅源', keywords: 'feeds refresh rss 更新 抓取', run: () => { openFeeds(); props.onClose(); void api.feedRefresh(null) } },
       { id: 'act-feeds-manage', group: '前往', label: '订阅：管理订阅源 / AI 搜索订阅 / OPML', keywords: 'feeds settings opml rss 添加订阅 搜索订阅', run: () => { props.onClose(); api.openSettings('feeds') } },
+      { id: 'act-edit-sidebar', group: '操作', label: '编辑侧栏…（钉住 / 收进更多 / 隐藏 / 排序）', keywords: 'sidebar 侧栏 自定义 入口 更多 隐藏 排序 钉住', run: () => { props.onClose(); openSidebarEditor() } },
+      { id: 'act-whats-new', group: '操作', label: '查看本次更新（升级向导）', keywords: 'whats new upgrade 新功能 更新 向导 changelog', run: () => { props.onClose(); openUpgradeWizard('full') } },
+      { id: 'act-organize-mail', group: '操作', label: '整理邮件（首次整理）…', keywords: 'onboarding organize scan 首次整理 扫描 整理 回填 补扫 生活档案', run: () => { props.onClose(); openUpgradeWizard('organize') } },
       { id: 'act-finance-scan', group: '前往', label: '财务：扫描最近 90 天邮件', keywords: 'finance scan 账单 订阅 回填', run: () => { goView('finance'); props.onClose(); void api.financeScan(90) } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,

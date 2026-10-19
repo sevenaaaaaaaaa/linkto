@@ -13,10 +13,15 @@ export const IconWallet = (p: SVGProps<SVGSVGElement>) => (
 
 /** 侧栏「财务」：角标 = 逾期 + 3 天内要付 / 续费的笔数（行组件由侧栏提供，保持同一视觉） */
 export function FinanceNavRow(props: { active: boolean; render(label: string, count: number): React.ReactNode }) {
+  return <>{props.render('财务', useFinanceBadge())}</>
+}
+
+/** 侧栏角标：逾期 / 3 天内到期的应付款与即将续费 / 试用到期的订阅 */
+export function useFinanceBadge(): number {
   useFinanceEvents()
   const records = useFinance(st => st.records)
   const now = Date.now()
-  const count = records.filter(r => {
+  return records.filter(r => {
     const d = r.data
     if (d.direction !== 'out') return false
     if (d.kind === 'subscription') {
@@ -27,5 +32,4 @@ export function FinanceNavRow(props: { active: boolean; render(label: string, co
     const st = effectiveStatus(d, r.dueAt, now)
     return st === 'overdue' || (st === 'pending' && !!r.dueAt && daysUntil(r.dueAt, now) <= 3)
   }).length
-  return <>{props.render('财务', count)}</>
 }

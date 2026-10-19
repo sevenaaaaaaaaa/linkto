@@ -28,6 +28,7 @@ import { ProjectPickerHost } from './projects/ProjectBits'
 import { OnboardingScanHost } from './agent/AutomationPanel'
 import { SkillRunHost } from './agent/skill-ui'
 import { ContentAccessHost } from './attachments/ContentAccess'
+import { UpgradeWizardHost } from './upgrade/UpgradeWizard'
 import { CommandPalette } from './CommandPalette'
 import { ShareHost, openShare, currentShareIds } from './share/SharePanel'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
@@ -278,6 +279,7 @@ export function MailShell() {
       <SkillRunHost />
       <OnboardingScanHost />
       <ContentAccessHost />
+      <UpgradeWizardHost />
       <ShareHost />
       <TraceCaptureHost />
 

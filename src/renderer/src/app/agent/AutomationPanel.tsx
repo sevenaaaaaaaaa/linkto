@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { create } from 'zustand'
 import type { AgentActivity, OnboardingScanStatus } from '@shared/types'
 import { api } from '../../lib/api'
 import { goAgent, goView } from '../../lib/route'
@@ -15,7 +16,7 @@ import { ico, JobList, JobSettingsBlock } from './AutomationJobs'
 
 /* ================================================================
  * 自动任务（Agent → 自动任务）：后台任务列表 + 活动记录时间线
- * 首次整理（OnboardingScanHost）：添加账户后引导 Agent 先整理一遍
+ * 首次整理：设置与进度组件（升级向导里开始，侧栏底部 OrganizeStatus 看进度），OnboardingScanHost 只订阅事件
  * 设计：墨黑主操作 --accent；荧光 --ai 只标 AI 产出（AI 任务角标、AI 学到的条目）
  * ================================================================ */
 
@@ -276,46 +277,31 @@ function StepState(props: { status: OnboardingScanStatus['steps'][number]['statu
   return <span className="inline-block w-4 h-4 rounded-full border" style={{ borderColor: 'var(--border-strong)' }} aria-label="等待" />
 }
 
-/** 首次整理引导（添加账户后的扫描向导），挂在主窗口里 */
-export function OnboardingScanHost() {
-  const [st, setSt] = useState<OnboardingScanStatus | null>(null)
-  const [days, setDays] = useState(90)
-  const [picked, setPicked] = useState<Set<StepKey>>(new Set(ORDER))
-  const [closedRun, setClosedRun] = useState<number | null>(null)
-  const [mini, setMini] = useState(false)
+/**
+ * 首次整理状态（主进程 'onboarding-scan' 事件推送）。由 OnboardingScanHost 订阅一次，
+ * 升级向导（app/upgrade）与侧栏底部的整理进度共用这一份。
+ */
+export const useOnboardingScan = create<{ st: OnboardingScanStatus | null; closedRun: number | null; expanded: boolean }>(() => ({
+  st: null,
+  closedRun: null,
+  expanded: false
+}))
 
-  useEffect(() => {
-    void api.onboardingScanStatus().then(setSt).catch(() => {})
-    const off = api.onEvent(ev => {
-      const e = ev as { type?: string; status?: OnboardingScanStatus }
-      if (e.type === 'onboarding-scan' && e.status) setSt(e.status)
-      // 定时技能 / 事件触发通知点击：打开 Agent → 自动任务 → 活动记录
-      if (e.type === 'open-agent-activity') openActivityLog()
-    })
-    return () => void off()
-  }, [])
+/** 刚完成、还没点「完成」的那一轮 */
+export function isFinishedRun(st: OnboardingScanStatus | null, closedRun: number | null): boolean {
+  return !!st && !st.running && !!st.finishedAt && !!st.startedAt && closedRun !== st.startedAt
+}
 
+/** 整理设置（范围 + 步骤）的表单状态与开始动作；向导里用 */
+export function useOrganizeDraft(st: OnboardingScanStatus | null) {
+  // 之前整理过（没有待整理账户）：这次只建议补扫新增的生活档案
+  const already = !!st && !st.legacy && !st.pendingAccounts.length
+  const [days, setDays] = useState(already ? 180 : 90)
+  const [picked, setPicked] = useState<Set<StepKey>>(new Set(already ? (['life'] as StepKey[]) : ORDER))
   const aiReady = !!st?.aiReady
-  // 没配 AI：知识库步骤不可选
   useEffect(() => {
     if (st && !st.aiReady) setPicked(p => new Set([...p].filter(k => k !== 'kb')))
   }, [st?.aiReady])
-
-  if (!st) return null
-  const finishedRun = !st.running && st.finishedAt && st.startedAt && closedRun !== st.startedAt
-  const intro = !st.running && !finishedRun && st.pendingAccounts.length > 0 && !st.hidden
-  if (!st.running && !finishedRun && !intro) return null
-
-  const names = (st.accounts ?? []).map(a => a.email)
-  const who = st.legacy ? '你的邮箱' : names.length === 1 ? names[0] : names.length ? `${names[0]} 等 ${names.length} 个邮箱` : '新邮箱'
-  const active = st.steps.filter(s => !(s.status === 'skipped' && s.result === '未选择'))
-  const doneCount = active.filter(s => s.status === 'done' || s.status === 'error' || s.status === 'skipped').length
-  const pct = active.length ? Math.round((doneCount / active.length) * 100) : 0
-
-  const start = () => {
-    setMini(false)
-    void api.onboardingScanStart({ days, accountIds: st.legacy ? null : st.pendingAccounts, steps: ORDER.filter(k => picked.has(k)) })
-  }
   const toggle = (k: StepKey) =>
     setPicked(p => {
       const n = new Set(p)
@@ -323,198 +309,219 @@ export function OnboardingScanHost() {
       else n.add(k)
       return n
     })
+  const canStart = ORDER.some(k => picked.has(k) && !(STEP_META[k].ai && !aiReady))
+  const start = () => {
+    if (!st) return
+    useOnboardingScan.setState({ expanded: false })
+    void api.onboardingScanStart({ days, accountIds: st.legacy || !st.pendingAccounts.length ? null : st.pendingAccounts, steps: ORDER.filter(k => picked.has(k)) })
+  }
+  return { days, setDays, picked, toggle, aiReady, canStart, start, already }
+}
 
-  // 运行中可收起成小胶囊
-  if (st.running && mini)
-    return (
-      <button
-        onClick={() => setMini(false)}
-        className="fixed bottom-6 right-6 z-40 h-9 pl-3 pr-3.5 rounded-full inline-flex items-center gap-2 text-xs liquid-glass pop-in"
-        style={{ color: 'var(--fg)' }}
-        aria-label="展开首次整理进度"
-      >
-        <span className="spinning inline-flex">
-          <IconRefresh width={13} height={13} />
-        </span>
-        正在整理 · {doneCount}/{active.length}
-      </button>
-    )
+export type OrganizeDraft = ReturnType<typeof useOrganizeDraft>
 
+/** 整理设置：范围 + 要整理的内容（向导「首次整理」一步） */
+export function OrganizeSetup(props: { draft: OrganizeDraft }) {
+  const { days, setDays, picked, toggle, aiReady } = props.draft
   return (
-    <div
-      role="dialog"
-      aria-label="首次整理"
-      className="fixed bottom-6 right-6 z-40 w-[400px] max-w-[calc(100vw-48px)] rounded-[var(--r-lg)] border border-[var(--border)] pop-in"
-      style={{ background: 'var(--surface-strong)', boxShadow: 'var(--shadow-float)' }}
-    >
-      <div className="px-4 pt-3.5 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-2xs font-semibold" style={{ color: 'var(--faint)', letterSpacing: 'var(--tracking-caps)', fontFamily: 'var(--font-mono)' }}>
-            首次整理
-          </span>
-          {st.running && (
-            <span className="text-2xs tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
-              {doneCount}/{active.length}
-            </span>
-          )}
-          <span className="flex-1" />
-          {st.running ? (
-            <button onClick={() => setMini(true)} className="w-6 h-6 grid place-items-center rounded-[var(--r-xs)] hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }} aria-label="收起">
-              <IconMinus width={13} height={13} />
+    <>
+      <div className="flex items-center gap-2">
+        <span className="text-xs" style={{ color: 'var(--muted)' }}>范围</span>
+        <div className="inline-flex p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="radiogroup" aria-label="扫描范围">
+          {RANGES.map(d => (
+            <button
+              key={d}
+              role="radio"
+              aria-checked={days === d}
+              onClick={() => setDays(d)}
+              className="h-6 px-2.5 rounded-[var(--r-xs)] text-xs tnum"
+              style={days === d ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 600, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
+            >
+              {d} 天
             </button>
-          ) : finishedRun ? (
-            <button onClick={() => setClosedRun(st.startedAt)} className="w-6 h-6 grid place-items-center rounded-[var(--r-xs)] hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }} aria-label="关闭">
-              <IconClose width={13} height={13} />
-            </button>
-          ) : (
-            <button onClick={() => void api.onboardingScanLater()} className="w-6 h-6 grid place-items-center rounded-[var(--r-xs)] hover:bg-[var(--hover)]" style={{ color: 'var(--faint)' }} aria-label="稍后再说">
-              <IconClose width={13} height={13} />
-            </button>
-          )}
+          ))}
         </div>
-
-        {intro && (
-          <>
-            <div className="mt-1.5 text-[15px] font-semibold leading-snug" style={{ color: 'var(--fg)' }}>
-              {st.legacy ? '让 Agent 先把已有邮件整理一遍？' : `刚添加了 ${who}，让 Agent 先帮你整理一遍？`}
-            </div>
-            <div className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--muted)' }}>
-              {st.legacy ? `会扫描${who}最近的邮件，` : '会扫描这个邮箱最近的邮件，'}收集待办、账单与订阅、附件，并找出值得沉淀的知识和项目线索。整理在后台进行，可以继续用。
-            </div>
-
-            <div className="mt-3 flex items-center gap-2">
-              <span className="text-xs" style={{ color: 'var(--muted)' }}>范围</span>
-              <div className="inline-flex p-0.5 rounded-[var(--r-sm)]" style={{ background: 'var(--hover)' }} role="radiogroup" aria-label="扫描范围">
-                {RANGES.map(d => (
-                  <button
-                    key={d}
-                    role="radio"
-                    aria-checked={days === d}
-                    onClick={() => setDays(d)}
-                    className="h-6 px-2.5 rounded-[var(--r-xs)] text-xs tnum"
-                    style={days === d ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 600, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
-                  >
-                    {d} 天
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <ul className="mt-3 flex flex-col">
-              {ORDER.map(k => {
-                const m = STEP_META[k]
-                const disabled = m.ai && !aiReady
-                const on = picked.has(k) && !disabled
-                return (
-                  <li key={k}>
-                    <label className={`flex items-center gap-2.5 py-1.5 px-1.5 -mx-1.5 rounded-[var(--r-sm)] ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-[var(--hover)]'}`}>
-                      <input type="checkbox" checked={on} disabled={disabled} onChange={() => toggle(k)} className="accent-[var(--accent)] w-3.5 h-3.5" />
-                      <span className="inline-flex shrink-0" style={{ color: 'var(--muted)' }}>
-                        {m.icon}
-                      </span>
-                      <span className="text-sm shrink-0" style={{ color: 'var(--fg)' }}>
-                        {m.label}
-                      </span>
-                      <span className="text-xs truncate flex-1" style={{ color: 'var(--faint)' }}>
-                        {disabled ? '需要先配置 AI' : m.desc}
-                      </span>
-                      {m.ai && aiReady && (
-                        <span className="text-2xs font-bold px-1 rounded-[var(--r-xs)] ai-chip" title="会用到 AI">
-                          AI
-                        </span>
-                      )}
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
-            {!aiReady && (
-              <div className="mt-2 text-xs leading-relaxed rounded-[var(--r-sm)] px-2.5 py-2" style={{ background: 'var(--hover)', color: 'var(--muted)' }}>
-                还没配置 AI：待办、财务、附件、项目用本地规则识别，知识库需要 AI，先跳过。配置后后台会自动补上。
-              </div>
-            )}
-            <div className="mt-3.5 flex items-center gap-2">
-              <button
-                onClick={start}
-                disabled={!ORDER.some(k => picked.has(k) && !(STEP_META[k].ai && !aiReady))}
-                className="h-8 px-3.5 rounded-[var(--r-sm)] text-sm font-semibold disabled:opacity-50"
-                style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
-              >
-                开始整理
-              </button>
-              <button onClick={() => void api.onboardingScanLater()} className="h-8 px-3 rounded-[var(--r-sm)] text-sm hover:bg-[var(--hover)]" style={{ color: 'var(--fg)' }}>
-                稍后
-              </button>
-              <span className="flex-1" />
-              <button onClick={() => void api.onboardingScanDismiss()} className="text-xs hover:underline" style={{ color: 'var(--faint)' }}>
-                不再提醒
-              </button>
-            </div>
-          </>
-        )}
-
-        {(st.running || finishedRun) && (
-          <>
-            <div className="mt-1.5 text-[15px] font-semibold leading-snug" style={{ color: 'var(--fg)' }}>
-              {st.running ? `正在整理近 ${st.days ?? days} 天的邮件…` : '整理完成'}
-            </div>
-            {st.running && (
-              <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: 'var(--hover-strong)' }} aria-hidden>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(6, pct)}%`, background: 'var(--accent)', transitionDuration: 'var(--dur-4, 300ms)' }} />
-              </div>
-            )}
-            <ul className="mt-2.5 flex flex-col">
-              {st.steps.map(s => {
-                const m = STEP_META[s.key]
-                const unselected = s.status === 'skipped' && s.result === '未选择'
-                if (unselected) return null
-                return (
-                  <li key={s.key} className="flex items-start gap-2.5 py-1.5">
-                    <span className="mt-[2px] shrink-0 w-4 flex justify-center">
-                      <StepState status={s.status} />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm" style={{ color: s.status === 'idle' ? 'var(--muted)' : 'var(--fg)' }}>
-                        {m.label}
-                      </div>
-                      {s.result && (
-                        <div className="text-xs leading-relaxed" style={{ color: s.status === 'error' ? 'var(--danger-ink)' : 'var(--muted)' }}>
-                          {s.result}
-                        </div>
-                      )}
-                    </div>
-                    {!st.running && s.status === 'done' && !/^没有/.test(s.result ?? '') && (
-                      <button onClick={m.open} className="shrink-0 h-6 px-2 rounded-[var(--r-xs)] text-xs border border-[var(--border)] hover:bg-[var(--hover)]" style={{ color: 'var(--fg)' }}>
-                        {m.openLabel} →
-                      </button>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-            <div className="mt-2.5 flex items-center gap-2">
-              {st.running ? (
-                <span className="text-xs" style={{ color: 'var(--faint)' }}>
-                  可以继续用，整理在后台进行
-                </span>
-              ) : (
-                <>
-                  <button
-                    onClick={() => setClosedRun(st.startedAt)}
-                    className="h-8 px-3.5 rounded-[var(--r-sm)] text-sm font-semibold"
-                    style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
-                  >
-                    完成
-                  </button>
-                  <span className="text-xs" style={{ color: 'var(--faint)' }}>
-                    之后 Agent 会每小时补扫、每天整理一次
-                  </span>
-                </>
-              )}
-            </div>
-          </>
-        )}
       </div>
+
+      <ul className="mt-3 flex flex-col">
+        {ORDER.map(k => {
+          const m = STEP_META[k]
+          const disabled = m.ai && !aiReady
+          const on = picked.has(k) && !disabled
+          return (
+            <li key={k}>
+              <label className={`flex items-center gap-2.5 py-1.5 px-1.5 -mx-1.5 rounded-[var(--r-sm)] ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-[var(--hover)]'}`}>
+                <input type="checkbox" checked={on} disabled={disabled} onChange={() => toggle(k)} className="accent-[var(--accent)] w-3.5 h-3.5" />
+                <span className="inline-flex shrink-0" style={{ color: 'var(--muted)' }}>
+                  {m.icon}
+                </span>
+                <span className="text-sm shrink-0" style={{ color: 'var(--fg)' }}>
+                  {m.label}
+                </span>
+                <span className="text-xs truncate flex-1" style={{ color: 'var(--faint)' }}>
+                  {disabled ? '需要先配置 AI' : m.desc}
+                </span>
+                {m.ai && aiReady && (
+                  <span className="text-2xs font-bold px-1 rounded-[var(--r-xs)] ai-chip" title="会用到 AI">
+                    AI
+                  </span>
+                )}
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      {!aiReady && (
+        <div className="mt-2 text-xs leading-relaxed rounded-[var(--r-sm)] px-2.5 py-2" style={{ background: 'var(--hover)', color: 'var(--muted)' }}>
+          还没配置 AI：待办、财务、附件、项目、生活档案用本地规则识别，知识库需要 AI，先跳过。配置后后台会自动补上。
+        </div>
+      )}
+    </>
+  )
+}
+
+/** 整理进度数字 */
+export function organizeCounts(st: OnboardingScanStatus): { done: number; total: number } {
+  const active = st.steps.filter(s => !(s.status === 'skipped' && s.result === '未选择'))
+  return { done: active.filter(s => s.status === 'done' || s.status === 'error' || s.status === 'skipped').length, total: active.length }
+}
+
+/** 整理进度 / 结果（逐步状态 + 完成后的「去看看」）；embedded：放在向导里时不带标题与跳转（跳转会被向导挡住，结果在侧栏底部也能看） */
+export function OrganizeProgress(props: { st: OnboardingScanStatus; embedded?: boolean }) {
+  const st = props.st
+  const active = st.steps.filter(s => !(s.status === 'skipped' && s.result === '未选择'))
+  const { done, total } = organizeCounts(st)
+  const pct = total ? Math.round((done / total) * 100) : 0
+  return (
+    <>
+      {!props.embedded && (
+        <div className="text-[15px] font-semibold leading-snug" style={{ color: 'var(--fg)' }}>
+          {st.running ? `正在整理近 ${st.days ?? 90} 天的邮件…` : '整理完成'}
+        </div>
+      )}
+      {st.running && (
+        <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: 'var(--hover-strong)' }} aria-hidden>
+          <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(6, pct)}%`, background: 'var(--accent)', transitionDuration: 'var(--dur-4, 300ms)' }} />
+        </div>
+      )}
+      <ul className="mt-2.5 flex flex-col">
+        {active.map(s => {
+          const m = STEP_META[s.key]
+          return (
+            <li key={s.key} className="flex items-start gap-2.5 py-1.5">
+              <span className="mt-[2px] shrink-0 w-4 flex justify-center">
+                <StepState status={s.status} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm" style={{ color: s.status === 'idle' ? 'var(--muted)' : 'var(--fg)' }}>
+                  {m.label}
+                </div>
+                {s.result && (
+                  <div className="text-xs leading-relaxed" style={{ color: s.status === 'error' ? 'var(--danger-ink)' : 'var(--muted)' }}>
+                    {s.result}
+                  </div>
+                )}
+              </div>
+              {!props.embedded && !st.running && s.status === 'done' && !/^没有/.test(s.result ?? '') && (
+                <button onClick={m.open} className="shrink-0 h-6 px-2 rounded-[var(--r-xs)] text-xs border border-[var(--border)] hover:bg-[var(--hover)]" style={{ color: 'var(--fg)' }}>
+                  {m.openLabel} →
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </>
+  )
+}
+
+/**
+ * 首次整理的事件订阅（挂在主窗口里，不渲染界面）：
+ * 整理的开始入口在升级向导（app/upgrade）里，进度与结果显示在侧栏底部状态区（OrganizeStatus），不再浮在右下角挡住按钮。
+ */
+export function OnboardingScanHost() {
+  useEffect(() => {
+    void api.onboardingScanStatus().then(st => useOnboardingScan.setState({ st })).catch(() => {})
+    const off = api.onEvent(ev => {
+      const e = ev as { type?: string; status?: OnboardingScanStatus }
+      if (e.type === 'onboarding-scan' && e.status) useOnboardingScan.setState({ st: e.status })
+      // 定时技能 / 事件触发通知点击：打开 Agent → 自动任务 → 活动记录
+      if (e.type === 'open-agent-activity') openActivityLog()
+    })
+    return () => void off()
+  }, [])
+  return null
+}
+
+/** 侧栏底部：整理进行中 / 刚完成时一行状态，点开看逐步进度（锚在侧栏底部，不遮挡列表与阅读区的按钮） */
+export function OrganizeStatus() {
+  const { st, closedRun, expanded } = useOnboardingScan()
+  const finished = isFinishedRun(st, closedRun)
+  if (!st || (!st.running && !finished)) return null
+  const { done, total } = organizeCounts(st)
+  const close = () => useOnboardingScan.setState({ closedRun: st.startedAt, expanded: false })
+  return (
+    <div className="relative mx-2 mb-1">
+      <button
+        onClick={() => useOnboardingScan.setState({ expanded: !expanded })}
+        aria-expanded={expanded}
+        className="w-full h-7 px-2 flex items-center gap-2 rounded-[var(--r-sm)] text-xs hover:bg-[var(--hover)]"
+        style={{ color: 'var(--fg)' }}
+      >
+        {st.running ? (
+          <span className="spinning inline-flex shrink-0" style={{ color: 'var(--muted)' }}>
+            <IconRefresh width={12} height={12} />
+          </span>
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 mx-[3px]" style={{ background: 'var(--accent)' }} />
+        )}
+        <span className="flex-1 text-left truncate">{st.running ? '正在整理邮件' : '整理完成 · 查看结果'}</span>
+        {st.running && (
+          <span className="tnum text-2xs" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+            {done}/{total}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div
+          role="dialog"
+          aria-label="首次整理"
+          className="absolute left-0 bottom-full mb-1.5 z-40 w-[360px] max-w-[calc(100vw-96px)] max-h-[min(460px,70vh)] overflow-y-auto rounded-[var(--r-lg)] border border-[var(--border)] px-4 pt-3 pb-3 pop-in"
+          style={{ background: 'var(--surface-strong)', boxShadow: 'var(--shadow-float)' }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xs font-semibold" style={{ color: 'var(--faint)', letterSpacing: 'var(--tracking-caps)', fontFamily: 'var(--font-mono)' }}>
+              首次整理
+            </span>
+            <span className="flex-1" />
+            <button
+              onClick={() => (st.running ? useOnboardingScan.setState({ expanded: false }) : close())}
+              className="w-6 h-6 grid place-items-center rounded-[var(--r-xs)] hover:bg-[var(--hover)]"
+              style={{ color: 'var(--faint)' }}
+              aria-label={st.running ? '收起' : '关闭'}
+            >
+              {st.running ? <IconMinus width={13} height={13} /> : <IconClose width={13} height={13} />}
+            </button>
+          </div>
+          <OrganizeProgress st={st} />
+          <div className="mt-2 flex items-center gap-2">
+            {st.running ? (
+              <span className="text-xs" style={{ color: 'var(--faint)' }}>
+                可以继续用，整理在后台进行
+              </span>
+            ) : (
+              <>
+                <button onClick={close} className="h-8 px-3.5 rounded-[var(--r-sm)] text-sm font-semibold" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
+                  完成
+                </button>
+                <span className="text-xs" style={{ color: 'var(--faint)' }}>
+                  之后 Agent 会每小时补扫、每天整理一次
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

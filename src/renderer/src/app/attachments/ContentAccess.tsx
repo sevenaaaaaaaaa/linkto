@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
+import { useOverlayTurn, OVERLAY_PRIORITY } from '../../lib/overlays'
 import { IconCheck, IconShield } from '../../components/icons'
 import type { AttachmentAccessSettings, AttachmentContentKind, OcrAvailability, OcrEngine } from '@shared/types'
 
 /**
  * 附件内容读取授权：
- *  - ContentAccessHost（主窗口全局挂一个）：主进程第一次需要读附件内容（'content-access-needed'）、
- *    或用户在「查看文字」/ Agent 读附件时被拦（openContentAccess / interactive 事件）时，弹出授权说明。
+ *  - ContentAccessHost（主窗口全局挂一个）：用户在「查看文字」/ Agent 读附件时被拦（openContentAccess / interactive 事件）时，弹出授权说明；
+ *    首次授权（后台第一次需要读取）统一放进升级向导 / 首次整理里问，不再单独弹。
+ *  - useContentAccessDraft + ContentAccessForm：授权表单的唯一实现，浮层与向导共用。
  *  - 共享的小部件（类型开关、识字方式）给设置页「附件内容读取」一节复用。
  */
 
@@ -87,10 +89,11 @@ export function EngineChoice(props: { value: OcrEngine; onChange(v: Exclude<OcrE
   )
 }
 
-/** 主窗口全局：授权说明浮层 */
-export function ContentAccessHost() {
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState<string | null>(null)
+/**
+ * 授权表单的状态与保存逻辑（授权说明浮层与升级向导「附件内容读取」一步共用，只有这一份）。
+ * load() 读当前设置与识字能力；allow() 按表单保存并授权；decline() 没授权时记下「问过了」。
+ */
+export function useContentAccessDraft() {
   const [cur, setCur] = useState<AttachmentAccessSettings | null>(null)
   const [status, setStatus] = useState<OcrAvailability | null>(null)
   const [kinds, setKinds] = useState<Record<AttachmentContentKind, boolean>>({ pdf: true, office: true, text: true, ocr: true })
@@ -98,16 +101,98 @@ export function ContentAccessHost() {
   const [engine, setEngine] = useState<OcrEngine>('local')
   const [busy, setBusy] = useState(false)
 
+  const load = async (): Promise<AttachmentAccessSettings> => {
+    const [a, st] = await Promise.all([api.contentAccessGet(), api.ocrStatus().catch(() => null)])
+    setCur(a)
+    setStatus(st)
+    setKinds({ ...a.kinds })
+    setCloud(a.sendToCloudAI)
+    setEngine(a.ocrEngine === 'off' ? (st?.local === false ? 'ai' : 'local') : st?.local === false && a.ocrEngine !== 'ai' ? 'ai' : a.ocrEngine)
+    return a
+  }
+  const allow = async () => {
+    if (!cur) return
+    setBusy(true)
+    try {
+      setCur(await api.contentAccessSet({ readContent: true, kinds, sendToCloudAI: cloud, ocrEngine: kinds.ocr ? engine : cur.ocrEngine }))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const decline = async () => {
+    // 已授权时「暂不」只是关掉；没授权时记下「问过了」，之后只在用户主动操作时再问
+    if (cur && !cur.readContent) setCur(await api.contentAccessSet({ readContent: false }))
+  }
+  return { cur, status, kinds, setKinds, cloud, setCloud, engine, setEngine, busy, load, allow, decline }
+}
+
+export type ContentAccessDraft = ReturnType<typeof useContentAccessDraft>
+
+/** 授权表单主体：说明 + 读取哪些附件 + 识字方式 + 云端 AI（浮层与向导共用） */
+export function ContentAccessForm(props: { draft: ContentAccessDraft; engineName: string }) {
+  const { status, kinds, setKinds, cloud, setCloud, engine, setEngine } = props.draft
+  const aiLocal = !!status?.aiLocal
+  const engineUsesAI = engine === 'ai' || engine === 'local+ai'
+  return (
+    <>
+      <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+        读取在这台电脑上完成，用来：查看附件文字、按内容归类、核对发票与账单、整理进知识库、回答你对附件的提问。附件不会上传到 LinkTo 的服务器。
+      </p>
+
+      <div className="mt-4 text-xs font-medium" style={{ color: 'var(--fg)' }}>读取哪些附件</div>
+      <div className="mt-1.5">
+        <KindChips kinds={kinds} onChange={(k, v) => setKinds(p => ({ ...p, [k]: v }))} />
+      </div>
+
+      {kinds.ocr && (
+        <>
+          <div className="mt-4 text-xs font-medium" style={{ color: 'var(--fg)' }}>扫描件识字方式</div>
+          <div className="mt-1.5">
+            <EngineChoice name={props.engineName} value={engine} onChange={setEngine} status={status} />
+          </div>
+        </>
+      )}
+
+      <div className="mt-4 rounded-[var(--r-sm)] border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)' }}>
+        {aiLocal ? (
+          <div className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
+            <span style={{ color: 'var(--fg)' }}>当前 AI 是本地模型</span>：附件内容交给它也不出本机，不需要单独授权。
+          </div>
+        ) : (
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" className="mt-[3px]" checked={cloud} onChange={e => setCloud(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            <span className="min-w-0">
+              <span className="block text-sm" style={{ color: 'var(--fg)' }}>允许把附件内容发给云端 AI</span>
+              <span className="block text-2xs leading-relaxed mt-0.5" style={{ color: 'var(--faint)' }}>
+                Agent 问答、知识库提炼、生活档案、自动技能和 AI 识字会把附件节选（或扫描页图片）发给你在「设置 → AI」里配置的服务。不勾选时，这些功能只用文件名与邮件正文。
+              </span>
+            </span>
+          </label>
+        )}
+        {!aiLocal && !cloud && kinds.ocr && engineUsesAI && (
+          <div className="mt-2 text-2xs leading-relaxed" style={{ color: 'var(--warn-ink)' }}>
+            AI 识字需要勾选上面这一项；不勾选时{engine === 'local+ai' ? '只用本机识别结果' : '无法用 AI 识字'}。
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+/**
+ * 主窗口全局：授权说明浮层——只在用户主动操作时出现（「去授权」/ 查看文字 / Agent 读附件被拦）。
+ * 后台第一次需要读取时不再自己弹出：首次授权统一放进升级向导 / 首次整理里问（见 app/upgrade）。
+ */
+export function ContentAccessHost() {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState<string | null>(null)
+  const draft = useContentAccessDraft()
+  const turn = useOverlayTurn('content-access', open, OVERLAY_PRIORITY.interactive)
+
   useEffect(() => {
     const show = async (why: string | null, interactive: boolean) => {
-      const [a, st] = await Promise.all([api.contentAccessGet(), api.ocrStatus().catch(() => null)])
-      // 后台第一次需要读取时才主动问；之后（暂不 / 已授权）只在用户主动操作时再问
-      if (!interactive && a.asked) return
-      setCur(a)
-      setStatus(st)
-      setKinds({ ...a.kinds })
-      setCloud(a.sendToCloudAI)
-      setEngine(a.ocrEngine === 'off' ? (st?.local === false ? 'ai' : 'local') : st?.local === false && a.ocrEngine !== 'ai' ? 'ai' : a.ocrEngine)
+      if (!interactive) return
+      await draft.load()
       setReason(why)
       setOpen(true)
     }
@@ -121,10 +206,11 @@ export function ContentAccessHost() {
       void off()
       window.removeEventListener(OPEN_EVENT, onOpen)
     }
+    // draft.load 只读 api 并写本组件状态，挂载一次即可
   }, [])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !turn) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -133,24 +219,17 @@ export function ContentAccessHost() {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open])
+  }, [open, turn])
 
-  if (!open || !cur) return null
-  const aiLocal = !!status?.aiLocal
-  const engineUsesAI = engine === 'ai' || engine === 'local+ai'
+  const cur = draft.cur
+  if (!open || !turn || !cur) return null
 
   const allow = async () => {
-    setBusy(true)
-    try {
-      await api.contentAccessSet({ readContent: true, kinds, sendToCloudAI: cloud, ocrEngine: kinds.ocr ? engine : cur.ocrEngine })
-      setOpen(false)
-    } finally {
-      setBusy(false)
-    }
+    await draft.allow()
+    setOpen(false)
   }
   const later = async () => {
-    // 已授权时「暂不」只是关掉；没授权时记下「问过了」，之后只在用户主动操作时再问
-    if (!cur.readContent) await api.contentAccessSet({ readContent: false })
+    await draft.decline()
     setOpen(false)
   }
 
@@ -165,7 +244,7 @@ export function ContentAccessHost() {
         onMouseDown={e => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-4">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 mb-3">
             <span className="w-8 h-8 rounded-full inline-flex items-center justify-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>
               <IconShield width={16} height={16} />
             </span>
@@ -176,46 +255,7 @@ export function ContentAccessHost() {
               {reason && <div className="text-2xs truncate" style={{ color: 'var(--faint)' }}>「{reason}」需要读取内容</div>}
             </div>
           </div>
-          <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
-            读取在这台电脑上完成，用来：查看附件文字、按内容归类、核对发票与账单、整理进知识库、回答你对附件的提问。附件不会上传到 LinkTo 的服务器。
-          </p>
-
-          <div className="mt-4 text-xs font-medium" style={{ color: 'var(--fg)' }}>读取哪些附件</div>
-          <div className="mt-1.5">
-            <KindChips kinds={kinds} onChange={(k, v) => setKinds(p => ({ ...p, [k]: v }))} />
-          </div>
-
-          {kinds.ocr && (
-            <>
-              <div className="mt-4 text-xs font-medium" style={{ color: 'var(--fg)' }}>扫描件识字方式</div>
-              <div className="mt-1.5">
-                <EngineChoice name="access-engine" value={engine} onChange={setEngine} status={status} />
-              </div>
-            </>
-          )}
-
-          <div className="mt-4 rounded-[var(--r-sm)] border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)' }}>
-            {aiLocal ? (
-              <div className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-                <span style={{ color: 'var(--fg)' }}>当前 AI 是本地模型</span>：附件内容交给它也不出本机，不需要单独授权。
-              </div>
-            ) : (
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input type="checkbox" className="mt-[3px]" checked={cloud} onChange={e => setCloud(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-                <span className="min-w-0">
-                  <span className="block text-sm" style={{ color: 'var(--fg)' }}>允许把附件内容发给云端 AI</span>
-                  <span className="block text-2xs leading-relaxed mt-0.5" style={{ color: 'var(--faint)' }}>
-                    Agent 问答、知识库提炼、生活档案、自动技能和 AI 识字会把附件节选（或扫描页图片）发给你在「设置 → AI」里配置的服务。不勾选时，这些功能只用文件名与邮件正文。
-                  </span>
-                </span>
-              </label>
-            )}
-            {!aiLocal && !cloud && kinds.ocr && engineUsesAI && (
-              <div className="mt-2 text-2xs leading-relaxed" style={{ color: 'var(--warn-ink)' }}>
-                AI 识字需要勾选上面这一项；不勾选时{engine === 'local+ai' ? '只用本机识别结果' : '无法用 AI 识字'}。
-              </div>
-            )}
-          </div>
+          <ContentAccessForm draft={draft} engineName="access-engine" />
         </div>
         <div className="px-5 py-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border-soft)' }}>
           <span className="flex-1 text-2xs" style={{ color: 'var(--faint)' }}>随时可在 设置 → 附件与存储 修改</span>
@@ -228,7 +268,7 @@ export function ContentAccessHost() {
           </button>
           <button
             onClick={() => void allow()}
-            disabled={busy}
+            disabled={draft.busy}
             autoFocus
             className="h-8 px-3.5 rounded-[var(--r-sm)] text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
             style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
