@@ -224,7 +224,7 @@ const CARDS: { icon: React.ReactNode; title: string; desc: string; action?: { la
   {
     icon: <IconCloud width={16} height={16} />,
     title: '同步与备份',
-    desc: '跨设备同步与备份正在打磨中；现在可以先在设置里加密备份账户配置。',
+    desc: '账户（含独立密码）、Agent 记忆、知识库、技能与各中心数据经你自己的邮箱加密同步到其他设备；也可按类别加密备份与恢复。',
     action: { label: '打开设置', run: () => void api.openSettings('backup') }
   }
 ]
