@@ -30,6 +30,7 @@ import { ProjectStrip, projectMenuItems } from './projects/ProjectBits'
 import { EventStrip } from './agent/EventStrip'
 import { useProjectIndex } from '../lib/projects'
 import { FollowupStrip } from './followups/FollowupStrip'
+import { LifeStrip } from './life/LifeStrip'
 
 interface AIState {
   text: string
@@ -730,6 +731,7 @@ export function Reader() {
 
       <ProjectStrip msg={msg} />
       <FinanceStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
+      <LifeStrip messageId={msg.id} insight={insight} text={`${msg.subject}\n${msg.text ?? ''}`} />
       <EventStrip messageId={msg.id} />
       <FollowupStrip msg={msg} />
 

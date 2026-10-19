@@ -18,6 +18,7 @@ import {
 } from './tasks'
 import { followupJob } from '../followups/job'
 import { ruleSuggestJob } from '../rule-suggest'
+import { lifeJob } from '../life/job'
 
 export interface JobsDeps extends Omit<WorkDeps, 'activity'> {
   db: DatabaseSync
@@ -72,6 +73,7 @@ export function initJobs(input: JobsDeps) {
   const events = initEventTriggers({ ...deps, log })
   scheduler.register(followupJob())
   scheduler.register(ruleSuggestJob())
+  scheduler.register(lifeJob())
 
   // ---------------- 定时技能 ----------------
 

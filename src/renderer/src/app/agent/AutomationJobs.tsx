@@ -2,6 +2,7 @@ import type { AgentJobInfo, AgentJobSettings } from '@shared/types'
 import { fmtNext, fmtWhen, useAgentJobs } from '../../lib/automation'
 import { IconArchive, IconAttach, IconBrain, IconCheckSquare, IconLayers, IconRefresh, IconSparkles, IconSunrise } from '../../components/icons'
 import { IconWallet } from '../finance/FinanceNav'
+import { IconLife } from '../life/icons'
 
 /* 自动任务列表与全局设置：Agent → 自动任务页与 设置 → 自动化 共用（不依赖邮件 store，设置窗可直接引用） */
 
@@ -26,6 +27,8 @@ function jobIcon(j: AgentJobInfo) {
       return <IconSunrise {...ico} />
     case 'cleanup':
       return <IconArchive {...ico} />
+    case 'life':
+      return <IconLife {...ico} />
     default:
       return <IconRefresh {...ico} />
   }

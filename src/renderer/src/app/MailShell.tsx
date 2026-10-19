@@ -7,6 +7,7 @@ import { FolderManager } from './FolderManager'
 import { TriageView } from './TriageView'
 import { TodoView } from './TodoView'
 import { FinanceView } from './finance/FinanceView'
+import { LifeView } from './life/LifeView'
 import { openFinance } from '../lib/finance'
 import { ContextRail } from './ContextRail'
 import { MovePalette } from './MovePalette'
@@ -251,7 +252,7 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : triage ? <TriageView /> : (
+      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
           <Reader />

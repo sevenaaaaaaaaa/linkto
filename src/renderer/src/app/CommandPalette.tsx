@@ -81,6 +81,8 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
       { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
+      { id: 'nav-life', group: '前往', label: '生活档案（证件 / 保险 / 年检 / 域名 / 会员 / 保修到期）', keywords: 'life admin 生活档案 到期 续期 续保 护照 证件 保险 年检 域名 会员 保修 合同 租房 个税 体检 renewal expire passport', run: () => { goView('life'); props.onClose() } },
+      { id: 'act-life-scan', group: '前往', label: '生活档案：扫描最近 2 年邮件', keywords: 'life scan 到期 续期 回填', run: () => { goView('life'); props.onClose(); void api.lifeScan(730) } },
       { id: 'act-finance-scan', group: '前往', label: '财务：扫描最近 90 天邮件', keywords: 'finance scan 账单 订阅 回填', run: () => { goView('finance'); props.onClose(); void api.financeScan(90) } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,

@@ -9,6 +9,8 @@ import { openAgentRef } from '../../lib/automation-refs'
 import { launchSkill } from '../../lib/agent-skills'
 import { IconAttach, IconBook, IconCheck, IconCheckSquare, IconClose, IconLayers, IconMinus, IconRefresh, IconZap } from '../../components/icons'
 import { IconWallet } from '../finance/FinanceNav'
+import { IconLife } from '../life/icons'
+import { openLife } from '../../lib/life'
 import { ico, JobList, JobSettingsBlock } from './AutomationJobs'
 
 /* ================================================================
@@ -239,9 +241,10 @@ const STEP_META: Record<StepKey, { label: string; desc: string; ai: boolean; ico
   finance: { label: '财务', desc: '账单、订阅、订单与企业往来款项', ai: false, icon: <IconWallet {...ico} />, open: () => openFinance(), openLabel: '去财务' },
   attachments: { label: '附件', desc: '索引分类，算出可释放的空间', ai: false, icon: <IconAttach {...ico} />, open: () => goView('attachments'), openLabel: '去附件' },
   kb: { label: '知识库', desc: '把决定、方案、资料沉淀成知识条目', ai: true, icon: <IconBook {...ico} />, open: () => goView('kb'), openLabel: '去知识库' },
-  projects: { label: '项目', desc: '找出同一件事的往来（只给建议）', ai: false, icon: <IconLayers {...ico} />, open: () => openProjects(), openLabel: '去项目' }
+  projects: { label: '项目', desc: '找出同一件事的往来（只给建议）', ai: false, icon: <IconLayers {...ico} />, open: () => openProjects(), openLabel: '去项目' },
+  life: { label: '生活档案', desc: '证件、保险、年检、域名等到期事务（至少回看 1 年）', ai: false, icon: <IconLife {...ico} />, open: () => openLife(), openLabel: '去生活档案' }
 }
-const ORDER: StepKey[] = ['todo', 'finance', 'attachments', 'kb', 'projects']
+const ORDER: StepKey[] = ['todo', 'finance', 'attachments', 'kb', 'projects', 'life']
 const RANGES = [30, 90, 180]
 
 function StepState(props: { status: OnboardingScanStatus['steps'][number]['status'] }) {

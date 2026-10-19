@@ -5,6 +5,8 @@ import { goView, viewFromHash } from '../../lib/route'
 import { openFinance } from '../../lib/finance'
 import { openContactTimeline, openProject } from '../../lib/projects'
 import { openFollowups } from '../../lib/followups'
+import { openLife } from '../../lib/life'
+import { IconLife } from '../life/icons'
 import { IconAttach, IconBook, IconBrain, IconCheck, IconCheckSquare, IconChevronRight, IconClock, IconClose, IconFileText, IconFolder, IconSearch, IconSparkles, IconUser } from '../../components/icons'
 
 /**
@@ -92,7 +94,8 @@ const REF_ICON: Record<AgentRef['type'], (p: P) => ReactNode> = {
   kb: IconBook,
   memory: IconBrain,
   contact: IconUser,
-  followup: IconClock
+  followup: IconClock,
+  life: IconLife
 }
 
 // ---------------------------------------------------------------- 参数要点
@@ -328,6 +331,9 @@ export function openRef(r: AgentRef) {
       return
     case 'followup':
       openFollowups(r.id)
+      return
+    case 'life':
+      openLife(r.id)
       return
   }
 }

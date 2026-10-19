@@ -549,7 +549,7 @@ export interface LinkToApi {
 
   onboardingScanStatus(): Promise<import('./types').OnboardingScanStatus>
   /** 开始首次整理：days 天内的邮件，按勾选的步骤依次跑（进度经 'onboarding-scan' 事件推送） */
-  onboardingScanStart(opts: { days: number; accountIds?: string[] | null; steps: ('todo' | 'finance' | 'attachments' | 'kb' | 'projects')[] }): Promise<void>
+  onboardingScanStart(opts: { days: number; accountIds?: string[] | null; steps: ('todo' | 'finance' | 'attachments' | 'kb' | 'projects' | 'life')[] }): Promise<void>
   onboardingScanDismiss(): Promise<void>
 }
 
@@ -598,4 +598,13 @@ export interface LinkToApi {
   lifeScan(days: number): Promise<{ created: number; merged: number; scanned: number }>
   /** 导出 .ics（系统保存对话框） */
   lifeExportIcs(ids?: string[] | null): Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>
+}
+
+// ---------- 生活档案（追加：生成待办 / 阅读页加入） ----------
+
+export interface LinkToApi {
+  /** 生成提醒待办（kind='todo'，dueAt = 建议办理日或到期日）；已生成过返回原待办 id */
+  lifeMakeTodo(id: string): Promise<string | null>
+  /** 阅读页「加入生活档案」：已收返回所在条目；否则识别（规则 → AI）后新建 */
+  lifeFromMessage(messageId: string): Promise<{ id: string | null; created: boolean }>
 }

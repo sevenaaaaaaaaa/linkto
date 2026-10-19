@@ -19,6 +19,7 @@ import { notifyLocalChange as notifyIntegrationChange } from '../todo-integratio
 import { htmlToText, parseMailQuery, parseWhen, resolveDate, textToHtml, ymd, type JsonSchema } from './protocol'
 import { registerFollowup } from './hooks'
 import { followupService } from '../followups'
+import { lifeAgentTools } from '../life/agent-tools'
 import { clampWaitDays, FOLLOWUP_KIND_LABEL, FOLLOWUP_STATUS_LABEL, isFollowupKind, waitedDays } from '@shared/followups'
 import { ruleSuggestService } from '../rule-suggest'
 
@@ -1720,7 +1721,10 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
         const wd = WEEKDAY[new Date(y, m - 1, dd).getDay()]
         return { data: { expr: a.expr, date: r, weekday: wd }, summary: `${a.expr} = ${r} ${wd}` }
       }
-    }
+    },
+
+    // ======================================================== 生活档案（life_list / life_create / life_update）
+    ...lifeAgentTools({ store, fail: m => new ToolError(m) })
   ]
 
   // 写操作统一要求 reason（说明理由），没声明的补上

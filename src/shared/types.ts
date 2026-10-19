@@ -1094,7 +1094,7 @@ export interface AgentToolInfo {
 
 /** Agent 回答里引用的对象，界面渲染成可点击的来源胶囊 */
 export interface AgentRef {
-  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'followup'
+  type: 'mail' | 'thread' | 'todo' | 'finance' | 'project' | 'attachment' | 'kb' | 'memory' | 'contact' | 'followup' | 'life'
   id: string
   label: string
 }
@@ -1218,7 +1218,7 @@ export interface OnboardingScanStatus {
   running: boolean
   /** 需要引导的账户（新加且尚未整理过） */
   pendingAccounts: string[]
-  steps: { key: 'todo' | 'finance' | 'attachments' | 'kb' | 'projects'; label: string; status: 'idle' | 'running' | 'done' | 'error' | 'skipped'; result?: string }[]
+  steps: { key: 'todo' | 'finance' | 'attachments' | 'kb' | 'projects' | 'life'; label: string; status: 'idle' | 'running' | 'done' | 'error' | 'skipped'; result?: string }[]
   startedAt: number | null
   finishedAt: number | null
 }
@@ -1286,6 +1286,7 @@ export type AgentEventKind =
   | 'package-issue'
   | 'job-application'
   | 'custom'
+  | 'renewal-notice'
 
 export interface AgentSkillTrigger {
   event: AgentEventKind

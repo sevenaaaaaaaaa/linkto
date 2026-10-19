@@ -41,6 +41,7 @@ import { initJobs } from './jobs'
 import { AiBudget } from './jobs/budget'
 import { initFollowups, followupService } from './followups'
 import { initRuleSuggest } from './rule-suggest'
+import { initLife, lifeService } from './life'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -540,6 +541,8 @@ async function bootstrap() {
       const b = collectMeetingTodo(mailStore, ins)
       // 财务中心：账单 / 订阅 / 订单 / 企业往来自动收集（排队异步，幂等）
       finance?.onInsight(ins)
+      // 生活档案：证件 / 保险 / 年检 / 域名 / 会员 / 保修等到期事务自动收集（排队异步，幂等）
+      lifeService()?.onInsight(ins)
       // 事件触发技能：实时新到的邮件命中发票 / 行程变更等事件 → 自动运行对应技能
       jobs?.events.onInsight(ins)
       if (a || b) {
@@ -741,6 +744,22 @@ async function bootstrap() {
   })
   // 主动建议规则：从反复的手动操作里挖掘可自动化的习惯（IPC ruleSuggestion*；挖掘由自动任务「规则建议」每天驱动）
   initRuleSuggest({ db, store: mailStore, call: internal.call, runRuleActions: internal.runRuleActions, event: payload => broadcast(payload) })
+  // 生活档案：到期 / 续期类事务（IPC life* · 到期提醒；每日补扫由自动任务「生活档案整理」驱动）
+  initLife({
+    store: mailStore,
+    appStore,
+    ai: aiService,
+    getAISettings: () => appStore.getAI(),
+    event: payload => broadcast(payload),
+    onTodosChanged: () => {
+      notifyLocalChange()
+      notifyIntegrationChange()
+    },
+    openLife: id => {
+      focusMainForNotification()
+      mainWindow?.webContents.send('event', { type: 'open-life', id })
+    }
+  })
   // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
   const agentRuntime = new AgentRuntime({
       store: mailStore,

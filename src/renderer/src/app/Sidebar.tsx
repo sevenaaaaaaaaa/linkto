@@ -7,6 +7,8 @@ import { SyncStatus } from './AccountIssues'
 import { usePrefs } from '../lib/prefs'
 import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import { FinanceNavRow, IconWallet } from './finance/FinanceNav'
+import { LifeNavRow } from './life/LifeStrip'
+import { IconLife } from './life/icons'
 import {
   IconInbox, IconFlag, IconTrash, IconArchive, IconSend, IconBook, IconFolder, IconCompose, IconSettings,
   IconChevronDown, IconRefresh, IconPin, IconSparkles, IconClock, IconShield,
@@ -301,6 +303,7 @@ export function Sidebar() {
             {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
             <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
             <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
+            <LifeNavRow render={(label, count) => <Row icon={<IconLife {...ico} />} label={label} unread={count} muteCount active={view === 'life'} onClick={() => goView('life')} />} />
             <AgentNavSection Row={Row} ico={ico} />
             {sb.kb && <Row icon={<IconBook {...ico} />} label="知识库" active={view === 'kb'} onClick={() => goView('kb')} />}
             <Row icon={<IconAttach {...ico} />} label="附件" active={view === 'attachments'} onClick={() => goView('attachments')} />

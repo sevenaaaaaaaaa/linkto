@@ -14,7 +14,8 @@ export const EVENT_LABEL: Record<AgentEventKind, string> = {
   'meeting-notes': '会议纪要',
   'package-issue': '快递异常',
   'job-application': '求职进展',
-  custom: '自定义条件'
+  custom: '自定义条件',
+  'renewal-notice': '到期 / 续期提醒'
 }
 
 /** 技能卡片标签：「⚡ 收到发票时自动运行」 */
@@ -29,8 +30,9 @@ export const EVENT_WHEN: Record<AgentEventKind, string> = {
   'meeting-notes': '收到会议纪要 / 会后邮件时',
   'package-issue': '快递异常时',
   'job-application': '求职 / 招聘有进展时',
-  custom: '新邮件满足条件时'
+  custom: '新邮件满足条件时',
+  'renewal-notice': '收到证件 / 保险 / 年检 / 域名等到期提醒时'
 }
 
 /** 编辑器多选的顺序 */
-export const EVENT_KINDS: AgentEventKind[] = ['invoice', 'payment-due', 'flight-change', 'travel-booking', 'security-alert', 'contract', 'meeting-invite', 'meeting-notes', 'package-issue', 'job-application', 'custom']
+export const EVENT_KINDS: AgentEventKind[] = ['invoice', 'payment-due', 'flight-change', 'travel-booking', 'security-alert', 'contract', 'meeting-invite', 'meeting-notes', 'package-issue', 'job-application', 'renewal-notice', 'custom']

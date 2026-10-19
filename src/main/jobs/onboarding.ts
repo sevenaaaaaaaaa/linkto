@@ -2,6 +2,7 @@ import type { AgentActivity, AgentRef, OnboardingScanStatus } from '@shared/type
 import { aiReady } from '../ai/service'
 import { runAsBackground } from './budget'
 import { DAY_MS } from './schedule'
+import { lifeService } from '../life'
 import {
   aiBlockedReason, financeBreakdown, fmtBytes, kbRefs, learnKnowledge, organizeAttachments, organizeFinance, organizeProjects, projectLabel, sweepTodos,
   type WorkDeps
@@ -14,7 +15,8 @@ const STEPS: { key: StepKey; label: string }[] = [
   { key: 'finance', label: '财务' },
   { key: 'attachments', label: '附件' },
   { key: 'kb', label: '知识库' },
-  { key: 'projects', label: '项目' }
+  { key: 'projects', label: '项目' },
+  { key: 'life', label: '生活档案' }
 ]
 
 interface Persist {
@@ -227,6 +229,17 @@ export class OnboardingScan {
           if (r.suggested) parts.push(`${r.suggested} 封待确认`)
           const text = parts.length ? parts.join('，') : '没有发现新的项目线索'
           if (parts.length) lines.push(text)
+          this.setStep(key, { status: 'done', result: text })
+        } else if (key === 'life') {
+          // 生活事务周期长：至少回看 1 年（限速由服务控制：分批让出事件循环，PDF / AI 有上限）
+          const r = await lifeService()?.scan(Math.max(365, days), { maxAi: aiWhy ? 0 : 20, maxPdf: 30 })
+          if (!r) throw new Error('生活档案模块尚未就绪')
+          if (r.ok === false) throw new Error(r.error || '生活档案扫描失败')
+          stats.life = r.created
+          refs.push(...(r.createdIds ?? []).slice(0, 5).map(id => ({ type: 'life' as const, id, label: lifeService()?.get(id)?.title ?? '生活事务' })))
+          const total = lifeService()?.rows(false).length ?? 0
+          const text = r.created ? `找到 ${r.created} 件到期 / 续期事务` : total ? `没有新的到期事务（已在档 ${total} 件）` : '没有发现证件 / 保险 / 年检等到期事务'
+          if (r.created) lines.push(text)
           this.setStep(key, { status: 'done', result: text })
         }
       } catch (err) {

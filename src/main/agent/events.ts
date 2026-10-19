@@ -8,6 +8,7 @@
  * 本文件只依赖类型与 shared 常量，便于 esbuild 独立打包做单测；运行时调度见 event-trigger.ts。
  */
 import type { AgentEventHit, AgentEventKind, AgentSkill, AgentSkillTrigger } from '../../shared/types'
+import { detectLife } from '../life/detect'
 
 export interface EventMailInput {
   messageId: string
@@ -261,6 +262,11 @@ export function detectEvents(input: EventMailInput): AgentEventHit[] {
     }
   }
 
+  // ---------- 生活事务到期 / 续期提醒（证件 / 保险 / 年检 / 域名 / 会员 / 保修…；识别规则同生活档案） ----------
+  // 置信度不落在「拿不准」区间（不送 AI 复核：复核提示词里没有这个事件）
+  const life = detectLife({ messageId: input.messageId, subject, text: body, fromAddr: input.fromAddr, fromName: input.fromName ?? '', date: input.date ?? Date.now(), isNewsletter: promo })
+  if (life && life.expiresAt && life.event !== 'renewed' && life.confidence >= 0.6) add('renewal-notice', Math.max(TRIGGER_MIN, life.confidence), `生活事务：${life.subject} 将于 ${new Date(life.expiresAt).toLocaleDateString('zh-CN')} 到期（${life.reason}）`)
+
   return out.sort((a, b) => b.confidence - a.confidence)
 }
 
@@ -446,7 +452,7 @@ export function recentlyEndedMeetings(
 
 // ---------------------------------------------------------------- 保存技能时清洗 triggers
 
-const KNOWN_EVENTS: AgentEventKind[] = ['invoice', 'payment-due', 'flight-change', 'travel-booking', 'security-alert', 'contract', 'meeting-invite', 'meeting-notes', 'package-issue', 'job-application', 'custom']
+const KNOWN_EVENTS: AgentEventKind[] = ['invoice', 'payment-due', 'flight-change', 'travel-booking', 'security-alert', 'contract', 'meeting-invite', 'meeting-notes', 'package-issue', 'job-application', 'custom', 'renewal-notice']
 
 /** 编辑器 / IPC 传来的 triggers → 合法的列表（未知事件丢弃，同一事件只留一条）；不是数组返回 undefined（不覆盖） */
 export function sanitizeTriggers(list: unknown): AgentSkillTrigger[] | undefined {

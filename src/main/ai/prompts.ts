@@ -268,3 +268,14 @@ export const FOLLOWUP_NUDGE = `你是用户的邮件助理。用户发出一封�
 3. 结尾给一个低门槛的回应方式（如「已处理的话回复一句即可」「需要补充信息直接回复我」）。
 4. 3-5 句话，中文（对方用英文往来时用英文）；不编造原邮件里没有的金额、日期、编号；不加签名。
 5. subject 沿用原主题，前面加「回复：」（已有回复前缀时保持不变）。`
+
+// ================= 生活档案（证件 / 保险 / 年检 / 会员 / 域名 / 保修等到期事务） =================
+
+/** 启发式拿不准的邮件：判断是不是「到期 / 续期 / 定期要办」的个人事务，并抽取到期日 */
+export const LIFE_EXTRACT = `你在帮用户整理「生活档案」：证件、保险、车辆年检、会员、域名 / 主机、保修、合同、租房 / 物业、税务申报、体检预约、学费、信用卡年费这类有到期日或要定期办理的个人事务。读一封邮件（可能附带 PDF 附件正文），只输出 JSON：
+{"isLife":true|false,"category":"id-document|insurance|vehicle|membership|domain|warranty|contract|housing|tax|health|education|card|other","subject":"对象，如「护照」「车险 · 苏A·12345」「example.com」「健身年卡」（≤20 字，不要写完整证件号）","provider":"机构 / 商家名","event":"notice|renewed|appointment|expired","expiresAt":"YYYY-MM-DD 或 null（到期 / 截止 / 预约日期；续期成功时填新的到期日）","amount":数字或 null,"currency":"CNY|USD|…或 null","reference":"保单号 / 合同号 / 证件尾号，没有就 null","repeat":"year|month|none"}
+规则：
+1. 只有与用户本人相关、有明确到期 / 截止 / 续期 / 预约的事务才 isLife=true；营销推广（会员日、优惠券有效期、限时活动）、验证码有效期、普通账单与订阅扣费、出行预订一律 isLife=false。
+2. 日期、金额、编号必须是邮件原文里出现过的，不能推算或编造；原文没有就填 null。
+3. 不输出完整身份证号 / 护照号 / 银行卡号，编号只给尾号。
+4. 只输出 JSON，不要解释。`
