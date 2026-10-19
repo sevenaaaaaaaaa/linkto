@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AISettings, AttachmentAccessBlock, OcrAvailability, OcrEngine } from '@shared/types'
 import { AIError, checkAiRequestGuard, isLocalEndpoint } from '../ai/service'
@@ -24,11 +24,14 @@ import {
   type JxaResult,
   type VisionMessage
 } from './ocr-parse'
+import { NATIVE_IMAGE_EXTS, nativeOcrFiles, nativePlatformOf, probeNativeOcr, sniffImageType, type NativeProbe } from './ocr-native'
 
 /**
  * 扫描件 / 图片识字（OCR）。三种方式：
- *  - local：macOS 系统文字识别（Vision，VNRecognizeTextRequest accurate + 语言校正），经 osascript -l JavaScript 的 ObjC 桥调用：
- *    零依赖、无需编译、不出本机；在独立的 osascript 子进程里跑，带超时与页数 / 分辨率上限，不阻塞主进程。
+ *  - local：本机识别，不出本机，都在子进程里跑，带超时与页数 / 分辨率上限，不阻塞主进程：
+ *    macOS 系统文字识别（Vision，VNRecognizeTextRequest accurate + 语言校正），经 osascript -l JavaScript 的 ObjC 桥调用；
+ *    Windows 系统文字识别（Windows.Media.Ocr，经 Windows PowerShell）/ Linux tesseract（如已安装），见 ocr-native.ts；
+ *    这两个平台的 PDF 先由 pdf-worker 渲染成图片。
  *  - ai：页面渲染成 JPEG（macOS 用 CoreGraphics，其他平台用 pdf-worker 里的 pdfjs + @napi-rs/canvas），
  *    以 OpenAI 兼容多模态消息逐页发给视觉模型（每页一次请求；云端需要单独授权）。
  *  - local+ai：先本机识别，再把图片 + 本机结果交给 AI 校对错字、还原表格；AI 不可用时退回本机结果。
@@ -66,8 +69,20 @@ export interface OcrRunDeps {
 
 const LANGS = ['zh-Hans', 'zh-Hant', 'en-US']
 
+/** 识字用的平台；开发构建可用 LINKTO_OCR_PLATFORM 模拟其他平台（测试 Windows / Linux 分支），正式安装包忽略 */
+export function ocrPlatform(): string {
+  const o = process.env.LINKTO_OCR_PLATFORM
+  return o && !app.isPackaged ? o : process.platform
+}
+
+/** macOS 系统文字识别（Vision / JXA）可用；Windows / Linux 的本机识字见 localOcrStatus() */
 export function localOcrSupported(): boolean {
-  return process.platform === 'darwin'
+  return ocrPlatform() === 'darwin'
+}
+
+/** 本机识字能不能用（Windows 要看装没装识字语言，Linux 要看装没装 tesseract；结果有缓存） */
+export function localOcrStatus(force = false): Promise<NativeProbe> {
+  return probeNativeOcr(nativePlatformOf(ocrPlatform()), undefined, { force })
 }
 
 /** AI 识字能不能用：AI 已开启、不是内置小模型（不支持识图）、有 Key 或是本地端点 */
@@ -82,15 +97,17 @@ export function visionModelOf(s: AISettings): string {
   return (getAccess().visionModel ?? '').trim() || s.model
 }
 
-/** 界面用：本机 / AI 识字各自能不能用、为什么 */
-export function ocrAvailability(s: AISettings): OcrAvailability {
+/** 界面用：本机 / AI 识字各自能不能用、为什么（localReason：不能用的原因，或能用但有限制的提示） */
+export async function ocrAvailability(s: AISettings): Promise<OcrAvailability> {
   const a = getAccess()
   const aiWhy = aiVisionReady(s)
   const aiLocal = s.baseURL === 'builtin-local' || isLocalEndpoint(s.baseURL)
+  const local = await localOcrStatus().catch(err => ({ ok: false, reason: `检测本机识字失败：${err instanceof Error ? err.message : String(err)}`, engine: null }) as Pick<NativeProbe, 'ok' | 'reason' | 'engine'>)
   return {
-    platform: process.platform,
-    local: localOcrSupported(),
-    localReason: localOcrSupported() ? null : '本机识别只支持 macOS，可以改用 AI 识字',
+    platform: ocrPlatform(),
+    local: local.ok,
+    localReason: local.reason,
+    localEngine: local.engine,
     ai: !aiWhy && (aiLocal || a.sendToCloudAI),
     aiReason: aiWhy ?? (aiLocal || a.sendToCloudAI ? null : '还没有允许把附件内容发给云端 AI'),
     aiLocal,
@@ -205,10 +222,90 @@ async function pageImages(path: string, kind: 'pdf' | 'image', deps: OcrRunDeps,
       rmSync(dir, { recursive: true, force: true })
     }
   }
-  opts.onProgress?.({ stage: 'render', done: 0, total: 1 })
-  const r = await deps.render({ path, maxPages: OCR_LIMITS.aiMaxPages, maxBytes: OCR_LIMITS.maxFileBytes, maxChars: 0, op: 'render', kind, maxDim: OCR_LIMITS.aiMaxDim }, 30_000 + 8_000 * OCR_LIMITS.aiMaxPages)
-  if (!r.ok || !r.images?.length) return { ok: false, error: r.error ?? '页面渲染失败', total: r.pages ?? 0, urls: [] }
-  return { ok: true, total: r.pages ?? r.images.length, urls: r.images.map(b => `data:image/jpeg;base64,${b}`) }
+  // Windows / Linux：图片能直接发就直接发，其余经 pdf-worker 渲染；withLocal 时再交给本机识字（Windows OCR / tesseract）
+  const prep = await prepareImages(path, kind, deps, { maxPages: opts.withLocal ? opts.localPages : OCR_LIMITS.aiMaxPages, maxDim: opts.withLocal ? 2000 : OCR_LIMITS.aiMaxDim, urls: true, files: opts.withLocal, onProgress: opts.onProgress })
+  try {
+    if (!prep.ok) return { ok: false, error: prep.error, total: prep.total, urls: [] }
+    if (!opts.withLocal) return { ok: true, total: prep.total, urls: prep.urls }
+    const nat = await runNative(prep.files, opts.onProgress)
+    if (!nat.ok) return { ok: false, error: nat.error, total: prep.total, urls: [] }
+    return { ok: true, total: prep.total, urls: prep.urls, localTexts: nat.pages }
+  } finally {
+    prep.cleanup()
+  }
+}
+
+/** 直接作为 data URL 发给 AI 的图片：常见格式、不太大（大图仍经渲染缩小） */
+const DIRECT_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }
+const DIRECT_MAX_BYTES = 2 * 1024 * 1024
+
+interface Prepared {
+  ok: boolean
+  error?: string
+  total: number
+  /** data URL（AI 用） */
+  urls: string[]
+  /** 图片文件（本机识字用） */
+  files: string[]
+  cleanup(): void
+}
+
+/** 非 macOS：准备页面图片（data URL 给 AI、文件给本机识字）；PDF 与本机读不了的图片经 pdf-worker 渲染成 JPEG */
+async function prepareImages(path: string, kind: 'pdf' | 'image', deps: OcrRunDeps, o: { maxPages: number; maxDim: number; urls: boolean; files: boolean; onProgress?: (p: OcrProgress) => void }): Promise<Prepared> {
+  const noop = () => {}
+  if (kind === 'image') {
+    // 附件缓存文件没有扩展名：按文件头判断格式
+    let type: ReturnType<typeof sniffImageType> = null
+    let size = Infinity
+    try {
+      size = statSync(path).size
+      const fd = openSync(path, 'r')
+      try {
+        const head = Buffer.alloc(16)
+        type = sniffImageType(head.subarray(0, readSync(fd, head, 0, 16, 0)))
+      } finally {
+        closeSync(fd)
+      }
+    } catch {
+      type = null
+    }
+    const plat = nativePlatformOf(ocrPlatform())
+    const nativeOk = !!type && (plat === 'win32' || plat === 'linux') && NATIVE_IMAGE_EXTS[plat].has(type)
+    let url: string | null = null
+    if (o.urls && type && DIRECT_MIME[type] && size <= DIRECT_MAX_BYTES) {
+      try {
+        url = `data:${DIRECT_MIME[type]};base64,${readFileSync(path).toString('base64')}`
+      } catch {
+        url = null
+      }
+    }
+    if ((!o.urls || url) && (!o.files || nativeOk)) return { ok: true, total: 1, urls: url ? [url] : [], files: o.files ? [path] : [], cleanup: noop }
+  }
+  o.onProgress?.({ stage: 'render', done: 0, total: 1 })
+  const r = await deps.render({ path, maxPages: o.maxPages, maxBytes: OCR_LIMITS.maxFileBytes, maxChars: 0, op: 'render', kind, maxDim: o.maxDim }, 30_000 + 8_000 * o.maxPages)
+  if (!r.ok || !r.images?.length) return { ok: false, error: r.error ?? '页面渲染失败', total: r.pages ?? 0, urls: [], files: [], cleanup: noop }
+  const total = r.pages ?? r.images.length
+  const urls = o.urls ? r.images.map(b => `data:image/jpeg;base64,${b}`) : []
+  if (!o.files) return { ok: true, total, urls, files: [], cleanup: noop }
+  const dir = tempDir()
+  const files = r.images.map((b, i) => {
+    const f = join(dir, `page-${i + 1}.jpg`)
+    writeFileSync(f, Buffer.from(b, 'base64'))
+    return f
+  })
+  return { ok: true, total, urls, files, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+}
+
+/** Windows / Linux 本机识字（先探测；探测结果有缓存） */
+async function runNative(files: string[], onProgress?: (p: OcrProgress) => void): Promise<{ ok: boolean; error?: string; pages: string[] }> {
+  const probe = await localOcrStatus()
+  if (!probe.ok) return { ok: false, error: probe.reason ?? '本机识字不可用', pages: [] }
+  return nativeOcrFiles(probe, files, {
+    maxDim: OCR_LIMITS.localMaxDim,
+    baseMs: OCR_LIMITS.localBaseTimeoutMs,
+    perPageMs: OCR_LIMITS.localPerPageMs * 2,
+    onProgress: (done, total) => onProgress?.({ stage: 'local', done, total })
+  })
 }
 
 // ---------------------------------------------------------------- AI 视觉请求
@@ -282,11 +379,24 @@ async function doRun(path: string, kind: 'pdf' | 'image', engine0: Exclude<OcrEn
   } catch {
     return { ok: false, error: '附件文件不存在' }
   }
-  // 非 macOS 没有本机识别：local+ai 等同 ai；local 直接说明
+  // 非 macOS：本机识字（Windows OCR / tesseract）不可用时，local+ai 等同 ai；local 直接说明原因与办法
   let engine = engine0
-  if (!localOcrSupported()) {
-    if (engine === 'local') return { ok: false, error: '本机识别只支持 macOS，可以在设置 → 附件与存储里改用 AI 识字' }
-    if (engine === 'local+ai') engine = 'ai'
+  if (!localOcrSupported() && engine !== 'ai') {
+    const probe = await localOcrStatus()
+    if (!probe.ok) {
+      if (engine === 'local') return { ok: false, error: probe.reason ?? '这台电脑上没有可用的本机识字，可以在设置 → 附件与存储里改用 AI 识字' }
+      engine = 'ai'
+    } else if (engine === 'local') {
+      const prep = await prepareImages(path, kind, deps, { maxPages: OCR_LIMITS.localMaxPages, maxDim: OCR_LIMITS.localMaxDim, urls: false, files: true, onProgress: opts.onProgress })
+      try {
+        if (!prep.ok) return { ok: false, error: prep.error }
+        const nat = await runNative(prep.files, opts.onProgress)
+        if (!nat.ok) return { ok: false, error: nat.error }
+        return { ok: true, text: pagesToText(nat.pages), method: 'ocr-local', pages: prep.total, truncated: nat.pages.length < prep.total, ms: Date.now() - t0 }
+      } finally {
+        prep.cleanup()
+      }
+    }
   }
 
   if (engine === 'local') {
@@ -324,7 +434,7 @@ async function doRun(path: string, kind: 'pdf' | 'image', engine0: Exclude<OcrEn
     return { ok: true, text: pagesToText(pages), method: 'ocr-ai', pages: imgs.total, truncated: imgs.urls.length < imgs.total, ms: Date.now() - t0 }
   }
 
-  // local+ai（macOS）：一遍渲染 + 本机识别，前 aiMaxPages 页交给 AI 校对
+  // local+ai：一遍渲染 + 本机识别（macOS 同一个 osascript 进程；Windows / Linux 渲染后交给本机识字），前 aiMaxPages 页交给 AI 校对
   const imgs = await pageImages(path, kind, deps, { withLocal: true, localPages: OCR_LIMITS.localMaxPages, onProgress: opts.onProgress })
   if (!imgs.ok) return { ok: false, error: imgs.error }
   const local = imgs.localTexts ?? []

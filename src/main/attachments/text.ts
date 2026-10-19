@@ -268,6 +268,11 @@ export class AttachmentTextService {
     return this.deps.db.prepare('SELECT * FROM attachment_text WHERE attachment_id = ?').get(id) as TextRow | undefined
   }
 
+  /** 页面 / 图片渲染成 JPEG（非 macOS 的识字用；留痕截图识字也借用这个进程） */
+  renderForOcr(job: Omit<PdfJob, 'id'>, timeoutMs: number): Promise<PdfJobResult> {
+    return this.pool.run(job, timeoutMs)
+  }
+
   /** 已缓存的提取信息（不触发提取） */
   info(id: string): AttachmentTextInfo | null {
     const r = this.row(this.realId(id))
@@ -332,7 +337,9 @@ export class AttachmentTextService {
     const cached = this.row(id)
     // 缓存有效：文件哈希没变；失败的（超时 / 解析出错）10 分钟后允许重试，扫描件 / 加密 / 不支持的格式 / 超限不重试
     if (cached && (!cached.hash || !idx?.hash || cached.hash === idx.hash)) {
-      const retry = cached.method === 'none' && !!cached.error && !/扫描|图片|加密|暂不支持|过大/.test(cached.error) && Date.now() - cached.extracted_at > 10 * 60_000
+      // 旧版本「.xls / .ppt 暂不支持」「.doc 只在 macOS 支持」的缓存结果：现在能读了，立即重试
+      const legacyMiss = cached.method === 'none' && !!cached.error && /旧版 (Excel（\.xls）|PowerPoint（\.ppt）)暂不支持|旧版 Word（\.doc）只在 macOS/.test(cached.error)
+      const retry = legacyMiss || (cached.method === 'none' && !!cached.error && !/扫描|图片|加密|暂不支持|过大/.test(cached.error) && Date.now() - cached.extracted_at > 10 * 60_000)
       if (!retry) return { ok: true, text: cached.text ?? '', info: rowInfo(cached) }
     }
     if (opts.download === false && !(idx ? idx.cached && !idx.remote_only : !!att)) return { ok: false, error: '附件不在本地' }
@@ -377,7 +384,7 @@ export class AttachmentTextService {
       return { ok: r.ok, error: r.error, text: r.text, method: 'pdfjs', pages: r.pages, truncated: r.truncated, scanned: r.scanned }
     }
     if (kind === 'office') {
-      // Word / Excel / PowerPoint：解压与 XML 抽取在 office-worker 子进程里做（旧版 .doc 在子进程里调 textutil）
+      // Word / Excel / PowerPoint：解压与 XML 抽取、旧版二进制格式（xls / ppt / doc）解析都在 office-worker 子进程里做（.doc 在 macOS 先试 textutil）
       const r = await this.officePool.run({ path, ext, maxChars: TEXT_LIMITS.maxChars }, TEXT_LIMITS.timeoutMs)
       return { ok: r.ok, error: r.error, text: r.text, method: 'office', pages: r.pages, truncated: r.truncated }
     }

@@ -1,7 +1,7 @@
 /**
  * Word / Excel / PowerPoint 正文提取专用 utilityProcess 入口：解压 + XML 文本抽取都是同步 CPU 活，
  * 放在这里跑，主进程只收发消息；超时 / 崩溃由主进程 kill 后下次重新拉起（与 pdf-worker 共用同一套进程池实现）。
- * 只读取 ZIP 里的 XML 文本部件，从不执行宏、不加载外部资源、不把任何条目写到磁盘。
+ * 只读取 ZIP 里的 XML 文本部件 / 复合文档（旧版 xls / ppt / doc）里的文本记录，从不执行宏、不加载外部资源、不把任何条目写到磁盘。
  */
 import { extractOffice, OFFICE_LIMITS } from './office'
 
@@ -17,7 +17,7 @@ export interface OfficeJobResult {
   ok: boolean
   error?: string
   text?: string
-  /** docx：页数（文档属性）；xlsx：工作表数；pptx：幻灯片数 */
+  /** docx：页数（文档属性）；xlsx / xls：工作表数；pptx / ppt：幻灯片数 */
   pages?: number
   truncated?: boolean
   format?: string

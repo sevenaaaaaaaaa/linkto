@@ -3,6 +3,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { decodeEntities, tidyText } from './text-parse'
+import { readLegacyOffice } from './legacy-office'
 
 export { OFFICE_EXTS, isOfficeMime } from './text-parse'
 
@@ -13,7 +14,8 @@ export { OFFICE_EXTS, isOfficeMime } from './text-parse'
  *  - OOXML：docx（段落 / 表格 → Markdown 表格 / 页眉页脚 / 脚注尾注，批注忽略）、xlsx（共享字符串 + 工作表名 + 单元格，
  *    按工作表输出、制表符分隔、日期格式按样式转换）、pptx（按幻灯片顺序 + 备注）；宏文件（docm / xlsm / pptm）只读 XML，不碰 vbaProject
  *  - OpenDocument：odt / ods / odp（content.xml）
- *  - 旧格式：.doc / .rtf 在 macOS 用系统 textutil（execFile，路径作参数，带超时）；.xls / .ppt 暂不支持
+ *  - 旧版二进制格式（legacy-office.ts，复合文档读取器）：.xls（BIFF8）/ .ppt / .doc（piece table）；
+ *    .doc / .rtf 在 macOS 优先用系统 textutil（execFile，路径作参数，带超时），.doc 失败或非 macOS 时用纯 JS 解析
  * 工作表 / 幻灯片之间用分页符 \n\f\n 分隔（与 PDF 一致：slicePages 按工作表 / 页读，pages = 工作表数 / 幻灯片数）。
  */
 
@@ -38,7 +40,7 @@ export const OFFICE_LIMITS = {
 }
 
 export type OfficeLimits = typeof OFFICE_LIMITS
-export type OfficeFormat = 'docx' | 'xlsx' | 'pptx' | 'odt' | 'ods' | 'odp' | 'doc' | 'rtf'
+export type OfficeFormat = 'docx' | 'xlsx' | 'pptx' | 'odt' | 'ods' | 'odp' | 'doc' | 'rtf' | 'xls' | 'ppt'
 
 export interface OfficeResult {
   ok: boolean
@@ -524,6 +526,13 @@ export function fmtKindOfCode(code: string): CellFmt {
   return null
 }
 
+/** 内置数字格式 id → 格式类别（xlsx 的 numFmtId 与 xls 的 ifmt 编号相同） */
+export function builtinFmtKind(id: number): CellFmt {
+  if (BUILTIN_TIME.has(id)) return id === 22 ? 'datetime' : 'time'
+  if (BUILTIN_DATE.has(id)) return id === 22 ? 'datetime' : 'date'
+  return id === 9 || id === 10 ? 'percent' : null
+}
+
 /** styles.xml → cellXfs 下标 → 格式类别 */
 export function parseCellFormats(xml: string | null): CellFmt[] {
   if (!xml) return []
@@ -539,7 +548,7 @@ export function parseCellFormats(xml: string | null): CellFmt[] {
     else if (inXfs && k.t === 'o' && k.n === 'xf') {
       const id = Number(attr(k.a, 'numFmtId') ?? 0)
       const code = custom.get(id)
-      out.push(code != null ? fmtKindOfCode(code) : BUILTIN_TIME.has(id) ? (id === 22 ? 'datetime' : 'time') : BUILTIN_DATE.has(id) ? (id === 22 ? 'datetime' : 'date') : id === 9 || id === 10 ? 'percent' : null)
+      out.push(code != null ? fmtKindOfCode(code) : builtinFmtKind(id))
     }
   }
   return out
@@ -1006,9 +1015,10 @@ export function readOfficeZip(zip: ZipArchive, limits: OfficeLimits = OFFICE_LIM
 const OOXML_EXT = /^(docx|docm|dotx|dotm|xlsx|xlsm|xltx|xltm|pptx|pptm|potx|potm|ppsx|ppsm)$/
 
 /**
- * 字节 → 正文（同步，给子进程 / 单测用）。旧格式返回 { ok:false, format:'doc' } 让调用方走 textutil。
+ * 字节 → 正文（同步，给子进程 / 单测用）。.xls / .ppt 与（docFallback 时的）.doc 用 legacy-office.ts 的纯 JS 解析；
+ * 其余旧格式返回 { ok:false, format:'doc' | 'rtf', error:'legacy' } 让调用方走 textutil。docFallback 默认：非 macOS 为 true。
  */
-export function extractOfficeBuffer(buf: Buffer, ext: string, limits: OfficeLimits = OFFICE_LIMITS): OfficeResult {
+export function extractOfficeBuffer(buf: Buffer, ext: string, limits: OfficeLimits = OFFICE_LIMITS, opts: { docFallback?: boolean } = {}): OfficeResult {
   const e = (ext || '').toLowerCase()
   try {
     if (isZip(buf)) {
@@ -1016,10 +1026,10 @@ export function extractOfficeBuffer(buf: Buffer, ext: string, limits: OfficeLimi
       return { ...r, text: (r.text ?? '').slice(0, limits.maxChars), truncated: r.truncated || (r.text ?? '').length > limits.maxChars }
     }
     if (isCfb(buf)) {
-      if (OOXML_EXT.test(e)) return { ok: false, error: '文档已加密（需要密码），无法读取文字' }
-      if (e === 'xls' || e === 'xlt') return { ok: false, error: '旧版 Excel（.xls）暂不支持读取文字，可另存为 .xlsx 后再试' }
-      if (e === 'ppt' || e === 'pps') return { ok: false, error: '旧版 PowerPoint（.ppt）暂不支持读取文字，可另存为 .pptx 后再试' }
-      return { ok: false, format: 'doc', error: 'legacy' }
+      // 旧版二进制格式（xls / ppt / doc）或加密的 OOXML：按复合文档里的流判断
+      const r = readLegacyOffice(buf, limits, { docFallback: opts.docFallback ?? process.platform !== 'darwin', ooxmlExt: OOXML_EXT.test(e) })
+      if (!r.ok) return r
+      return { ...r, text: (r.text ?? '').slice(0, limits.maxChars), truncated: r.truncated || (r.text ?? '').length > limits.maxChars }
     }
     if (/^\s*\{\\rtf/.test(buf.subarray(0, 64).toString('latin1'))) return { ok: false, format: 'rtf', error: 'legacy' }
     if (e === 'doc' || e === 'dot') return { ok: false, format: 'doc', error: 'legacy' }
@@ -1055,10 +1065,16 @@ export async function extractOffice(path: string, ext: string, limits: OfficeLim
   }
   if (size > limits.maxFileBytes) return { ok: false, error: `文件过大（${Math.round(size / 1048576)} MB），未提取` }
   const buf = readFileSync(path)
-  const r = extractOfficeBuffer(buf, ext, limits)
+  // macOS 上 .doc 先用系统 textutil（排版还原更好），失败再用纯 JS 的 piece table 解析；LINKTO_DOC_FALLBACK=1 强制直接走后备（测试用）
+  const forceFallback = process.env.LINKTO_DOC_FALLBACK === '1'
+  const r = extractOfficeBuffer(buf, ext, limits, { docFallback: forceFallback || process.platform !== 'darwin' })
   if (r.ok || r.error !== 'legacy') return r
   const t = await textutilToText(path, limits.timeoutMs)
-  if (!t.ok) return { ok: false, error: t.error }
+  if (!t.ok) {
+    if (r.format !== 'doc') return { ok: false, error: t.error }
+    const fb = extractOfficeBuffer(buf, ext, limits, { docFallback: true })
+    return fb.ok || fb.error !== 'legacy' ? fb : { ok: false, error: t.error }
+  }
   const text = t.text ?? ''
   return { ok: true, text: text.slice(0, limits.maxChars), pages: 1, truncated: text.length > limits.maxChars, format: r.format }
 }

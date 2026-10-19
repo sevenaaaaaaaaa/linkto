@@ -1573,9 +1573,12 @@ export type AttachmentAccessBlock = 'consent' | 'kind' | 'account' | 'cloud'
 /** 本机 / AI 识字各自能不能用（界面据此显示按钮与说明） */
 export interface OcrAvailability {
   platform: string
-  /** 本机识别（macOS 系统文字识别） */
+  /** 本机识别（macOS 系统文字识别 / Windows 系统文字识别 / Linux tesseract） */
   local: boolean
+  /** 本机识别不能用的原因，或能用但有限制的提示（如缺中文识字语言） */
   localReason?: string | null
+  /** 本机识别引擎的名字（界面提示用） */
+  localEngine?: string | null
   /** AI 识字：AI 已配置、不是内置小模型，且（本地端点或已允许发给云端 AI） */
   ai: boolean
   aiReason?: string | null

@@ -90,7 +90,12 @@ export function ContentAccessSection() {
           {st && !st.ai && st.aiReason && <div className="mt-1.5 text-2xs" style={{ color: 'var(--warn-ink)' }}>AI 识字暂不可用：{st.aiReason}</div>}
         </div>
       )}
-      {st && !st.local && <div className="py-2 text-2xs" style={{ color: 'var(--faint)' }}>本机识别只支持 macOS；这台电脑可以选 AI 识字。</div>}
+      {st?.localReason && (
+        <div className="py-2 text-2xs leading-relaxed" style={{ color: st.local ? 'var(--faint)' : 'var(--warn-ink)' }}>
+          {st.local ? `本机识别（${st.localEngine ?? '系统文字识别'}）：` : '本机识别暂不可用：'}
+          {st.localReason}
+        </div>
+      )}
       {accounts.length > 0 && (
         <div className="py-3 border-b border-[var(--border-soft)]">
           <div className="text-sm" style={{ color: 'var(--fg)' }}>不读取这些账户的附件</div>

@@ -25,7 +25,7 @@ export const KIND_OPTIONS: { id: AttachmentContentKind; label: string; desc: str
 ]
 
 export const ENGINE_OPTIONS: { id: Exclude<OcrEngine, 'off'>; label: string; desc: string; needsLocal?: boolean; usesAI?: boolean }[] = [
-  { id: 'local', label: '本机识别', desc: 'macOS 系统自带的文字识别，完全在本机完成，免费', needsLocal: true },
+  { id: 'local', label: '本机识别', desc: '电脑自带的文字识别（macOS / Windows 系统识字，Linux 用 tesseract），完全在本机完成，免费', needsLocal: true },
   { id: 'ai', label: 'AI 识字', desc: '页面图片发给视觉模型识别，复杂表格与手写更准；每页约一次视觉请求，按你的 AI 服务计费', usesAI: true },
   { id: 'local+ai', label: '本机识别 + AI 校对', desc: '先本机识别，再让 AI 对照图片改错字、还原表格；AI 不可用时用本机结果', needsLocal: true, usesAI: true }
 ]
@@ -56,7 +56,7 @@ export function KindChips(props: { kinds: Record<AttachmentContentKind, boolean>
   )
 }
 
-/** 识字方式（单选卡片）；非 macOS 不显示本机相关选项 */
+/** 识字方式（单选卡片）；本机识字不可用（如 Windows 没装识字语言、Linux 没装 tesseract）时不显示本机相关选项 */
 export function EngineChoice(props: { value: OcrEngine; onChange(v: Exclude<OcrEngine, 'off'>): void; status: OcrAvailability | null; disabled?: boolean; name: string }) {
   const opts = ENGINE_OPTIONS.filter(o => !o.needsLocal || props.status?.local !== false)
   return (
@@ -77,8 +77,11 @@ export function EngineChoice(props: { value: OcrEngine; onChange(v: Exclude<OcrE
           </label>
         )
       })}
-      {props.status && !props.status.local && (
-        <div className="text-2xs leading-relaxed" style={{ color: 'var(--faint)' }}>本机识别只支持 macOS；这台电脑可以用 AI 识字。</div>
+      {props.status?.localReason && (
+        <div className="text-2xs leading-relaxed" style={{ color: 'var(--faint)' }}>
+          {props.status.local ? '本机识别：' : '本机识别暂不可用：'}
+          {props.status.localReason}
+        </div>
       )}
     </div>
   )

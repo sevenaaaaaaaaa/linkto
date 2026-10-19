@@ -13,10 +13,12 @@ import type { AIService } from '../ai/service'
 import type { SyncEngine } from '../mail/sync-engine'
 import { onOutboxEvent } from '../mail/outbox'
 import { inQuietHours } from '../notify-policy'
-import { allows, getAccess } from '../attachments/access'
-import { localOcrSupported, ocrAvailability, runOcr } from '../attachments/ocr'
+import { allows, allowsAI, getAccess } from '../attachments/access'
+import { localOcrStatus, localOcrSupported, ocrAvailability, runOcr } from '../attachments/ocr'
+import { chooseOcrEngine } from '../attachments/ocr-native'
 import { OCR_LIMITS } from '../attachments/ocr-parse'
 import type { PdfJobResult } from '../attachments/pdf-worker'
+import { attachmentText } from '../attachments/text'
 import { TraceService } from './service'
 import { TraceSync } from './sync'
 
@@ -147,8 +149,15 @@ export function initTrace(deps: InitTraceDeps): TraceService {
     if (buf.length > OCR_LIMITS.maxFileBytes) return { ok: false, error: `图片过大（超过 ${Math.round(OCR_LIMITS.maxFileBytes / 1048576)} MB）` }
     const gate = allows('ocr', { reason: input.name || '留痕截图' })
     if (!gate.ok) return { ok: false, error: gate.error, blocked: gate.block }
-    const engine = getAccess().ocrEngine
-    if (engine === 'off') return { ok: false, error: '文字识别已关闭（设置 → 附件与存储 → 附件内容读取）' }
+    const engine0 = getAccess().ocrEngine
+    if (engine0 === 'off') return { ok: false, error: '文字识别已关闭（设置 → 附件与存储 → 附件内容读取）' }
+    // 非 macOS：本机识字（Windows 系统文字识别 / tesseract）可用就用；不可用而用户允许 AI（allowsAI + 上面的 ocr 授权）时改走 AI 识字
+    const mac = localOcrSupported()
+    const probe = mac || engine0 === 'ai' ? null : await localOcrStatus().catch(() => null)
+    const ai = deps.getAISettings()
+    const pick = chooseOcrEngine(engine0, { macVision: mac, nativeOk: !!probe?.ok, nativeReason: probe?.reason ?? null, aiAllowed: !!ai.enabled && allowsAI(ai.baseURL) })
+    if ('error' in pick) return { ok: false, error: pick.error }
+    const engine = pick.engine
     const ext = (m[1].split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/g, '')
     const path = join(app.getPath('temp'), `linkto-trace-${randomUUID()}.${ext}`)
     try {
@@ -159,8 +168,8 @@ export function initTrace(deps: InitTraceDeps): TraceService {
         engine,
         {
           getAISettings: deps.getAISettings,
-          // 非 macOS 的 AI 识字需要 pdf-worker 渲染；留痕截图暂不支持，提示改在 macOS 上用本机识别
-          render: async () => ({ id: '', ok: false, error: '这台电脑上暂不支持截图识字（需要 macOS 本机识别）' }) as PdfJobResult
+          // 非 macOS：常见格式的截图直接发给 AI / 交给本机识字；其他格式或过大的图片借附件正文服务的 pdf-worker 渲染
+          render: async (job, timeoutMs) => attachmentText()?.renderForOcr(job, timeoutMs) ?? ({ id: '', ok: false, error: '图片渲染服务尚未就绪，请稍后再试' } as PdfJobResult)
         },
         { filename: input.name ?? undefined }
       )
@@ -244,15 +253,15 @@ export function initTrace(deps: InitTraceDeps): TraceService {
     traceVerify: (id: string) => svc.verify(String(id)),
     traceArchiveMail: (id: string) => archiveMail(id),
     traceOpenCapture: () => deps.openCapture(),
-    traceCapabilities: () => {
+    traceCapabilities: async () => {
       const a = svc.aiAvailable()
       let ocr = null
       try {
-        ocr = ocrAvailability(deps.getAISettings())
+        ocr = await ocrAvailability(deps.getAISettings())
       } catch {
         ocr = null
       }
-      return { ...a, ocr: ocr ? { ...ocr, local: ocr.local && localOcrSupported() } : null }
+      return { ...a, ocr }
     },
     traceSyncStatus: () => sync!.status(),
     traceSyncConfigure: (input: { enabled: boolean }) => sync!.configure({ enabled: !!input?.enabled }),

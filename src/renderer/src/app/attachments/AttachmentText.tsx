@@ -307,7 +307,7 @@ function OcrButtons(props: { status: OcrAvailability; rerun: boolean; aiEngine: 
     <div className="flex flex-wrap items-center gap-1.5">
       {props.rerun && <span className="text-2xs" style={{ color: 'var(--faint)' }}>重新识别：</span>}
       {st.local && (
-        <button onClick={() => props.onRun('local')} className={btn} style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} title="macOS 系统文字识别，不出本机">
+        <button onClick={() => props.onRun('local')} className={btn} style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} title={`${st.localEngine ?? '系统文字识别'}，不出本机${st.localReason ? `\n${st.localReason}` : ''}`}>
           <IconFileText width={12} height={12} /> 用本机识字
         </button>
       )}
@@ -321,6 +321,11 @@ function OcrButtons(props: { status: OcrAvailability; rerun: boolean; aiEngine: 
         <IconSparkles width={12} height={12} /> 用 AI 识字
       </button>
       {!st.ai && st.aiReason && <span className="text-2xs" style={{ color: 'var(--faint)' }}>{st.aiReason}</span>}
+      {!st.local && st.localReason && st.platform !== 'darwin' && (
+        <span className="text-2xs" style={{ color: 'var(--faint)' }} title={st.localReason}>
+          本机识字不可用：{st.localReason.split(/[：；]/)[0]}
+        </span>
+      )}
       {st.ai && <span className="text-2xs" style={{ color: 'var(--faint)' }}>AI 每页约一次视觉请求{st.aiLocal ? '' : '，按你的 AI 服务计费'}</span>}
     </div>
   )
