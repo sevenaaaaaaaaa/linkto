@@ -7,9 +7,8 @@ import { SignaturesTab, TemplatesTab } from './tabs/ContentTabs'
 import { AutomationTab } from './tabs/AutomationTab'
 import { AiTab } from './tabs/AiTab'
 import { IntegrationsTab, TodoIntegrationsSection } from './tabs/IntegrationsTab'
-import { BackupTab } from './tabs/BackupTab'
+import { SyncBackupTab } from './tabs/SyncBackupTab'
 import { PersonalTab } from './tabs/PersonalTab'
-import { TodoSyncSection } from './tabs/TodoSyncSection'
 import { AttachmentsTab } from './tabs/AttachmentsTab'
 import { ShareTab } from './tabs/ShareTab'
 import { FeedsTab } from './tabs/FeedsTab'
@@ -44,7 +43,7 @@ const GROUPS: { title: string; pages: Page[] }[] = [
       { id: 'personal', label: '个性化', desc: '列表、阅读、侧栏、账户颜色、字体与快捷键', icon: IconPalette, keywords: '个性化 密度 紧凑 舒适 字号 字体 宽度 侧栏 快捷键 单键 颜色 AI 要点 分区 简报 划重点 右侧栏' },
       { id: 'notifications', label: '通知', desc: '新邮件提醒、智能通知、免打扰与声音', icon: IconBell, keywords: '通知 提醒 声音 免打扰 智能通知 角标 测试通知' },
       { id: 'rules', label: '自动化', desc: 'AI 自动处理、规则与一键配方、定期整理', icon: IconLayers, keywords: '自动化 规则 配方 自动归档 自动分类 自动提炼 每日简报 理解新邮件 AI 判断 连接器动作 整理 清理' },
-      { id: 'todo', label: '待办与日历', desc: '跨设备同步待办，打通提醒事项、系统日历、Google Tasks、Microsoft To Do', icon: IconCheckSquare, keywords: '待办 同步 跨设备 手机 加密 口令 提醒事项 Reminders 日历 Calendar Google Tasks Microsoft To Do Outlook' }
+      { id: 'todo', label: '待办与日历', desc: '打通提醒事项、系统日历、Google Tasks、Microsoft To Do', icon: IconCheckSquare, keywords: '待办 同步 手机 提醒事项 Reminders 日历 Calendar Google Tasks Microsoft To Do Outlook' }
     ]
   },
   {
@@ -60,7 +59,7 @@ const GROUPS: { title: string; pages: Page[] }[] = [
     title: '数据与系统',
     pages: [
       { id: 'attachments', label: '附件与存储', desc: '本地附件占用、缓存释放策略、分门别类归档到网盘', icon: IconAttach, keywords: '附件 存储 空间 占用 缓存 释放 清理 归档 网盘 Proton Drive Dropbox WebDAV 发票 合同 重复文件 目录模板 自动规则 附件内容 读取授权 OCR 识字 扫描件 图片文字 视觉模型' },
-      { id: 'backup', label: '备份', desc: '加密备份账户配置，跨设备恢复', icon: IconArchive, keywords: '备份 恢复 迁移 iCloud Dropbox Proton Drive 坚果云 OneDrive 口令 加密' },
+      { id: 'backup', label: '同步与备份', desc: '跨设备同步账户、凭据与 Agent 数据；加密备份与恢复', icon: IconArchive, keywords: '同步 跨设备 新设备 多台电脑 设备 口令 账户 凭据 密码 Bridge 记忆 知识库 技能 对话 财务 项目 生活档案 订阅 规则 模板 签名 备份 恢复 迁移 自动备份 iCloud Dropbox Proton Drive 坚果云 OneDrive 加密' },
       { id: 'general', label: '通用', desc: '外观主题、隐私、开机自启与关于', icon: IconSettings, keywords: '通用 主题 明暗 深色 外观 远程图片 隐私 删除 开机自启 Dock 角标 Screener 新发件人审批 关于 版本' }
     ]
   }
@@ -167,8 +166,8 @@ export default function SettingsApp() {
           {tab === 'ai' && <AiTab />}
           {tab === 'integrations' && <IntegrationsTab />}
           {tab === 'share' && <ShareTab />}
-          {tab === 'backup' && <BackupTab />}
-          {tab === 'todo' && <TodoSettingsPage />}
+          {tab === 'backup' && <SyncBackupTab />}
+          {tab === 'todo' && <TodoSettingsPage setTab={setTab} />}
           {tab === 'attachments' && <AttachmentsTab />}
           {tab === 'feeds' && <FeedsTab />}
         </div>
@@ -198,7 +197,7 @@ function NavItem(props: { page: Page; active: boolean; sub?: string; onClick(): 
 }
 
 /** 待办与日历：跨设备同步（自己的邮箱）+ 外部服务打通 */
-function TodoSettingsPage() {
+function TodoSettingsPage({ setTab }: { setTab(tab: string): void }) {
   const [toast, setToast] = useState('')
   useEffect(() => {
     if (!toast) return
@@ -207,7 +206,12 @@ function TodoSettingsPage() {
   }, [toast])
   return (
     <div className="max-w-[680px] flex flex-col gap-8">
-      <TodoSyncSection />
+      <div className="max-w-[620px] rounded-2xl bg-panel border border-line px-4 py-3 text-xs leading-relaxed text-ink-2">
+        待办的跨设备同步已移到「同步与备份」，和账户、Agent 记忆等一起用同一个邮箱和口令同步。
+        <button className="no-drag ml-1.5 font-medium underline underline-offset-2 text-ink" onClick={() => setTab('backup')}>
+          前往同步与备份
+        </button>
+      </div>
       <div className="max-w-[620px]">
         <TodoIntegrationsSection onToast={setToast} />
       </div>

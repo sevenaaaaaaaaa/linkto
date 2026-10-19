@@ -778,3 +778,26 @@ export interface LinkToApi {
   /** 各侧栏入口的数据量（只读计数），用于升级用户「已经在用的入口默认钉住」 */
   sidebarUsage(): Promise<Record<'feeds' | 'life' | 'trace' | 'finance' | 'kb' | 'attachments' | 'snoozed' | 'flagged' | 'pinned', number>>
 }
+
+// ---------- 跨设备同步与备份（devsync* / backupx*；与上面的 LinkToApi 声明合并，类型见 ./devsync） ----------
+
+export interface LinkToApi {
+  devsyncStatus(): Promise<import('./devsync').DevSyncStatus>
+  /** 开启 / 关闭 / 改类别；邮箱、口令、设备名与待办同步共用。开启时立即同步一轮 */
+  devsyncConfigure(input: import('./devsync').DevSyncConfigureInput): Promise<{ ok: boolean; error?: string; status: import('./devsync').DevSyncStatus }>
+  devsyncNow(): Promise<import('./devsync').DevSyncStatus>
+  /** 另一台设备删除了账户：delete = 本机也删除；keep = 本机保留 */
+  devsyncResolveDelete(key: string, action: 'delete' | 'keep'): Promise<import('./devsync').DevSyncStatus>
+  /** 试用另一台设备同步来的本机专用凭据（用户确认后） */
+  devsyncUseCandidate(accountId: string): Promise<{ ok: boolean; error?: string }>
+  /** 界面偏好（localStorage）推给主进程，参与「个性化设置」同步 */
+  devsyncPushUiPrefs(data: unknown): Promise<void>
+  devsyncUiPrefs(): Promise<unknown>
+  backupxExport(input: { targetId: string; passphrase: string; includeSecrets: boolean; categories?: import('./devsync').DevSyncCategory[] }): Promise<{ ok: boolean; error?: string; path?: string; counts?: Partial<Record<import('./devsync').DevSyncCategory, number>> }>
+  backupxPick(): Promise<{ ok: boolean; error?: string; path?: string; header?: import('./devsync').BackupxHeader }>
+  backupxInspect(path: string, passphrase: string): Promise<{ ok: boolean; error?: string; header?: import('./devsync').BackupxHeader; counts?: Partial<Record<import('./devsync').DevSyncCategory, number>>; hasSecrets?: boolean }>
+  backupxRestore(path: string, passphrase: string, opts: { categories?: import('./devsync').DevSyncCategory[]; strategy?: 'merge' | 'overwrite' }): Promise<import('./devsync').BackupxRestoreResult>
+  backupxAutoGet(): Promise<import('./devsync').BackupxAutoSettings>
+  backupxAutoSet(input: Partial<import('./devsync').BackupxAutoSettings> & { passphrase?: string; pickDir?: boolean }): Promise<{ ok: boolean; error?: string; settings: import('./devsync').BackupxAutoSettings }>
+  backupxAutoRun(): Promise<{ ok: boolean; error?: string; path?: string; removed?: number }>
+}

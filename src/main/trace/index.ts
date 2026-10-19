@@ -34,6 +34,11 @@ export function openTraceCapture() {
 }
 
 /** 留痕服务（未初始化时为 null）：Agent 工具 / 同步钩子共用 */
+/** 留痕同步（设置 → 同步与备份 的「留痕」类别开关） */
+export function traceSyncHandle(): TraceSync | null {
+  return sync
+}
+
 export function traceService(): TraceService | null {
   return service
 }

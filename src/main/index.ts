@@ -44,7 +44,9 @@ import { initRuleSuggest } from './rule-suggest'
 import { initLife, lifeService } from './life'
 import { initShare, listenAppLinks } from './share'
 import { initFeeds } from './feeds'
-import { initTrace, traceOnArrival, stopTrace, openTraceCapture } from './trace'
+import { initTrace, traceOnArrival, stopTrace, openTraceCapture, traceSyncHandle } from './trace'
+import { DevSyncService, registerDevSyncIpc } from './devsync'
+import { BackupX, registerBackupxIpc } from './devsync/backupx'
 import { registerUpgradeIpc } from './upgrade'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
@@ -144,6 +146,7 @@ let backupService: BackupService
 let ghost: GhostService
 let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
+let devSync: DevSyncService | null = null
 let projects: ProjectService | null = null
 let finance: FinanceService | null = null
 let jobs: ReturnType<typeof initJobs> | null = null
@@ -838,6 +841,31 @@ async function bootstrap() {
   mcp.attachExtraTools({ list: () => agentRuntime.readTools(), run: (name, args) => agentRuntime.runReadTool(name, args) })
   classifyMessages = internal.aiClassify
   runRuleActions = internal.runRuleActions
+  // 跨设备同步（账户与凭据 + Agent 与各中心数据，LinkTo-Vault）与备份 v2（api:devsync* / api:backupx*）；须在自动任务之前（注册每周自动备份）
+  try {
+    devSync = new DevSyncService({
+      db,
+      store: mailStore,
+      appStore,
+      engine,
+      sender,
+      oauth,
+      todoSync: todoSync!,
+      traceSync: () => traceSyncHandle(),
+      afterApply: types => {
+        if (types.includes('ins.project')) projects?.invalidate()
+      },
+      setStatus: (accountId, status, text) => {
+        statuses.set(accountId, { status, text })
+        broadcast({ type: 'account-status', accountId, status, text, errorKind: status === 'error' ? classifyAccountError(text) : undefined })
+      },
+      event: payload => broadcast(payload)
+    })
+    registerDevSyncIpc(devSync)
+    registerBackupxIpc(new BackupX({ store: mailStore, appStore, oauth, backup: backupService, devsync: devSync, event: payload => broadcast(payload) }))
+  } catch (err) {
+    console.error('[devsync] init failed:', err)
+  }
   // 后台自动任务（待办补扫 / 财务 / 附件 / 项目 / 知识库学习 / 每日简报 / 定期整理 / 定时技能）+ 活动记录 + 首次整理引导
   try {
     jobs = initJobs({
@@ -956,6 +984,7 @@ async function bootstrap() {
   void mcp.apply().catch(err => console.error('[mcp] start failed:', err))
   // 待办跨设备同步（未开启时只挂定时器、不连网）
   todoSync.start()
+  devSync?.start()
 }
 
 app.whenReady().then(() => {
@@ -975,6 +1004,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   todoSync?.stop()
+  devSync?.stop()
   stopTrace()
   jobs?.stop()
   attachmentService()?.stop()

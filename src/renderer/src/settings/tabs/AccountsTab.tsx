@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, useMailEvent } from '../../lib/api'
 import { IconPlus, IconMinus, IconRefresh, IconCheck, IconClose, IconKey, IconSparkles } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
+import { DevSyncAccountNotice } from './DevSyncAccountNotice'
 import { PROVIDER_PRESETS, presetFor } from '@shared/presets'
 import { ACCOUNT_COLORS } from '@shared/presets'
 import { takeAccountFocus, type AccountFocus } from '../account-focus'
@@ -171,6 +172,7 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void; a
             登录已失效：{a.authType === 'oauth' ? '用下方「重新授权」在浏览器里确认，完成后自动恢复同步' : '在下方重新输入授权码 / 应用专用密码，保存后自动恢复同步'}
           </div>
         )}
+        <DevSyncAccountNotice account={a} onChanged={props.onChanged} onPassword={() => setShowPwd(true)} onReauth={() => void reauthorize()} />
         <div className="flex items-center gap-4 py-2.5 border-b border-ink/[0.04]">
           <span className="flex-1 text-sm text-zinc-800">名称</span>
           <input

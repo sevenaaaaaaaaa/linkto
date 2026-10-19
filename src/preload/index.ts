@@ -73,7 +73,10 @@ const METHOD_NAMES = [
   'traceFromMessage', 'traceMakeTodo', 'traceRemember', 'traceVerify', 'traceExport', 'traceArchiveMail', 'traceOpenCapture', 'traceCapabilities',
   'traceSyncStatus', 'traceSyncConfigure', 'traceSyncNow',
   // 升级向导 / 侧栏
-  'upgradeState', 'upgradeSetSeen', 'upgradeLater', 'sidebarUsage'
+  'upgradeState', 'upgradeSetSeen', 'upgradeLater', 'sidebarUsage',
+  // 跨设备同步与备份
+  'devsyncStatus', 'devsyncConfigure', 'devsyncNow', 'devsyncResolveDelete', 'devsyncUseCandidate', 'devsyncPushUiPrefs', 'devsyncUiPrefs',
+  'backupxExport', 'backupxPick', 'backupxInspect', 'backupxRestore', 'backupxAutoGet', 'backupxAutoSet', 'backupxAutoRun'
 ] as const
 
 const api = {} as LinkToApi

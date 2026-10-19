@@ -76,6 +76,11 @@ export class ProjectService {
     return this.deps.store.db
   }
 
+  /** 数据被外部改写后（跨设备同步 / 备份恢复）丢弃缓存 */
+  invalidate() {
+    this.changed()
+  }
+
   private changed() {
     this.cache = null
     this.judged.clear()

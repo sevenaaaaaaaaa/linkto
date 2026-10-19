@@ -20,6 +20,7 @@ import { followupJob } from '../followups/job'
 import { ruleSuggestJob } from '../rule-suggest'
 import { lifeJob } from '../life/job'
 import { feedJobs } from '../feeds/job'
+import { backupX } from '../devsync/backupx'
 
 export interface JobsDeps extends Omit<WorkDeps, 'activity'> {
   db: DatabaseSync
@@ -76,6 +77,9 @@ export function initJobs(input: JobsDeps) {
   scheduler.register(ruleSuggestJob())
   scheduler.register(lifeJob())
   for (const j of feedJobs()) scheduler.register(j)
+  // 定期自动备份（设置 → 同步与备份；开关跟随自动备份设置）
+  const bx = backupX()
+  if (bx) scheduler.register(bx.job())
 
   // ---------------- 定时技能 ----------------
 
