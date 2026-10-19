@@ -117,8 +117,11 @@ fi
 
 # ---------- 4. Build ----------
 dmg="dist/${APP_NAME}-${VERSION}-arm64.dmg"
-log "building: npm run dist…"
-npm run dist || die "build failed (commit/tag stay local; fix and re-run to resume)"
+# macOS signing identity: stable local identity when set up (scripts/setup-signing.sh), else ad-hoc
+# shellcheck source=lib/mac-signing.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/mac-signing.sh"
+log "building: npm run dist (${MAC_SIGN_DESC})…"
+npm run dist -- ${MAC_SIGN_ARGS[@]+"${MAC_SIGN_ARGS[@]}"} || die "build failed (commit/tag stay local; fix and re-run to resume)"
 [ -f "$dmg" ] || die "expected DMG not found: $dmg"
 mnt="$(mktemp -d /tmp/linkto-dmg-check.XXXXXX)"
 hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null || die "cannot mount $dmg"

@@ -14,6 +14,9 @@ import { openFeeds } from '../lib/feeds'
 import { openTraceCapture } from '../lib/trace'
 import { openSidebarEditor } from './Sidebar'
 import { openUpgradeWizard } from './upgrade/UpgradeWizard'
+import { pinyinMatch, usePinyin } from '../lib/pinyin'
+import { openContactTimeline } from '../lib/projects'
+import type { RecipientSuggestion } from '@shared/ipc'
 
 interface Command {
   id: string
@@ -35,6 +38,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const [results, setResults] = useState<MessageSummary[]>([])
+  const [contacts, setContacts] = useState<RecipientSuggestion[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -43,6 +47,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       setQuery('')
       setCursor(0)
       setResults([])
+      setContacts([])
       setTimeout(() => inputRef.current?.focus(), 30)
     }
   }, [props.open])
@@ -158,11 +163,42 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     return [...actions.filter(c => c.group !== '列表'), ...nav, ...agentCommands(props.onClose), ...projectCommands(props.onClose), ...shareCommands(props.onClose), ...actions.filter(c => c.group === '列表')]
   }, [props.open, props.onClose])
 
+  // 联系人：往来联系人联想（姓名 / 地址子串，纯字母时也按拼音匹配姓名，如 wxm → 王小明）
+  useEffect(() => {
+    const q = query.trim()
+    if (!props.open || !q) {
+      setContacts([])
+      return
+    }
+    let alive = true
+    const t = window.setTimeout(() => {
+      void api
+        .suggestRecipients(q, 4)
+        .then(r => alive && setContacts(Array.isArray(r) ? r : []))
+        .catch(() => alive && setContacts([]))
+    }, 100)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [query, props.open])
+
+  // 命令 / 视图 / 项目名的拼音键（主进程生成，取回后重算过滤）
+  const pyVer = usePinyin(props.open ? commands.flatMap(c => [c.label, ...(c.keywords ?? '').split(/\s+/)]) : [])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return commands.filter(c => !c.searchOnly)
-    return commands.filter(c => (c.label + ' ' + (c.keywords ?? '')).toLowerCase().includes(q))
-  }, [commands, query])
+    // 子串优先；两个字母起再按拼音匹配（xmjd / xiangmu → 项目进度）
+    const direct = commands.filter(c => (c.label + ' ' + (c.keywords ?? '')).toLowerCase().includes(q))
+    if (q.length < 2) return direct
+    const seen = new Set(direct.map(c => c.id))
+    // 关键词是一串空格分隔的词：逐词匹配且须从词首开始（避免长串里拼凑出误命中）
+    const kwHit = (kw?: string) => !!kw && kw.split(/\s+/).some(w => (pinyinMatch(q, w)?.rank ?? 9) <= 1)
+    const py = commands.filter(c => !seen.has(c.id) && (pinyinMatch(q, c.label) || kwHit(c.keywords)))
+    return [...direct, ...py]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commands, query, pyVer])
 
   // 输入的文本可直接带到列表搜索（关键词 / AI）或交给 Agent 提问
   const handoff = useMemo<Command[]>(() => {
@@ -183,6 +219,27 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
   const items = useMemo<Command[]>(
     () => [
       ...filtered,
+      ...contacts.map(c => ({
+        id: `contact-${c.address}`,
+        group: '联系人',
+        label: c.name ? `${c.name} <${c.address}>` : c.address,
+        hint: '写信',
+        run: () => {
+          props.onClose()
+          void api.openCompose({ to: [c.name ? { name: c.name, address: c.address } : { address: c.address }] })
+        }
+      })),
+      ...(contacts[0]
+        ? [{
+            id: `contact-tl-${contacts[0].address}`,
+            group: '联系人',
+            label: `与 ${contacts[0].name || contacts[0].address} 的往来时间线`,
+            run: () => {
+              props.onClose()
+              openContactTimeline(contacts[0].address)
+            }
+          }]
+        : []),
       ...handoff,
       ...results.map(r => ({
         id: `msg-${r.id}`,
@@ -195,7 +252,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
         }
       }))
     ],
-    [filtered, handoff, results, props.onClose]
+    [filtered, contacts, handoff, results, props.onClose]
   )
 
   useEffect(() => setCursor(0), [query])

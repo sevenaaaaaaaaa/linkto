@@ -5,6 +5,7 @@ import { useSearch, QUICK_LABEL, type QuickFilter } from '../stores/search'
 import { SYNTAX_HINTS, splitHits, worthSearching } from '../lib/search'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { IconSearch, IconSparkles, IconClose, IconClock, IconChevronDown, IconPlus } from '../components/icons'
+import type { SearchIndexStatus } from '@shared/ipc'
 
 /**
  * 列表搜索：搜索框（边输边搜 + 最近搜索 / 语法提示下拉）、结果头部（数量 · 方式 · 范围 + 胶囊）、
@@ -239,9 +240,65 @@ function Chip(props: { label: string; onRemove?(): void; onAdd?(): void; muted?:
 
 const QUICK_KEYS: QuickFilter[] = ['unread', 'attach', 'recent30']
 
+/** 中文搜索索引状态：首次启用 / 升级后存量邮件在后台回填，期间显示进度 */
+function useSearchIndexStatus(): SearchIndexStatus | null {
+  const [st, setSt] = useState<SearchIndexStatus | null>(null)
+  useEffect(() => {
+    let alive = true
+    void api.searchIndexStatus().then(v => alive && setSt(v)).catch(() => {})
+    const off = api.onEvent(ev => {
+      const e = ev as { type?: string } & Partial<SearchIndexStatus>
+      if (e?.type === 'search-index-progress') setSt({ enabled: !!e.enabled, indexed: e.indexed ?? 0, total: e.total ?? 0, building: !!e.building })
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [])
+  return st
+}
+
+/** 结果列表底部：分页加载更多（每页与首屏同样大小） */
+export function SearchMore() {
+  const shown = useMail(m => m.messages.length)
+  const total = useMail(m => m.total)
+  const [busy, setBusy] = useState(false)
+  if (!shown || shown >= total) return null
+  const more = async () => {
+    const st = useMail.getState()
+    const spec = st.searchSpec
+    if (!spec || busy) return
+    setBusy(true)
+    try {
+      const page = await api.nlSearch({ ...spec, offset: st.messages.length })
+      const cur = useMail.getState()
+      if (cur.searchSpec !== spec) return
+      const seen = new Set(cur.messages.map(m => m.id))
+      useMail.setState({ messages: [...cur.messages, ...page.items.filter(m => !seen.has(m.id))], total: page.total })
+    } catch {
+      /* 下次再点 */
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="px-3 py-3 flex justify-center">
+      <button
+        onClick={() => void more()}
+        disabled={busy}
+        className="h-7 px-3 rounded-full border text-xs tnum disabled:opacity-60 hover:bg-[var(--hover)]"
+        style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+      >
+        {busy ? '加载中…' : `加载更多（已显示 ${shown} / 共 ${total}）`}
+      </button>
+    </div>
+  )
+}
+
 /** 搜索结果头部：N 个结果 · 关键词/AI · 范围，胶囊行，AI 理解 / 失败说明 */
 export function SearchHeader() {
   const s = useSearch()
+  const idx = useSearchIndexStatus()
   const total = useMail(m => m.total)
   const loading = useMail(m => m.loading)
   const accounts = useMail(m => m.accounts)
@@ -300,6 +357,12 @@ export function SearchHeader() {
           <Chip key={k} label={QUICK_LABEL[k]} onAdd={() => s.toggleQuick(k)} />
         ))}
       </div>
+
+      {idx?.building && idx.total > 0 && (
+        <div className="text-2xs truncate tnum" style={{ color: 'var(--faint)' }} title="首次启用中文搜索索引：已有邮件在后台分批建立索引，期间结果仍完整，只是稍慢">
+          正在为已有邮件建立中文搜索索引 {Math.min(99, Math.floor((idx.indexed / idx.total) * 100))}%，结果完整、速度稍慢
+        </div>
+      )}
 
       {s.loose && s.mode === 'keyword' && (
         <div className="text-2xs truncate" style={{ color: 'var(--faint)' }} title="整句没有命中，已去掉口语词逐个匹配">

@@ -229,7 +229,7 @@ export const RecipientField = forwardRef<RecipientFieldHandle, Props>(function R
             >
               <span className="rc-avatar" aria-hidden>{(s.name || s.address).trim().slice(0, 1).toUpperCase()}</span>
               <span className="min-w-0 flex-1 flex flex-col">
-                <span className="rc-sug-name truncate"><Hl text={s.name || s.address} q={text.trim()} /></span>
+                <span className="rc-sug-name truncate"><Hl text={s.name || s.address} q={text.trim()} range={s.name ? s.nameHit : null} /></span>
                 {s.name && <span className="rc-sug-addr truncate"><Hl text={s.address} q={text.trim()} /></span>}
               </span>
               <span className="rc-sug-meta tnum">{s.sentByMe > 0 ? `发过 ${s.sentByMe}` : `往来 ${s.total}`}</span>
@@ -242,16 +242,21 @@ export const RecipientField = forwardRef<RecipientFieldHandle, Props>(function R
   )
 })
 
-/** 匹配片段加粗（不用荧光：联想结果不是 AI 产出） */
-function Hl({ text, q }: { text: string; q: string }) {
+/** 匹配片段加粗（不用荧光：联想结果不是 AI 产出）；拼音命中时按主进程给的区间加粗（如输入 wxm → 王小明） */
+function Hl({ text, q, range }: { text: string; q: string; range?: [number, number] | null }) {
   if (!q) return <>{text}</>
-  const i = text.toLowerCase().indexOf(q.toLowerCase())
+  let i = text.toLowerCase().indexOf(q.toLowerCase())
+  let end = i + q.length
+  if (i < 0 && range && range[1] > range[0] && range[1] <= text.length) {
+    i = range[0]
+    end = range[1]
+  }
   if (i < 0) return <>{text}</>
   return (
     <>
       {text.slice(0, i)}
-      <b className="rc-match">{text.slice(i, i + q.length)}</b>
-      {text.slice(i + q.length)}
+      <b className="rc-match">{text.slice(i, end)}</b>
+      {text.slice(end)}
     </>
   )
 }

@@ -19,6 +19,8 @@ import type {
   MemoryScope,
   MailInsight
 } from '@shared/types'
+import { SearchIndex } from './search-index'
+import { compileSearch, latinSubstrings, type SearchSpec } from './search-text'
 
 export interface AccountRow extends AccountConfig {
   /* 同 AccountConfig */
@@ -69,9 +71,54 @@ export interface MessageInsert {
   listId: string | null
 }
 
+/** 搜索输入按空白拆词（引号短语已由界面层拆好） */
+function splitTerms(q: string): string[] {
+  return q.trim().split(/\s+/).filter(Boolean)
+}
+
+/** LIKE 模式（转义 % _ \，配合 ESCAPE '\'） */
+const likePat = (s: string) => `%${s.replace(/[\\%_]/g, m => '\\' + m)}%`
+
+/** 文本条件的 LIKE 版本（旧路径 / 回填期间未入索引的邮件 / 拉丁子串兜底） */
+function likeClauses(spec: SearchSpec): { sql: string; params: string[] } {
+  const parts: string[] = []
+  const params: string[] = []
+  for (const t of spec.terms ?? []) {
+    const v = t.trim()
+    if (!v) continue
+    const p = likePat(v)
+    // 与索引的四列一致：主题 / 发件人 / 收件人抄送 / 正文
+    parts.push(
+      "(m.subject LIKE ? ESCAPE '\\' OR m.from_name LIKE ? ESCAPE '\\' OR m.from_addr LIKE ? ESCAPE '\\' OR m.to_json LIKE ? ESCAPE '\\' OR m.cc_json LIKE ? ESCAPE '\\' OR m.snippet LIKE ? ESCAPE '\\' OR m.text LIKE ? ESCAPE '\\')"
+    )
+    params.push(p, p, p, p, p, p, p)
+  }
+  if (spec.sender?.trim()) {
+    const p = likePat(spec.sender.trim().toLowerCase())
+    parts.push("(lower(COALESCE(m.from_addr,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(m.from_name,'')) LIKE ? ESCAPE '\\')")
+    params.push(p, p)
+  }
+  if (spec.to?.trim()) {
+    const p = likePat(spec.to.trim().toLowerCase())
+    parts.push("(lower(COALESCE(m.to_json,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(m.cc_json,'')) LIKE ? ESCAPE '\\')")
+    params.push(p, p)
+  }
+  if (spec.subject?.trim()) {
+    parts.push("m.subject LIKE ? ESCAPE '\\'")
+    params.push(likePat(spec.subject.trim()))
+  }
+  return { sql: parts.length ? `(${parts.join(' AND ')})` : '1', params }
+}
+
 /** SQLite 数据层：账户 / 文件夹 / 邮件（含 FTS5）/ 规则 / 签名 / 模板 / 知识库 */
 export class MailStore {
-  constructor(public db: DatabaseSync) {}
+  /** 中文友好检索索引（CJK 二元组 + unicode61）；初始化失败时 enabled = false，搜索退回 LIKE */
+  readonly search: SearchIndex
+
+  constructor(public db: DatabaseSync) {
+    this.search = new SearchIndex(db)
+    this.search.init()
+  }
 
   // ================= 账户 =================
 
@@ -539,16 +586,13 @@ export class MailStore {
           AND lower(COALESCE(r.from_addr,'')) NOT IN (SELECT lower(user) FROM accounts WHERE user LIKE '%@%')
       )`)
     }
-    let whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    const baseParams = [...params]
     if (query.scope === 'search') {
+      // 搜索：空格分词后走中文友好索引（不再限制每词 2000 条）
       if (!query.search?.trim()) return { items: [], total: 0 }
-      const results = this.searchIds(query.search, 2000)
-      if (results.length === 0) return { items: [], total: 0 }
-      where.push(`m.id IN (${results.map(() => '?').join(',')})`)
-      baseParams.push(...results)
-      whereSql = `WHERE ${where.join(' AND ')}`
+      return this.searchPage(where, params, { terms: splitTerms(query.search) }, query.limit, query.offset)
     }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const baseParams = [...params]
     const total = (
       this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...baseParams) as any
     ).c as number
@@ -564,7 +608,11 @@ export class MailStore {
       .all(...baseParams, query.limit, query.offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
-  /** AI 结构化查询 → SQL（自然语言搜索的执行端） */
+  /**
+   * 搜索框语法 / AI 结构化查询 → SQL（自然语言搜索的执行端）。
+   * 关键词与 from: / to: / subject: 编译成一条 FTS5 MATCH（中文二元组索引）求交，
+   * 未读 / 附件 / 日期 / in: 等结构化条件直接过滤；按相关度 + 时间排序，支持 offset 分页。
+   */
   runNLQuery(q: {
     text?: string; sender?: string; subject?: string
     category?: string | null; isNewsletter?: boolean | null; hasAttachment?: boolean | null
@@ -572,6 +620,7 @@ export class MailStore {
     fallbackText?: string | null
     terms?: string[] | null; to?: string | null; flaggedOnly?: boolean | null
     accountId?: string | null; folderIds?: string[] | null; allFolders?: boolean | null; limit?: number | null
+    offset?: number | null
   }, limit = 60): MessagePage {
     if (q.limit && q.limit > 0) limit = Math.min(Math.floor(q.limit), 500)
     // 默认只搜收件箱；本地搜索语法可放开到全部文件夹或指定文件夹
@@ -586,33 +635,9 @@ export class MailStore {
       where.push(`m.folder_id IN (${q.folderIds.map(() => '?').join(',')})`)
       params.push(...q.folderIds)
     }
-    if (q.to) {
-      where.push("(lower(COALESCE(m.to_json,'')) LIKE ? OR lower(COALESCE(m.cc_json,'')) LIKE ?)")
-      const p = `%${q.to.toLowerCase()}%`
-      params.push(p, p)
-    }
     if (q.flaggedOnly) where.push("m.flags LIKE '%\\Flagged%'")
-    // 多关键词：逐个走 FTS（searchIds 内部失败时回退 LIKE），全部命中才算
-    for (const term of (q.terms ?? []).map(t => t.trim()).filter(Boolean)) {
-      const ids = this.searchIds(term, 2000)
-      if (!ids.length) {
-        where.push('0')
-        break
-      }
-      where.push(`m.id IN (${ids.map(() => '?').join(',')})`)
-      params.push(...ids)
-    }
     where.push(`(m.snoozed_until IS NULL OR m.snoozed_until <= ${now})`)
     where.push(`NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`)
-    if (q.sender) {
-      where.push("(lower(m.from_addr) LIKE ? OR lower(COALESCE(m.from_name,'')) LIKE ?)")
-      const p = `%${q.sender.toLowerCase()}%`
-      params.push(p, p)
-    }
-    if (q.subject) {
-      where.push('m.subject LIKE ?')
-      params.push(`%${q.subject}%`)
-    }
     if (q.category) {
       where.push('m.category = ?')
       params.push(q.category)
@@ -633,51 +658,117 @@ export class MailStore {
       const t = Date.parse(q.before + 'T23:59:59')
       if (Number.isFinite(t)) { where.push('m.date <= ?'); params.push(t) }
     }
+    // 关键词：本地语法的 terms + AI 编译出的自由文本（按空格拆成多个词，全部命中）
+    const terms = (q.terms ?? []).map(t => String(t ?? '').trim()).filter(Boolean)
     const kw = (q.fallbackText || q.text || '').trim()
-    if (kw) {
-      const ids = this.searchIds(kw, 500)
-      if (ids.length) {
-        where.push(`m.id IN (${ids.map(() => '?').join(',')})`)
-        params.push(...ids)
-      } else {
-        where.push('(m.subject LIKE ? OR m.snippet LIKE ? OR m.text LIKE ?)')
-        const p = `%${kw}%`
-        params.push(p, p, p)
+    if (kw) terms.push(...splitTerms(kw))
+    return this.searchPage(where, params, { terms, sender: q.sender, to: q.to, subject: q.subject }, limit, q.offset ?? 0)
+  }
+
+  /** 结构化条件 + 文本条件 → 一页结果（索引可用时走 FTS；索引不可用 / 拉丁子串零命中时退回 LIKE） */
+  private searchPage(where: string[], params: (string | number)[], spec: SearchSpec, limit: number, offset: number): MessagePage {
+    const lim = Math.max(1, Math.min(Math.floor(limit || 60), 500))
+    const off = Math.max(0, Math.floor(offset || 0))
+    const expr = compileSearch(spec)
+    if (expr === '') return { items: [], total: 0 }
+    if (expr === null) {
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+      const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...params) as any).c as number
+      const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...params, lim, off) as any[]
+      return { items: rows.map(r => this.rowToSummary(r)), total }
+    }
+    if (this.search.enabled) {
+      try {
+        const page = this.searchByIndex(where, params, spec, expr, lim, off)
+        // 二元组索引按「词前缀」匹配拉丁 / 数字；词中间的子串（订单号尾号等）零命中时再用 LIKE 兜底
+        if (page.total > 0 || !latinSubstrings(spec).length) return page
+      } catch (err) {
+        console.error('[search] index query failed, falling back to LIKE:', err)
       }
     }
-    const whereSql = `WHERE ${where.join(' AND ')}`
-    const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...params) as any).c as number
-    const rows = this.db
-      .prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ?`)
-      .all(...params, limit) as any[]
+    return this.searchByLike(where, params, spec, lim, off)
+  }
+
+  private searchByIndex(where: string[], params: (string | number)[], spec: SearchSpec, expr: string, limit: number, offset: number): MessagePage {
+    if (this.search.isComplete()) {
+      // 一趟取出全部命中的 (rowid, 相关度, 时间)：总数 = 行数，排序在 JS 里做，再只取当前页的整行。
+      // CROSS JOIN 固定由 FTS 驱动（否则账户 / 文件夹条件可能让规划器改成逐行跑 MATCH，慢两个数量级）
+      const hits = this.db
+        .prepare(
+          `SELECT search_fts.rowid AS r, bm25(search_fts, 6.0, 4.0, 2.0, 1.0) AS s, m.date AS d
+           FROM search_fts CROSS JOIN messages m ON m.rowid = search_fts.rowid
+           WHERE ${['search_fts MATCH ?', ...where].join(' AND ')}`
+        )
+        .all(expr, ...params) as { r: number; s: number; d: number }[]
+      const total = hits.length
+      if (!total || offset >= total) return { items: [], total }
+      // 相关度（bm25 越小越相关；主题 > 发件人 > 收件人 > 正文）随邮件年龄衰减：60 天前的同等命中，排序分减半
+      const now = Date.now()
+      const score = (h: { s: number; d: number }) => h.s / (1 + Math.max(0, now - (h.d || 0)) / 5_184_000_000)
+      for (const h of hits) h.s = score(h)
+      hits.sort((a, b) => a.s - b.s || (b.d || 0) - (a.d || 0))
+      const page = hits.slice(offset, offset + limit).map(h => h.r)
+      const byRowid = new Map<number, any>()
+      for (const row of this.db.prepare(`SELECT rowid AS _r, * FROM messages WHERE rowid IN (${page.map(() => '?').join(',')})`).all(...page) as any[]) {
+        byRowid.set(row._r, row)
+      }
+      return { items: page.map(r => byRowid.get(r)).filter(Boolean).map(r => this.rowToSummary(r)), total }
+    }
+    // 回填进行中：已入索引的走 FTS，尚未入索引的补一段 LIKE（结果完整，只是稍慢），按时间排序
+    const like = likeClauses(spec)
+    const cond = `(m.rowid IN (SELECT rowid FROM search_fts WHERE search_fts MATCH ?) OR (NOT EXISTS (SELECT 1 FROM search_doc d WHERE d.rowid = m.rowid) AND ${like.sql}))`
+    const whereSql = `WHERE ${[cond, ...where].join(' AND ')}`
+    const p = [expr, ...like.params, ...params]
+    const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...p) as any).c as number
+    if (!total) return { items: [], total: 0 }
+    const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
 
+  /** 旧路径：逐词 LIKE（索引不可用 / 拉丁子串兜底） */
+  private searchByLike(where: string[], params: (string | number)[], spec: SearchSpec, limit: number, offset: number): MessagePage {
+    const like = likeClauses(spec)
+    const whereSql = `WHERE ${[like.sql, ...where].join(' AND ')}`
+    const p = [...like.params, ...params]
+    const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...p) as any).c as number
+    if (!total) return { items: [], total: 0 }
+    const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
+    return { items: rows.map(r => this.rowToSummary(r)), total }
+  }
+
+  /** 关键词 → 命中邮件 id（新到旧）；多个词用空格分隔，全部命中 */
   searchIds(q: string, limit: number): string[] {
     const trimmed = q.trim()
     if (!trimmed) return []
-    const charCount = [...trimmed].length
-    if (charCount >= 3) {
-      try {
-        const ftsQuery = [...trimmed]
-          .map(c => (/[a-zA-Z0-9]/.test(c) ? `"${c}"*` : `"${c}"`))
-          .join(' ')
-        const rows = this.db
-          .prepare(
-            `SELECT m.id FROM messages_fts f JOIN messages m ON m.rowid = f.rowid WHERE messages_fts MATCH ? ORDER BY m.date DESC LIMIT ?`
-          )
-          .all(ftsQuery, limit) as any[]
-        if (rows.length) return rows.map(r => r.id)
-      } catch {
-        /* FTS 语法错误时回退 LIKE */
+    const spec: SearchSpec = { terms: splitTerms(trimmed) }
+    if (this.search.enabled) {
+      const expr = compileSearch(spec)
+      if (expr === '') return []
+      if (expr) {
+        try {
+          let rows: any[]
+          if (this.search.isComplete()) {
+            rows = this.db
+              .prepare('SELECT m.id FROM search_fts CROSS JOIN messages m ON m.rowid = search_fts.rowid WHERE search_fts MATCH ? ORDER BY m.date DESC LIMIT ?')
+              .all(expr, limit) as any[]
+          } else {
+            const like = likeClauses(spec)
+            rows = this.db
+              .prepare(
+                `SELECT m.id FROM messages m WHERE m.rowid IN (SELECT rowid FROM search_fts WHERE search_fts MATCH ?)
+                   OR (NOT EXISTS (SELECT 1 FROM search_doc d WHERE d.rowid = m.rowid) AND ${like.sql})
+                 ORDER BY m.date DESC LIMIT ?`
+              )
+              .all(expr, ...like.params, limit) as any[]
+          }
+          if (rows.length || !latinSubstrings(spec).length) return rows.map(r => r.id)
+        } catch (err) {
+          console.error('[search] searchIds via index failed:', err)
+        }
       }
     }
-    const like = `%${trimmed.replace(/[%_]/g, '')}%`
-    const rows = this.db
-      .prepare(
-        `SELECT id FROM messages WHERE subject LIKE ? OR from_name LIKE ? OR from_addr LIKE ? OR snippet LIKE ? OR text LIKE ? ORDER BY date DESC LIMIT ?`
-      )
-      .all(like, like, like, like, like, limit) as any[]
+    const like = likeClauses(spec)
+    const rows = this.db.prepare(`SELECT m.id FROM messages m WHERE ${like.sql} ORDER BY m.date DESC LIMIT ?`).all(...like.params, limit) as any[]
     return rows.map(r => r.id)
   }
 

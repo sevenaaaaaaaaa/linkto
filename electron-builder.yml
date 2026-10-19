@@ -20,6 +20,9 @@ mac:
   hardenedRuntime: false
   # 本地构建：ad-hoc 签名（"-"，不需要证书、不访问 Apple 时间戳服务）。
   # 不能用 null 跳过签名：未封装签名的 bundle 无法使用 macOS 系统通知（UNErrorDomain 错误 1，通知全部失败）
+  # 发版脚本（daily-release.sh / release.sh，见 scripts/lib/mac-signing.sh）检测到本机签名身份
+  # 「LinkTo Local Signing」（scripts/setup-signing.sh 一次性创建）时，用 -c.mac.identity 覆盖为它：
+  # 签名稳定 → 钥匙串「始终允许」跨版本保留；没有该身份时保持 ad-hoc。
   identity: "-"
 dmg:
   # DMG layout: app + Applications link + Gatekeeper helper + install notes.

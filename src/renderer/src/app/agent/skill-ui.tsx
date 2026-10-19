@@ -120,13 +120,16 @@ function ProjectField(props: { value: string; onChange(v: string): void }) {
   )
 }
 
-/** 联系人：邮箱 / 姓名 / 域名，带往来联系人联想 */
+/** 联系人：邮箱 / 姓名 / 域名，带往来联系人联想（支持拼音：wang / wxm → 王小明） */
 function ContactField(props: { value: string; onChange(v: string): void; placeholder?: string; autoFocus?: boolean }) {
   const [sugs, setSugs] = useState<RecipientSuggestion[]>([])
-  const listId = useMemo(() => `contact-sugs-${Math.random().toString(36).slice(2, 8)}`, [])
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  // 刚从联想里选中：不再拿选中的地址去联想一次
+  const picked = useRef<string | null>(null)
   useEffect(() => {
     const q = props.value.trim()
-    if (q.length < 1) {
+    if (q.length < 1 || q === picked.current) {
       setSugs([])
       return
     }
@@ -134,7 +137,11 @@ function ContactField(props: { value: string; onChange(v: string): void; placeho
     const t = window.setTimeout(() => {
       void api
         .suggestRecipients(q, 8)
-        .then(r => alive && setSugs(Array.isArray(r) ? r : []))
+        .then(r => {
+          if (!alive) return
+          setSugs(Array.isArray(r) ? r : [])
+          setActive(0)
+        })
         .catch(() => alive && setSugs([]))
     }, 150)
     return () => {
@@ -142,24 +149,81 @@ function ContactField(props: { value: string; onChange(v: string): void; placeho
       window.clearTimeout(t)
     }
   }, [props.value])
+  const pick = (s: RecipientSuggestion) => {
+    picked.current = s.address
+    props.onChange(s.address)
+    setOpen(false)
+  }
+  const show = open && sugs.length > 0
   return (
-    <>
+    <div className="relative">
       <input
-        list={listId}
         autoFocus={props.autoFocus}
         value={props.value}
-        onChange={e => props.onChange(e.target.value)}
-        placeholder={props.placeholder ?? '邮箱、姓名或公司域名'}
+        onChange={e => {
+          picked.current = null
+          props.onChange(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onKeyDown={e => {
+          if (!show || e.nativeEvent.isComposing) return
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setActive(a => (a + 1) % sugs.length)
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive(a => (a - 1 + sugs.length) % sugs.length)
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault()
+            pick(sugs[active] ?? sugs[0])
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            setOpen(false)
+          }
+        }}
+        placeholder={props.placeholder ?? '邮箱、姓名（可输拼音）或公司域名'}
         className={fieldCls}
         style={fieldSty}
+        role="combobox"
+        aria-expanded={show}
       />
-      <datalist id={listId}>
-        {sugs.map(s => (
-          <option key={s.address} value={s.address}>
-            {s.name ? `${s.name} · 往来 ${s.total} 封` : `往来 ${s.total} 封`}
-          </option>
-        ))}
-      </datalist>
+      {show && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-20 liquid-glass rounded-[var(--r-md)] p-1 pop-in" role="listbox">
+          {sugs.map((s, i) => (
+            <button
+              key={s.address}
+              type="button"
+              role="option"
+              aria-selected={i === active}
+              onMouseDown={e => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(s)}
+              className="w-full h-7 px-2 rounded-[var(--r-sm)] text-left text-xs flex items-center gap-2"
+              style={{ color: 'var(--fg)', background: i === active ? 'var(--hover-strong)' : 'transparent' }}
+            >
+              <span className="truncate">{s.name ? <HitText text={s.name} range={s.nameHit} /> : s.address}</span>
+              <span className="truncate text-2xs flex-1" style={{ color: 'var(--faint)' }}>{s.name ? s.address : ''}</span>
+              <span className="shrink-0 text-2xs tnum" style={{ color: 'var(--faint)' }}>往来 {s.total}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 拼音联想命中的区间加粗 */
+function HitText(props: { text: string; range?: [number, number] | null }) {
+  const r = props.range
+  if (!r || r[1] <= r[0] || r[1] > props.text.length) return <>{props.text}</>
+  return (
+    <>
+      {props.text.slice(0, r[0])}
+      <b style={{ fontWeight: 650 }}>{props.text.slice(r[0], r[1])}</b>
+      {props.text.slice(r[1])}
     </>
   )
 }

@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, Menu, dialog, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { AppStore, DEFAULT_GENERAL, DEFAULT_NOTIFICATIONS } from './store'
 import { MailStore } from './db'
 import { SyncEngine, friendlyError } from './mail/sync-engine'
@@ -48,6 +49,7 @@ import { initTrace, traceOnArrival, stopTrace, openTraceCapture, traceSyncHandle
 import { DevSyncService, registerDevSyncIpc } from './devsync'
 import { BackupX, registerBackupxIpc } from './devsync/backupx'
 import { registerUpgradeIpc } from './upgrade'
+import { registerSearchIpc } from './search-ipc'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -57,6 +59,10 @@ process.on('uncaughtException', err => {
 process.on('unhandledRejection', reason => {
   console.error('[main] unhandledRejection:', reason)
 })
+
+// 启动诊断：关键节点耗时（偶发「启动卡住」时，日志能看出停在哪一步）
+const STARTUP_T0 = Date.now()
+const startupLog = (msg: string) => console.log(`[startup +${Date.now() - STARTUP_T0}ms] ${msg}`)
 
 let appStore: AppStore
 let mailStore: MailStore
@@ -242,6 +248,48 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+  watchMainWindowStartup(mainWindow)
+}
+
+/**
+ * 主窗口启动看门狗：
+ *  - 页面加载完但 ready-to-show 迟迟不来（GPU 进程异常等）→ 3 秒后直接显示
+ *  - 30 秒还没加载完（渲染进程没起来 / 卡在导航；慢机器正常首窗约 12 秒）→ 先重载；再 20 秒仍不行 → 重建窗口（只重建一次）
+ *  - 渲染进程启动阶段崩溃 → 重载（30 秒内最多一次，避免循环）
+ */
+let mainWindowRecreated = false
+function watchMainWindowStartup(win: BrowserWindow) {
+  let loaded = false
+  let lastCrashReload = 0
+  win.webContents.once('did-finish-load', () => {
+    loaded = true
+    startupLog('main window loaded')
+    setTimeout(() => {
+      if (!win.isDestroyed() && !win.isVisible()) {
+        console.warn('[startup] ready-to-show did not fire, showing main window anyway')
+        win.show()
+      }
+    }, 3000)
+  })
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[startup] main window renderer gone:', details.reason, details.exitCode)
+    if (details.reason === 'clean-exit' || win.isDestroyed() || Date.now() - lastCrashReload < 30_000) return
+    lastCrashReload = Date.now()
+    win.webContents.reload()
+  })
+  setTimeout(() => {
+    if (loaded || win.isDestroyed()) return
+    console.warn(`[startup] main window not loaded after 30s (renderer pid ${win.webContents.getOSProcessId()}), reloading`)
+    win.webContents.reloadIgnoringCache()
+    setTimeout(() => {
+      if (loaded || win.isDestroyed() || mainWindowRecreated) return
+      mainWindowRecreated = true
+      console.warn('[startup] main window still not loaded after reload, recreating window')
+      if (mainWindow === win) mainWindow = null
+      win.destroy()
+      createMainWindow()
+    }, 20_000)
+  }, 30_000)
 }
 
 function createSettingsWindow(tab?: string) {
@@ -445,17 +493,25 @@ function buildAppMenu() {
 async function bootstrap() {
   appStore = new AppStore()
   appStore.initKv()
+  // 钥匙串：异步解锁（读取在后台线程，不阻塞主线程 / 窗口）；需要密钥的启动步骤等它完成后再做
+  const secretsReady = appStore.unlockSecrets()
   const db = new DatabaseSync(appStore.dbPath)
   db.exec('PRAGMA journal_mode=WAL')
   db.exec('PRAGMA synchronous=NORMAL')
   db.exec(MailStore.SCHEMA)
   mailStore = new MailStore(db)
-  // FTS 索引完整性自检：external-content 表与原表不一致时（旧数据/崩溃残留）自动重建
-  try {
-    db.prepare("INSERT INTO messages_fts(messages_fts) VALUES('integrity-check')").run()
-  } catch {
-    db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
-  }
+  // 中文搜索索引：存量邮件后台分批回填（有进度，不阻塞），新邮件由触发器增量写入
+  mailStore.search.onProgress = s => broadcast({ type: 'search-index-progress', ...s })
+  mailStore.search.startBackfill(15_000)
+  // FTS 索引完整性自检：external-content 表与原表不一致时（旧数据/崩溃残留）自动重建。
+  // 10 万封量级要 2~3 秒：放到后台线程（独立只读连接）且等窗口出来后再做，不再卡启动
+  checkTrigramFtsInBackground(appStore.dbPath, () => {
+    try {
+      db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
+    } catch (err) {
+      console.error('[fts] rebuild failed:', err)
+    }
+  })
   // 旧库迁移：发件队列时间戳（新库建表时已含该列）
   try {
     db.exec('ALTER TABLE drafts ADD COLUMN send_at INTEGER')
@@ -735,6 +791,8 @@ async function bootstrap() {
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }
   const internal = registerIpc(ctx)
+  // 搜索索引状态 / 拼音键（api:searchIndexStatus / api:pinyinKeys）
+  registerSearchIpc(mailStore)
   // 附件中心：索引 / 分类 / 缓存策略 / 网盘归档（独立注册 api:attach* 通道）
   initAttachments({ db, store: mailStore, appStore, engine: () => engine, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload), finance: () => finance })
   projects = new ProjectService({ store: mailStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
@@ -941,7 +999,66 @@ async function bootstrap() {
   // 开机自启（跟随设置；hidden 避免抢占前台）
   applyLoginItem(appStore.get('general', DEFAULT_GENERAL).launchAtLogin)
 
-  // 启动所有启用账户的同步
+  // 睡眠唤醒后旧 IMAP socket 多半已失效：立即重连，而不是等 socket 超时才发现
+  powerMonitor.on('resume', () => engine.reconnectAll())
+  // 邮件理解：启动后补跑最新 30 封未读收件箱邮件（等首轮同步与正文预取先跑一会儿）
+  setTimeout(() => {
+    try {
+      understand.startupScan()
+    } catch (err) {
+      console.error('[understand] startup scan failed:', err)
+    }
+  }, 20_000)
+  // Snooze 到期释放：每 30 秒检查，到点邮件自动回到收件箱
+  setInterval(() => {
+    try {
+      if (mailStore.releaseDueSnoozed(Date.now()).length) broadcast({ type: 'messages-changed' })
+    } catch { /* 下一轮兜底 */ }
+  }, 30_000)
+  // 未读角标稍后刷新（大邮箱统计未读要几百毫秒，不挡首屏）
+  scheduleBadgeUpdate()
+  startupLog('bootstrap done')
+  // 需要密钥的启动步骤（账户同步 / 发件队列 / MCP / 待办同步）：等钥匙串解锁后进行
+  void startWithSecrets(secretsReady)
+}
+
+/** 旧 trigram 索引（messages_fts）的完整性检查：后台线程执行，发现损坏时回到主线程重建 */
+function checkTrigramFtsInBackground(dbPath: string, rebuild: () => void) {
+  setTimeout(() => {
+    try {
+      const code = `
+        const { parentPort, workerData } = require('node:worker_threads')
+        const { DatabaseSync } = require('node:sqlite')
+        let result = 'ok'
+        try {
+          // 只读连接：WAL 下不挡主线程的写入（INSERT ... 'integrity-check' 需要写锁，会让主连接报 database is locked）
+          const db = new DatabaseSync(workerData, { readOnly: true })
+          const rows = db.prepare("PRAGMA integrity_check('messages_fts')").all()
+          db.close()
+          const msgs = rows.map(r => String(Object.values(r)[0]))
+          if (!(msgs.length === 1 && msgs[0] === 'ok')) result = 'integrity: ' + msgs.slice(0, 3).join('; ')
+        } catch (e) {
+          result = String((e && e.message) || e)
+        }
+        parentPort.postMessage(result)`
+      const w = new Worker(code, { eval: true, workerData: dbPath })
+      w.once('message', (res: string) => {
+        if (res === 'ok') return
+        // 只有「损坏 / 不一致」才重建；忙 / 锁等临时错误下次启动再查
+        if (/corrupt|malformed|integrity|missing/i.test(res)) {
+          console.warn('[fts] messages_fts integrity-check failed, rebuilding:', res)
+          rebuild()
+        } else console.warn('[fts] messages_fts integrity-check skipped:', res)
+      })
+      w.once('error', err => console.warn('[fts] integrity-check worker failed:', err))
+    } catch (err) {
+      console.warn('[fts] cannot start integrity-check worker:', err)
+    }
+  }, 30_000)
+}
+
+/** 启动所有启用账户的同步（钥匙串解锁之后；授权被拒后用户点「重试」成功也走这里） */
+function startAccounts() {
   for (const account of mailStore.listAccounts()) {
     if (!account.enabled) {
       statuses.set(account.id, { status: 'disabled', text: '已停用' })
@@ -957,38 +1074,78 @@ async function bootstrap() {
     }
     const password = appStore.loadSecret(`acct:${account.id}`)
     if (!password) {
-      statuses.set(account.id, { status: 'error', text: '未找到登录凭证，请重新输入密码' })
+      statuses.set(account.id, { status: 'error', text: appStore.secretsState() === 'failed' ? '无法读取钥匙串，请在系统授权窗口点「允许」后重试' : '未找到登录凭证，请重新输入密码' })
       continue
     }
     engine.startAccount(account)
   }
-  // 睡眠唤醒后旧 IMAP socket 多半已失效：立即重连，而不是等 socket 超时才发现
-  powerMonitor.on('resume', () => engine.reconnectAll())
-  outbox.start()
-  // 邮件理解：启动后补跑最新 30 封未读收件箱邮件（等首轮同步与正文预取先跑一会儿）
-  setTimeout(() => {
-    try {
-      understand.startupScan()
-    } catch (err) {
-      console.error('[understand] startup scan failed:', err)
+}
+
+/** 授权对话框迟迟没有结果：在窗口里说明（系统对话框可能被别的窗口挡住了） */
+const KEYCHAIN_PENDING_NOTICE_MS = 12_000
+
+async function startWithSecrets(secretsReady: Promise<string>) {
+  const waitText = '等待钥匙串授权…'
+  // 授权完成后自动收起「正在等待授权」的提示
+  const noticeAbort = new AbortController()
+  const pendingNotice = setTimeout(() => {
+    for (const a of mailStore.listAccounts()) {
+      if (!a.enabled) continue
+      statuses.set(a.id, { status: 'syncing', text: waitText })
+      broadcast({ type: 'account-status', accountId: a.id, status: 'syncing', text: waitText })
     }
-  }, 20_000)
-  // Snooze 到期释放：每 30 秒检查，到点邮件自动回到收件箱
-  setInterval(() => {
-    try {
-      if (mailStore.releaseDueSnoozed(Date.now()).length) broadcast({ type: 'messages-changed' })
-    } catch { /* 下一轮兜底 */ }
-  }, 30_000)
-  updateDockBadge()
+    void showKeychainNotice('pending', noticeAbort.signal)
+  }, KEYCHAIN_PENDING_NOTICE_MS)
+  const state = await secretsReady
+  clearTimeout(pendingNotice)
+  noticeAbort.abort()
+  startupLog(`keychain ${state} in ${appStore.secretTiming.settledAt - appStore.secretTiming.startedAt}ms`)
+  startAccounts()
+  for (const [id, st] of statuses) broadcast({ type: 'account-status', accountId: id, status: st.status, text: st.text, errorKind: st.status === 'error' ? classifyAccountError(st.text) : undefined })
+  outbox.start()
   // 本地 MCP 服务：默认关闭，按设置启动（失败只记录状态，不影响主流程）
-  void mcp.apply().catch(err => console.error('[mcp] start failed:', err))
+  void mcp?.apply().catch(err => console.error('[mcp] start failed:', err))
   // 待办跨设备同步（未开启时只挂定时器、不连网）
-  todoSync.start()
+  todoSync?.start()
   devSync?.start()
+  broadcast({ type: 'secrets-ready', state })
+  if (state === 'failed') void showKeychainNotice('failed')
+}
+
+/** 钥匙串授权的中文说明（附在主窗口上的非阻塞提示；失败时可重试） */
+async function showKeychainNotice(kind: 'pending' | 'failed', signal?: AbortSignal) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  const item = `「${app.getName()} Safe Storage」`
+  const opts: Electron.MessageBoxOptions =
+    kind === 'pending'
+      ? {
+          type: 'info',
+          message: '正在等待 macOS 钥匙串授权',
+          detail: `LinkTo 需要读取钥匙串中的${item}来解密邮箱密码、AI Key 等密钥。系统的授权窗口可能被其他窗口挡住了——找到它，输入本机登录密码并点「始终允许」。\n\n授权完成前可以正常浏览已同步的邮件；收发信与 AI 会在授权后自动开始。`,
+          buttons: ['知道了']
+        }
+      : {
+          type: 'warning',
+          message: '无法读取钥匙串中的密钥',
+          detail: `钥匙串访问被拒绝或不可用，邮箱密码、AI Key 等暂时读不到，收发信与 AI 不会启动。\n\n点「重试」会再次弹出系统授权窗口，请输入本机登录密码并点「始终允许」。`,
+          buttons: ['重试', '稍后'],
+          defaultId: 0,
+          cancelId: 1
+        }
+  if (signal) opts.signal = signal
+  const res = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+  if (kind === 'failed' && res.response === 0 && appStore.retryUnlockSync() === 'ready') {
+    startupLog('keychain ready after retry')
+    startAccounts()
+    broadcast({ type: 'secrets-ready', state: 'ready' })
+  }
 }
 
 app.whenReady().then(() => {
+  startupLog('ready')
+  // 先开窗（界面不依赖钥匙串），再初始化数据层与后台服务
   createMainWindow()
+  startupLog('main window created')
   bootstrap().catch(err => {
     console.error('bootstrap failed:', err)
   })
@@ -1003,6 +1160,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // 钥匙串授权对话框还开着：读取钥匙串的后台任务会挡住正常退出流程，稍等后直接退出
+  if (appStore?.secretsState() === 'pending') setTimeout(() => app.exit(0), 1500)
+  mailStore?.search.stop()
   todoSync?.stop()
   devSync?.stop()
   stopTrace()

@@ -885,6 +885,8 @@ export interface NLQuery {
   allFolders?: boolean | null
   /** 返回条数上限（默认 60，最多 500） */
   limit?: number | null
+  /** 分页偏移（搜索结果「加载更多」） */
+  offset?: number | null
 }
 
 /** 待跟进邮件的 AI 判断 */

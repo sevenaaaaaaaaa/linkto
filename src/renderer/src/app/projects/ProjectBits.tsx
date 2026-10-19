@@ -3,6 +3,7 @@ import { api } from '../../lib/api'
 import { usePrefs } from '../../lib/prefs'
 import { goView, useView } from '../../lib/route'
 import { useMail } from '../../stores/mail'
+import { pinyinMatch, usePinyin } from '../../lib/pinyin'
 import {
   createProjectFromMessage, isLive, openContactTimeline, openProject, pickProjectFor, projectColor, toast,
   useProjectEvents, useProjectIndex, useProjectRoute, useProjects
@@ -139,13 +140,16 @@ export function ProjectPickerHost() {
     return () => window.removeEventListener('ms:project-pick', on)
   }, [])
 
+  // 项目名支持拼音（qhgw / qinghe → 青禾官网）
+  const pyVer = usePinyin(ids ? items.filter(isLive).map(p => p.data.name) : [])
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
     return items
       .filter(isLive)
-      .filter(p => !s || p.data.name.toLowerCase().includes(s) || p.data.counterparties.some(c => c.includes(s)) || p.data.keywords.some(k => k.toLowerCase().includes(s)))
+      .filter(p => !s || p.data.name.toLowerCase().includes(s) || p.data.counterparties.some(c => c.includes(s)) || p.data.keywords.some(k => k.toLowerCase().includes(s)) || (s.length >= 2 && !!pinyinMatch(s, p.data.name)))
       .sort((a, b) => (b.stats.lastAt ?? 0) - (a.stats.lastAt ?? 0))
-  }, [items, q])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, q, pyVer])
 
   if (!ids) return null
   const close = () => setIds(null)

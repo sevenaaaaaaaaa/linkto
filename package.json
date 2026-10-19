@@ -23,6 +23,7 @@
     "node-llama-cpp": "^3.22.1",
     "nodemailer": "^10.0.15",
     "pdfjs-dist": "4.10.38",
+    "pinyin-pro": "3.29.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"

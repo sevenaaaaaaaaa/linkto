@@ -403,6 +403,8 @@ export interface RecipientSuggestion {
   /** 往来总次数 */
   total: number
   lastAt: number
+  /** 姓名里命中的区间（拼音联想命中时用于高亮；子串命中时不给，按输入文字高亮） */
+  nameHit?: [number, number] | null
 }
 
 /** 撰写窗 AI 改写风格 */
@@ -764,6 +766,12 @@ export interface LinkToApi {
   traceSyncStatus(): Promise<import('./trace').TraceSyncStatus>
   traceSyncConfigure(input: { enabled: boolean }): Promise<{ ok: boolean; error?: string; status: import('./trace').TraceSyncStatus }>
   traceSyncNow(): Promise<import('./trace').TraceSyncStatus>
+
+  // ---------- 搜索索引 / 拼音 ----------
+  /** 中文搜索索引状态（存量邮件回填进度）；进度变化另以 'search-index-progress' 事件推送 */
+  searchIndexStatus(): Promise<SearchIndexStatus>
+  /** 文本 → 拼音键（不含汉字的返回 null）；asNames = 按人名处理姓氏多音字。匹配用 shared/pinyin-match */
+  pinyinKeys(texts: string[], asNames?: boolean): Promise<(import('./pinyin-match').PinyinKey | null)[]>
 }
 
 // ---------- 升级向导 · 侧栏（与上面的 LinkToApi 声明合并；纯函数与类型见 ./upgrade） ----------
@@ -801,3 +809,14 @@ export interface LinkToApi {
   backupxAutoSet(input: Partial<import('./devsync').BackupxAutoSettings> & { passphrase?: string; pickDir?: boolean }): Promise<{ ok: boolean; error?: string; settings: import('./devsync').BackupxAutoSettings }>
   backupxAutoRun(): Promise<{ ok: boolean; error?: string; path?: string; removed?: number }>
 }
+
+/** 中文搜索索引状态 */
+export interface SearchIndexStatus {
+  enabled: boolean
+  /** 已建索引的邮件数 */
+  indexed: number
+  total: number
+  /** 存量邮件回填中（期间未入索引的邮件走慢速兜底，结果仍完整） */
+  building: boolean
+}
+

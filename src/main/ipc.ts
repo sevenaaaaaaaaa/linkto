@@ -58,6 +58,8 @@ import { notifyLocalChange as notifySyncChange, isTodoSyncEnabled, type TodoSync
 import { initTodoIntegrations, notifyLocalChange as notifyIntegrationChange } from './todo-integrations'
 import { attachmentService } from './attachments'
 import { beginUserAction } from './rule-suggest/log'
+import { pinyinKeys } from './pinyin'
+import { isPinyinQuery, matchPinyin } from '@shared/pinyin-match'
 
 /** 待办有本地改动：通知跨设备同步与外部服务同步 */
 function notifyLocalChange(id?: string) {
@@ -372,16 +374,25 @@ export function registerIpc(ctx: AppContext) {
     if (!contactCache || Date.now() - contactCache.at > 60_000) contactCache = { at: Date.now(), list: store.contactStats() }
     const self = new Set(store.listAccounts().map(a => a.email.toLowerCase()))
     const q = (query ?? '').trim().toLowerCase()
-    return contactCache.list
-      .filter(c => !self.has(c.address) && !ROBOT_ADDR.test(c.address))
-      .filter(c => !q || c.address.includes(q) || c.name.toLowerCase().includes(q))
-      .sort(
-        (a, b) =>
-          Number(b.sentByMe > 0) - Number(a.sentByMe > 0) ||
-          b.sentByMe + b.total - (a.sentByMe + a.total) ||
-          b.lastAt - a.lastAt
-      )
-      .slice(0, Math.max(1, Math.min(limit ?? 8, 20)))
+    const max = Math.max(1, Math.min(limit ?? 8, 20))
+    const byFreq = (a: RecipientSuggestion, b: RecipientSuggestion) =>
+      Number(b.sentByMe > 0) - Number(a.sentByMe > 0) || b.sentByMe + b.total - (a.sentByMe + a.total) || b.lastAt - a.lastAt
+    const pool = contactCache.list.filter(c => !self.has(c.address) && !ROBOT_ADDR.test(c.address))
+    // 子串命中（姓名 / 地址）在前；输入是纯字母时再按拼音匹配姓名（wang / wxm / wangxm → 王小明）
+    const out: RecipientSuggestion[] = pool.filter(c => !q || c.address.includes(q) || c.name.toLowerCase().includes(q)).sort(byFreq)
+    if (q && out.length < max && isPinyinQuery(q)) {
+      const seen = new Set(out.map(c => c.address))
+      const py: { c: RecipientSuggestion; rank: number }[] = []
+      for (const c of pool) {
+        if (seen.has(c.address) || !c.name) continue
+        const [key] = pinyinKeys([c.name], true)
+        const hit = key ? matchPinyin(q, key) : null
+        if (hit) py.push({ c: { ...c, nameHit: [hit.start, hit.end] }, rank: hit.rank })
+      }
+      py.sort((a, b) => a.rank - b.rank || byFreq(a.c, b.c))
+      out.push(...py.map(p => p.c))
+    }
+    return out.slice(0, max)
   }
 
   // ---------- 撰写窗 AI：组装提示词（提示词本体在 prompts.ts） ----------

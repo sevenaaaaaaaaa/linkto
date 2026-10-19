@@ -3,6 +3,7 @@ import { openFinance } from '../../lib/finance'
 import { api } from '../../lib/api'
 import { goView } from '../../lib/route'
 import { useMail } from '../../stores/mail'
+import { pinyinMatch, usePinyin } from '../../lib/pinyin'
 import { Reader } from '../Reader'
 import { MenuButton, type MenuItem } from '../../components/Menu'
 import { IconChat, IconChevronRight, IconClose, IconLayers, IconMore, IconPin, IconPlus, IconRefresh, IconSearch, IconSparkles, IconAttach, IconTrash, IconArchive } from '../../components/icons'
@@ -107,11 +108,12 @@ function ListView() {
     }
   }, [])
 
+  const pyVer = usePinyin(items.map(p => p.data.name))
   const visible = useMemo(() => {
     const s = q.trim().toLowerCase()
     const list = items.filter(p =>
       filter === 'all' ? true : filter === 'live' ? isLive(p) : p.data.status === filter
-    ).filter(p => !s || p.data.name.toLowerCase().includes(s) || p.data.counterparties.some(c => c.includes(s)) || p.data.keywords.some(k => k.toLowerCase().includes(s)))
+    ).filter(p => !s || p.data.name.toLowerCase().includes(s) || p.data.counterparties.some(c => c.includes(s)) || p.data.keywords.some(k => k.toLowerCase().includes(s)) || (s.length >= 2 && !!pinyinMatch(s, p.data.name)))
     const by: Record<SortKey, (a: ProjectListItem, b: ProjectListItem) => number> = {
       recent: (a, b) => (b.stats.lastAt ?? b.createdAt) - (a.stats.lastAt ?? a.createdAt),
       due: (a, b) => (a.data.dueAt ?? Infinity) - (b.data.dueAt ?? Infinity),
@@ -119,7 +121,8 @@ function ListView() {
       name: (a, b) => a.data.name.localeCompare(b.data.name, 'zh-CN')
     }
     return list.sort(by[sort])
-  }, [items, filter, sort, q])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, filter, sort, q, pyVer])
 
   const live = items.filter(isLive)
   const suggestions = live.flatMap(p => (p.data.suggestions ?? []).map(s => ({ p, s }))).sort((a, b) => b.s.at - a.s.at)

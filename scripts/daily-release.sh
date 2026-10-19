@@ -169,6 +169,9 @@ dmg="dist/${APP_NAME}-${version}-arm64.dmg"
 build_start=$(date +%s)
 log "building: electron-vite build + electron-builder -mwl (mac dmg + win nsis + linux AppImage)…"
 ./node_modules/.bin/electron-vite build || die "electron-vite build failed"
+# macOS signing identity: stable local identity when set up (scripts/setup-signing.sh), else ad-hoc
+# shellcheck source=lib/mac-signing.sh
+source "${REPO_ROOT}/scripts/lib/mac-signing.sh"
 # extraMetadata.version -> packaged package.json (app.getVersion()) and artifact names.
 # Numeric-only fields (CFBundleShortVersionString/CFBundleVersion, Windows FileVersion) get the plain next version.
 # The mac ${version} macro resolves to bundleShortVersion, so the DMG name is pinned to the nightly version explicitly.
@@ -177,6 +180,7 @@ log "building: electron-vite build + electron-builder -mwl (mac dmg + win nsis +
   "-c.buildVersion=${next_version}" \
   "-c.mac.bundleShortVersion=${next_version}" \
   "-c.dmg.artifactName=${APP_NAME}-${version}-\${arch}.\${ext}" \
+  ${MAC_SIGN_ARGS[@]+"${MAC_SIGN_ARGS[@]}"} \
   || die "electron-builder failed"
 log "build finished in $(( $(date +%s) - build_start ))s"
 [ -f "$dmg" ] || die "expected DMG not found: $dmg"

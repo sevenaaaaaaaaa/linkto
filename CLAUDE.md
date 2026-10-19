@@ -50,3 +50,5 @@ scripts/release.sh 0.4.0             # bump package.json → chore(release): v0.
 ```
 
 macOS 打开助手：DMG 内含 `LinkTo.app`、`Applications` 链接、`打不开？双击我.command`、`安装说明.txt`（由 `electron-builder.yml` 的 `dmg.contents` 打入，模板在 `packaging/macos/`）。安装包未签名/未公证（本机只有 Apple Development 证书），`.command` 会移除 `com.apple.quarantine`、签名校验失败时做 ad-hoc 重签，然后打开应用，避免「已损坏，无法打开」。
+
+本机签名身份（钥匙串授权跨版本保留）：ad-hoc 签名每次构建都变，macOS 会在每次装新版后重新询问「linkto Safe Storage」钥匙串授权。运行一次 `scripts/setup-signing.sh`（在登录钥匙串里创建自签名代码签名身份「LinkTo Local Signing」，需本人输入登录密码；`--check` 查看状态、`--remove` 撤销）后，`daily-release.sh` / `release.sh` 会自动用它签名（`scripts/lib/mac-signing.sh`；没有该身份时仍是 ad-hoc 并在日志里提示），装新版后再点一次「始终允许」即可长期有效。应用启动不再同步读钥匙串：先开窗，密钥在后台解锁，授权对话框未处理时界面给出中文说明。

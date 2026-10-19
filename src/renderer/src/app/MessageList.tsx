@@ -15,7 +15,7 @@ import { noteMouseAction } from './Guidance'
 import { usePrefs, setPrefs } from '../lib/prefs'
 import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
-import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './MailSearch'
+import { SearchBox, SearchHeader, SearchEmpty, SearchMore, Hl, useSearchTerms } from './MailSearch'
 import { useSearch } from '../stores/search'
 import { ProjectTag } from './projects/ProjectBits'
 import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
@@ -396,7 +396,9 @@ export function MessageList() {
   const prefs = usePrefs()
   const sectioned = prefs.sections
   const toggleSectioned = () => setPrefs({ sections: !sectioned })
-  const sorted = useMemo(() => sortMessages(messages, sort), [messages, sort])
+  // 搜索结果的默认排序 = 主进程给出的「相关度 + 时间」顺序（不再按时间重排）
+  const relevanceOrder = scope.kind === 'search' && sort === 'date'
+  const sorted = useMemo(() => (relevanceOrder ? messages : sortMessages(messages, sort)), [messages, sort, relevanceOrder])
 
   // —— 重力混合排序：时间分 × (1-t) + 重要分 × t；t=0 保持原排序，t>0 液态接管 ——
   const blended = useMemo(() => {
@@ -693,7 +695,7 @@ export function MessageList() {
   }
   const listMenu: MenuItem[] = [
     { kind: 'label', label: '排序' },
-    ...(Object.keys(SORT_LABEL) as ListSort[]).map(k => ({ kind: 'check' as const, label: SORT_LABEL[k], checked: sort === k, onSelect: () => setSort(k) })),
+    ...(Object.keys(SORT_LABEL) as ListSort[]).map(k => ({ kind: 'check' as const, label: k === 'date' && scope.kind === 'search' ? '相关度 + 时间' : SORT_LABEL[k], checked: sort === k, onSelect: () => setSort(k) })),
     { kind: 'sep' },
     { kind: 'check', label: '按会话聚合', checked: groupThreads, onSelect: () => setGroupThreads(!groupThreads) },
     ...(scope.kind === 'unified' || scope.kind === 'account'
@@ -1218,6 +1220,7 @@ export function MessageList() {
         )}
           </div>
         ))}
+        {searchActive && <SearchMore />}
       </div>
 
       {askOpen && (
