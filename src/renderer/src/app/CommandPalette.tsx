@@ -10,6 +10,7 @@ import type { MessageSummary } from '@shared/types'
 import { projectCommands } from './projects/ProjectBits'
 import { agentCommands } from './agent/AgentNav'
 import { shareCommands } from './share/SharePanel'
+import { openFeeds } from '../lib/feeds'
 
 interface Command {
   id: string
@@ -84,6 +85,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
       { id: 'nav-life', group: '前往', label: '生活档案（证件 / 保险 / 年检 / 域名 / 会员 / 保修到期）', keywords: 'life admin 生活档案 到期 续期 续保 护照 证件 保险 年检 域名 会员 保修 合同 租房 个税 体检 renewal expire passport', run: () => { goView('life'); props.onClose() } },
       { id: 'act-life-scan', group: '前往', label: '生活档案：扫描最近 2 年邮件', keywords: 'life scan 到期 续期 回填', run: () => { goView('life'); props.onClose(); void api.lifeScan(730) } },
+      { id: 'nav-feeds', group: '前往', label: '订阅（RSS / AI 搜索订阅）', keywords: 'feeds rss atom feed 订阅源 资讯 新闻 博客 AI 搜索 主题 行业动态', run: () => { openFeeds(); props.onClose() } },
+      { id: 'nav-feeds-digest', group: '前往', label: '订阅：今日精华', keywords: 'feeds digest rss 精华 汇总', run: () => { openFeeds({ kind: 'digest' }); props.onClose() } },
+      { id: 'act-feeds-refresh', group: '前往', label: '订阅：立即更新全部订阅源', keywords: 'feeds refresh rss 更新 抓取', run: () => { openFeeds(); props.onClose(); void api.feedRefresh(null) } },
+      { id: 'act-feeds-manage', group: '前往', label: '订阅：管理订阅源 / AI 搜索订阅 / OPML', keywords: 'feeds settings opml rss 添加订阅 搜索订阅', run: () => { props.onClose(); api.openSettings('feeds') } },
       { id: 'act-finance-scan', group: '前往', label: '财务：扫描最近 90 天邮件', keywords: 'finance scan 账单 订阅 回填', run: () => { goView('finance'); props.onClose(); void api.financeScan(90) } },
       ...state.accounts.map(acc => ({
         id: `nav-acc-${acc.id}`,

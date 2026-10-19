@@ -1,6 +1,6 @@
 import type { AgentJobInfo, AgentJobSettings } from '@shared/types'
 import { fmtNext, fmtWhen, useAgentJobs } from '../../lib/automation'
-import { IconArchive, IconAttach, IconBrain, IconCheckSquare, IconLayers, IconRefresh, IconSparkles, IconSunrise } from '../../components/icons'
+import { IconArchive, IconAttach, IconBrain, IconCheckSquare, IconLayers, IconRefresh, IconRss, IconSparkles, IconSunrise } from '../../components/icons'
 import { IconWallet } from '../finance/FinanceNav'
 import { IconLife } from '../life/icons'
 
@@ -29,6 +29,10 @@ function jobIcon(j: AgentJobInfo) {
       return <IconArchive {...ico} />
     case 'life':
       return <IconLife {...ico} />
+    case 'feeds':
+    case 'feed-topics':
+    case 'feed-digest':
+      return <IconRss {...ico} />
     default:
       return <IconRefresh {...ico} />
   }

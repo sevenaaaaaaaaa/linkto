@@ -19,6 +19,7 @@ import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
 import { PinnedProjects, useProjectBadge, useProjectsRowActive } from './projects/ProjectBits'
 import { IconLayers } from '../components/icons'
 import { AgentNavSection } from './agent/AgentNav'
+import { FeedNavSection } from './feeds/FeedNav'
 import { useOverdueCount } from '../lib/followups'
 
 /**
@@ -302,6 +303,7 @@ export function Sidebar() {
           <>
             {sb.brief && <Row icon={<IconSparkles {...ico} />} label="今日简报" active={view === 'insights'} onClick={() => goView('insights')} />}
             <Row icon={<IconCheckSquare {...ico} />} label="待办" unread={todoToday} active={view === 'todo'} onClick={() => goView('todo')} />
+            <FeedNavSection Row={Row} ico={ico} />
             <FinanceNavRow active={view === 'finance'} render={(label, count) => <Row icon={<IconWallet {...ico} />} label={label} unread={count} muteCount active={view === 'finance'} onClick={() => goView('finance')} />} />
             <LifeNavRow render={(label, count) => <Row icon={<IconLife {...ico} />} label={label} unread={count} muteCount active={view === 'life'} onClick={() => goView('life')} />} />
             <AgentNavSection Row={Row} ico={ico} />

@@ -63,7 +63,11 @@ const METHOD_NAMES = [
   'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects',
   // 导出与分享中心
   'shareTargets', 'shareSaveTarget', 'shareRemoveTarget', 'shareTestTarget', 'shareSettings', 'shareSetSettings',
-  'sharePreview', 'shareSend', 'shareExport', 'shareCopy', 'shareLinks', 'shareOpenLink'
+  'sharePreview', 'shareSend', 'shareExport', 'shareCopy', 'shareLinks', 'shareOpenLink',
+  // 订阅 / AI 搜索订阅
+  'feedSources', 'feedDiscover', 'feedAddSource', 'feedUpdateSource', 'feedDeleteSource', 'feedRenameGroup', 'feedRefresh', 'feedItems', 'feedItem',
+  'feedMarkRead', 'feedMarkAllRead', 'feedStar', 'feedFullText', 'feedSummarize', 'feedToReading', 'feedUnreadTotal', 'feedAddTopic', 'feedRunTopic',
+  'feedGetSettings', 'feedSetSettings', 'feedSearchKeys', 'feedSetSearchKey', 'feedImportOpml', 'feedImportOpmlText', 'feedExportOpml', 'feedDigest', 'feedGenerateDigest'
 ] as const
 
 const api = {} as LinkToApi

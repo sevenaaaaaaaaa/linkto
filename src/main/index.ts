@@ -43,6 +43,7 @@ import { initFollowups, followupService } from './followups'
 import { initRuleSuggest } from './rule-suggest'
 import { initLife, lifeService } from './life'
 import { initShare, listenAppLinks } from './share'
+import { initFeeds } from './feeds'
 
 // 兜底：邮件客户端常驻大量后台 socket，第三方库（如 ImapFlow）会异步 emit error，
 // 任何漏网异常只记日志，不允许直接击穿主进程弹崩溃框
@@ -773,6 +774,8 @@ async function bootstrap() {
       mainWindow?.webContents.send('event', { type: 'open-life', id })
     }
   })
+  // 订阅：RSS / Atom / JSON Feed 与 AI 搜索订阅（IPC feed*；抓取由自动任务「订阅源更新 / AI 搜索订阅 / 今日订阅精华」驱动）
+  initFeeds({ db, store: mailStore, appStore, ai: aiService, getAISettings: () => appStore.getAI(), event: payload => broadcast(payload) })
   // Agent 运行时：工具调用式多步循环 + 会话 + 技能（api:agent*），并把无界面技能运行交给自动任务
   const agentRuntime = new AgentRuntime({
       store: mailStore,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 /** 主窗口一级视图（由 location.hash 驱动）—— 侧栏激活态与 MailShell 共用同一来源（审计 IA-1） */
-export type View = 'mail' | 'kb' | 'insights' | 'agent' | 'todo' | 'attachments' | 'projects' | 'finance' | 'life'
+export type View = 'mail' | 'kb' | 'insights' | 'agent' | 'todo' | 'attachments' | 'projects' | 'finance' | 'life' | 'feeds'
 
 export function viewFromHash(): View {
   const h = location.hash
@@ -13,6 +13,7 @@ export function viewFromHash(): View {
   if (h.startsWith('#/projects')) return 'projects'
   if (h.startsWith('#/finance')) return 'finance'
   if (h.startsWith('#/life')) return 'life'
+  if (h.startsWith('#/feeds')) return 'feeds'
   return 'mail'
 }
 

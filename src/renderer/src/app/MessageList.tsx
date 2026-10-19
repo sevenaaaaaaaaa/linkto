@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { FeedBriefLine } from './feeds/FeedNav'
 import { flushSync } from 'react-dom'
 import { useMail, sortMessages } from '../stores/mail'
 import { api, fmtDate, displayName } from '../lib/api'
@@ -1899,6 +1900,7 @@ function TodayBriefCard(props: { accountId: string | null }) {
         {brief.lines.slice(0, 2).map((l, i) => (
           <div key={i} className="text-xs leading-[18px]" style={{ color: 'var(--muted)' }}>{l}</div>
         ))}
+        <FeedBriefLine />
         <button onClick={() => goView('insights')} className="mt-1 text-xs font-medium underline underline-offset-2" style={{ color: 'var(--fg)' }}>
           完整简报
         </button>

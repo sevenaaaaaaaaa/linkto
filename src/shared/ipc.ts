@@ -658,3 +658,53 @@ export interface LinkToApi {
   /** 打开 linkto://open?mid=… 链接：在主窗口定位到这封邮件 */
   shareOpenLink(url: string): Promise<{ ok: boolean; error?: string; id?: string }>
 }
+
+// ---------- 订阅（RSS / Atom / JSON Feed）与 AI 搜索订阅（与上面的 LinkToApi 声明合并） ----------
+
+export interface LinkToApi {
+  feedSources(): Promise<import('./feeds').FeedSource[]>
+  /** 只检查地址：是订阅 → 返回它；是网页 → 返回页面声明的订阅（没有时试常见路径） */
+  feedDiscover(url: string): Promise<{ ok: boolean; isFeed?: boolean; title?: string | null; candidates: import('./feeds').FeedCandidate[]; error?: string }>
+  /** 添加订阅源（网页地址自动发现；多个候选时返回 candidates 让用户选） */
+  feedAddSource(input: { url: string; group?: string | null; title?: string | null; intervalMin?: number | null; fullText?: boolean }): Promise<{
+    ok: boolean
+    source?: import('./feeds').FeedSource
+    candidates?: import('./feeds').FeedCandidate[]
+    existing?: import('./feeds').FeedSource
+    discovered?: boolean
+    added?: number
+    error?: string
+  }>
+  feedUpdateSource(id: string, patch: { title?: string; group?: string | null; intervalMin?: number | null; fullText?: boolean; enabled?: boolean; topic?: Partial<import('./feeds').FeedTopic> }): Promise<import('./feeds').FeedSource | null>
+  feedDeleteSource(id: string): Promise<void>
+  feedRenameGroup(from: string, to: string | null): Promise<void>
+  /** 立即更新（不传 = 全部启用的订阅源） */
+  feedRefresh(ids?: string[] | null): Promise<import('./feeds').FeedRefreshResult>
+  feedItems(query: import('./feeds').FeedItemQuery): Promise<import('./feeds').FeedItem[]>
+  feedItem(id: string): Promise<import('./feeds').FeedItemDetail | null>
+  feedMarkRead(ids: string[], read: boolean): Promise<void>
+  /** 范围内全部标已读（before：只标这之前抓到的），返回条数 */
+  feedMarkAllRead(scope: import('./feeds').FeedScope, before?: number | null): Promise<number>
+  feedStar(id: string, starred: boolean): Promise<void>
+  /** 抓取原文并提取正文（已消毒） */
+  feedFullText(id: string): Promise<{ ok: boolean; html?: string; error?: string }>
+  feedSummarize(id: string, force?: boolean): Promise<{ ok: boolean; text?: string; error?: string }>
+  /** 加入阅读清单（insights kind='reading'） */
+  feedToReading(id: string): Promise<{ ok: boolean; id?: string; created?: boolean; error?: string }>
+  feedUnreadTotal(): Promise<number>
+  feedAddTopic(input: Partial<import('./feeds').FeedTopic> & { query: string; group?: string | null }): Promise<import('./feeds').FeedSource>
+  feedRunTopic(id: string): Promise<import('./feeds').FeedTopicRunResult>
+  feedGetSettings(): Promise<import('./feeds').FeedSettings>
+  feedSetSettings(patch: Partial<import('./feeds').FeedSettings>): Promise<import('./feeds').FeedSettings>
+  /** 搜索 API Key 是否已填（不回传 Key 本身） */
+  feedSearchKeys(): Promise<Record<import('./feeds').SearchApiProvider, boolean>>
+  feedSetSearchKey(provider: import('./feeds').SearchApiProvider, key: string | null): Promise<Record<import('./feeds').SearchApiProvider, boolean>>
+  /** OPML 导入（系统打开对话框） */
+  feedImportOpml(): Promise<{ ok: boolean; canceled?: boolean; added: number; skipped: number; failed: { url: string; error: string }[]; error?: string }>
+  feedImportOpmlText(text: string): Promise<{ ok: boolean; added: number; skipped: number; failed: { url: string; error: string }[]; error?: string }>
+  /** OPML 导出（系统保存对话框） */
+  feedExportOpml(): Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>
+  /** 今日订阅精华（不传 day = 今天的，没有则最近一份） */
+  feedDigest(day?: string | null): Promise<import('./feeds').FeedDigest | null>
+  feedGenerateDigest(): Promise<{ ok: boolean; digest?: import('./feeds').FeedDigest; error?: string }>
+}
