@@ -71,32 +71,58 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     key: 'outlook',
     label: 'Outlook',
-    hint: '支持微软一键授权（设备码），无需密码。',
+    hint: '微软已关闭 IMAP 的密码登录，请用「一键授权」（设备码）。首次使用需在 Azure 注册一个 OAuth 应用（一次性，约 3 分钟）。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['outlook.com', 'live.com', 'live.cn'],
     color: '#0ea5e9',
-    auth: 'oauth-ms'
+    auth: 'oauth-ms',
+    guideUrl: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040',
+    passwordLabel: '应用密码（多数账户已不可用）',
+    passwordPlaceholder: '微软已停用 IMAP 密码登录，建议改用一键授权',
+    guideLinks: [
+      { label: 'Outlook 官方 IMAP 设置', url: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040' },
+      { label: 'Azure 应用注册', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
+      { label: '注册应用图文指南', url: 'https://learn.microsoft.com/entra/identity-platform/quickstart-register-app' },
+      { label: '微软账户安全页', url: 'https://account.live.com/proofs/manage' }
+    ]
   },
   {
     key: 'office365',
     label: 'Microsoft 365',
-    hint: '使用工作账户一键授权；若组织禁用个人授权需管理员开通。',
+    hint: '使用工作账户一键授权；若组织禁用第三方授权需管理员在 Microsoft Entra 中开通。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['onmicrosoft.com'],
     color: '#2563eb',
-    auth: 'oauth-ms'
+    auth: 'oauth-ms',
+    guideUrl: 'https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/pop3-and-imap4/pop3-and-imap4',
+    passwordLabel: '密码 / 应用密码',
+    passwordPlaceholder: '仅当组织仍允许基本认证时可用，建议改用一键授权',
+    guideLinks: [
+      { label: 'Microsoft 365 IMAP 官方说明', url: 'https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/pop3-and-imap4/pop3-and-imap4' },
+      { label: 'Azure 应用注册', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
+      { label: '注册应用图文指南', url: 'https://learn.microsoft.com/entra/identity-platform/quickstart-register-app' }
+    ]
   },
   {
     key: 'hotmail',
     label: 'Hotmail',
-    hint: '同 Outlook，支持微软一键授权（设备码）。',
+    hint: '同 Outlook：微软已关闭 IMAP 的密码登录，请用「一键授权」（设备码），首次需在 Azure 注册 OAuth 应用。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
     domains: ['hotmail.com'],
     color: '#6366f1',
-    auth: 'oauth-ms'
+    auth: 'oauth-ms',
+    guideUrl: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040',
+    passwordLabel: '应用密码（多数账户已不可用）',
+    passwordPlaceholder: '微软已停用 IMAP 密码登录，建议改用一键授权',
+    guideLinks: [
+      { label: 'Hotmail / Outlook 官方 IMAP 设置', url: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040' },
+      { label: 'Azure 应用注册', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
+      { label: '注册应用图文指南', url: 'https://learn.microsoft.com/entra/identity-platform/quickstart-register-app' },
+      { label: '微软账户安全页', url: 'https://account.live.com/proofs/manage' }
+    ]
   },
   {
     key: 'qq',

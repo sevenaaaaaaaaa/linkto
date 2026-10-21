@@ -5,9 +5,37 @@ import { SectionTitle } from './GeneralTab'
 import { DevSyncAccountNotice } from './DevSyncAccountNotice'
 import { PROVIDER_PRESETS, presetFor } from '@shared/presets'
 import { ACCOUNT_COLORS } from '@shared/presets'
+import type { ProviderPreset } from '@shared/presets'
 import { takeAccountFocus, type AccountFocus } from '../account-focus'
 import { classifyAccountError } from '@shared/errors'
 import type { AccountDraft, AccountWithStatus, OAuthClientConfig, ProviderKey } from '@shared/types'
+
+/** 服务商官方配置页：优先用预设里的多入口，没有时退回单一 guideUrl */
+function guideLinksFor(preset: ProviderPreset | undefined): { label: string; url: string }[] {
+  if (!preset) return []
+  if (preset.guideLinks?.length) return preset.guideLinks
+  return preset.guideUrl ? [{ label: '打开官方设置页', url: preset.guideUrl }] : []
+}
+
+/** 官方配置入口：任何添加 / 查看账户的地方都能一键去服务商官网 */
+function OfficialLinks(props: { preset?: ProviderPreset }) {
+  const links = guideLinksFor(props.preset)
+  if (!links.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {links.map(l => (
+        <button
+          key={l.url}
+          onClick={() => void api.openExternal(l.url)}
+          className="text-xs px-2.5 py-1 rounded-full border transition-colors hover:bg-[var(--hover)]"
+          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+        >
+          {l.label} ↗
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const STATUS_TEXT: Record<string, { label: string; cls: string }> = {
   connected: { label: '已连接', cls: 'text-green-600' },
@@ -121,6 +149,7 @@ export function AccountsTab() {
 
 function AccountDetail(props: { account: AccountWithStatus; onChanged(): void; autoAction?: 'reauth' | 'password'; onAutoActionDone?(): void }) {
   const { account: a } = props
+  const preset = PROVIDER_PRESETS.find(p => p.key === a.provider)
   const status = STATUS_TEXT[a.status] ?? STATUS_TEXT.disabled
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(props.autoAction === 'password' && a.authType !== 'oauth')
@@ -251,6 +280,18 @@ function AccountDetail(props: { account: AccountWithStatus; onChanged(): void; a
         <ServerRow label="SMTP" value={`${a.smtp.host}:${a.smtp.port} ${a.smtp.secure ? 'SSL' : ''}`} />
         <ServerRow label="用户名" value={a.user} />
       </div>
+
+      {guideLinksFor(preset).length > 0 && (
+        <>
+          <SectionTitle>官方设置</SectionTitle>
+          <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-3">
+            <div className="text-xs text-zinc-500 mb-2 leading-relaxed">
+              在服务商官网检查 IMAP / SMTP 开关、应用授权或 OAuth 应用设置：
+            </div>
+            <OfficialLinks preset={preset} />
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -431,6 +472,82 @@ function AddAccount(props: { onDone(): void; onCancel(): void }) {
   )
 }
 
+/** OAuth 应用的官方创建步骤（服务商不再接受密码登录，这里是一键授权的前置准备） */
+const OAUTH_SETUP: Record<
+  Exclude<OAuthKind, null>,
+  { title: string; lead: string; steps: string[]; links: { label: string; url: string }[] }
+> = {
+  'oauth-google': {
+    title: '先在 Google Cloud 准备授权（一次性，约 3 分钟）',
+    lead: '同一套凭据可用于所有 Gmail 账户；同意屏幕处于「测试」状态时，记得把自己的邮箱加入测试用户。',
+    steps: [
+      '打开 Google Cloud Console →「API 和服务」→「凭据」',
+      '配置 OAuth 同意屏幕（外部；测试用户填自己的 Gmail 地址）',
+      '「创建凭据」→「OAuth 客户端 ID」→ 应用类型选「桌面应用」',
+      '复制 Client ID 与 Client Secret，填入下方并保存',
+      '点「使用 Gmail 账号授权登录」，在浏览器里完成同意'
+    ],
+    links: [
+      { label: 'Google 凭据页', url: 'https://console.cloud.google.com/apis/credentials' },
+      { label: 'OAuth 同意屏幕', url: 'https://console.cloud.google.com/apis/credentials/consent' },
+      { label: '应用专用密码（备选）', url: 'https://myaccount.google.com/apppasswords' }
+    ]
+  },
+  'oauth-ms': {
+    title: '先在 Azure 注册应用（一次性，约 3 分钟）',
+    lead: '同一套凭据可用于 Hotmail / Outlook / Microsoft 365；个人账户与工作账户都能授权。',
+    steps: [
+      '打开 Azure 门户 →「应用注册」→「新注册」',
+      '受支持的账户类型选「任何组织目录中的账户和个人 Microsoft 账户」',
+      '「身份验证」→ 打开「允许公共客户端流」',
+      '「API 权限」→ 添加委托权限：IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid、profile、email',
+      '复制「应用程序(客户端) ID」，填入下方并保存（工作账户可能需要管理员同意）',
+      '点「使用 Microsoft 账号授权登录」，输入设备码完成授权'
+    ],
+    links: [
+      { label: 'Azure 应用注册', url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' },
+      { label: '注册应用图文指南', url: 'https://learn.microsoft.com/entra/identity-platform/quickstart-register-app' },
+      { label: 'Outlook 官方 IMAP 设置', url: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040' }
+    ]
+  }
+}
+
+/** 分步引导：服务商官网 + 具体点哪里，避免「未配置」变成死胡同 */
+function OAuthSetupGuide(props: { kind: Exclude<OAuthKind, null> }) {
+  const g = OAUTH_SETUP[props.kind]
+  return (
+    <div className="mt-2 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-3.5">
+      <div className="flex items-baseline gap-2 mb-2">
+        <div className="text-xs font-semibold text-zinc-700">{g.title}</div>
+        <div className="flex-1" />
+        <span className="text-2xs text-zinc-400">只做一次</span>
+      </div>
+      <ol className="space-y-1.5">
+        {g.steps.map((s, i) => (
+          <li key={i} className="flex gap-2 text-xs leading-relaxed text-zinc-600">
+            <span className="shrink-0 w-[18px] h-[18px] rounded-full bg-blue-50 text-blue-700 text-2xs font-semibold flex items-center justify-center mt-0.5">
+              {i + 1}
+            </span>
+            <span>{s}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {g.links.map(l => (
+          <button
+            key={l.url}
+            onClick={() => void api.openExternal(l.url)}
+            className="text-xs px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-700 hover:bg-blue-100 transition"
+          >
+            {l.label} ↗
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 text-2xs text-zinc-400 leading-relaxed">{g.lead}</div>
+    </div>
+  )
+}
+
 /** OAuth 授权步骤：一键授权弹窗 / 设备码 / 未配置凭据时降级引导 */
 function OAuthStep(props: {
   provider: ProviderKey
@@ -447,8 +564,10 @@ function OAuthStep(props: {
   const [phase, setPhase] = useState<'idle' | 'working' | 'device'>('idle')
   const [device, setDevice] = useState<{ userCode: string; verificationUri: string } | null>(null)
   const [error, setError] = useState('')
-  const [showCreds, setShowCreds] = useState(false)
-  const label = PROVIDER_PRESETS.find(p => p.key === provider)?.label ?? provider
+  // 未配置凭据时直接展开准备步骤与表单，不让用户停在「一键授权」的禁用按钮前
+  const [showCreds, setShowCreds] = useState(!configured)
+  const preset = PROVIDER_PRESETS.find(p => p.key === provider)
+  const label = preset?.label ?? provider
 
   useMailEvent(ev => {
     const e = ev as { type: string; userCode?: string; verificationUri?: string }
@@ -519,8 +638,10 @@ function OAuthStep(props: {
               {phase === 'working' ? '等待授权完成…' : `使用 ${label} 账号授权登录`}
             </button>
             {!configured && (
-              <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
-                尚未配置 {kind === 'oauth-google' ? 'Google' : 'Microsoft'} OAuth 应用凭据。可在下方填入凭据启用一键授权，或改用应用专用密码手动添加。
+              <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5 leading-relaxed">
+                {kind === 'oauth-ms'
+                  ? '尚未配置 Microsoft OAuth 应用凭据。微软已关闭 IMAP 的密码登录，按下方「Azure 注册应用」完成一次准备，Hotmail / Outlook / Microsoft 365 就都能一键授权。'
+                  : '尚未配置 Google OAuth 应用凭据。按下方步骤在 Google Cloud 创建一次，之后所有 Gmail 账户都能一键授权。'}
               </div>
             )}
             {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
@@ -528,15 +649,23 @@ function OAuthStep(props: {
 
           <div className="mt-3 flex items-center gap-2">
             <button onClick={() => setShowCreds(s => !s)} className="text-xs text-zinc-500 hover:text-zinc-700">
-              {showCreds ? '收起 OAuth 应用凭据' : '高级：配置 OAuth 应用凭据 ▾'}
+              {showCreds ? '收起应用凭据与配置步骤' : `${configured ? '高级：更新 OAuth 应用凭据' : '配置 OAuth 应用凭据'} ▾`}
             </button>
             <div className="flex-1" />
             <button onClick={props.onFallback} className="text-xs text-zinc-500 hover:text-zinc-700">
-              改用应用专用密码添加
+              {kind === 'oauth-ms' ? '手动配置 IMAP（多数账户会被拒绝）' : '改用应用专用密码添加'}
             </button>
           </div>
 
+          {showCreds && <OAuthSetupGuide kind={kind} />}
           {showCreds && <OAuthCredsForm cfg={props.oauthCfg} kind={kind} onSaved={props.onConfigSaved} />}
+
+          {preset && !showCreds && guideLinksFor(preset).length > 0 && (
+            <div className="mt-4">
+              <div className="text-2xs font-semibold tracking-[0.06em] uppercase text-zinc-400 mb-1.5">官方配置入口</div>
+              <OfficialLinks preset={preset} />
+            </div>
+          )}
 
           <button onClick={props.onBack} className="mt-4 text-sm text-zinc-500 hover:underline">返回选择服务商</button>
         </>
@@ -567,9 +696,10 @@ function OAuthCredsForm(props: { cfg: OAuthClientConfig; kind: Exclude<OAuthKind
   return (
     <div className="mt-2 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1">
       <p className="text-xs text-zinc-400 leading-relaxed py-2">
-        凭据只保存在本机（加密）。{props.kind === 'oauth-google'
-          ? 'Google Cloud Console → 创建 OAuth 客户端（桌面应用）→ 启用 IMAP scope（https://mail.google.com/）。'
-          : 'Azure 门户 → 应用注册（公共客户端）→ 添加 IMAP.AccessAsUser.All 与 SMTP.Send 委托权限。'}
+        凭据只保存在本机（加密）。
+        {props.kind === 'oauth-google'
+          ? '填入上面创建的「桌面应用」OAuth 客户端的 Client ID 与 Client Secret。'
+          : '填入上面复制的「应用程序(客户端) ID」。'}
       </p>
       {props.kind === 'oauth-google' && (
         <>
@@ -679,6 +809,22 @@ function PasswordForm(props: {
     <div className="max-w-[520px]">
       <SectionTitle>添加 {preset.label}</SectionTitle>
 
+      {/* 服务商已停用密码登录 / 支持一键授权：先把用户送回更省事的那条路 */}
+      {preset.auth && preset.auth !== 'password' && (
+        <div className="mb-3 flex items-start gap-3 rounded-xl bg-blue-50 border border-blue-200/60 px-3.5 py-2.5">
+          <div className="flex-1 text-xs leading-relaxed text-blue-800">
+            {preset.label} 支持一键授权，不需要密码。
+            {preset.auth === 'oauth-ms' && '微软已关闭 IMAP 的密码登录，手动填写多数会被拒绝。'}
+          </div>
+          <button
+            onClick={props.onBack}
+            className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 transition"
+          >
+            去一键授权 →
+          </button>
+        </div>
+      )}
+
       {/* 分步教学：应用内直达，降低授权码获取门槛 */}
       {preset.steps && preset.steps.length > 0 && (
         <div className="mb-4 rounded-2xl bg-amber-50 border border-amber-200/60 px-4 py-3.5">
@@ -714,10 +860,18 @@ function PasswordForm(props: {
       {!preset.steps && preset.hint && (
         <div className="mb-3 text-xs leading-relaxed text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl px-3.5 py-2.5">
           {preset.hint}
-          {preset.guideUrl && (
-            <button onClick={() => preset.guideUrl && void api.openExternal(preset.guideUrl)} className="ml-2 underline hover:no-underline">
-              打开官方设置页 →
-            </button>
+          {guideLinksFor(preset).length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {guideLinksFor(preset).map(l => (
+                <button
+                  key={l.url}
+                  onClick={() => void api.openExternal(l.url)}
+                  className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition"
+                >
+                  {l.label} ↗
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
