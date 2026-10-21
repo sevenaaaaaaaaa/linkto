@@ -362,6 +362,7 @@ function createGhostWindow() {
     height: 660,
     minWidth: 640,
     minHeight: 520,
+    title: '幽灵信 · 端到端加密',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
     backgroundColor: '#F4F5F7',
@@ -374,6 +375,7 @@ function createGhostWindow() {
     }
   })
   ghostWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ghost' })
+  ghostWindow.webContents.once('did-finish-load', () => ghostWindow?.setTitle('幽灵信 · 端到端加密'))
   ghostWindow.once('ready-to-show', () => ghostWindow?.show())
   ghostWindow.on('closed', () => {
     ghostWindow = null

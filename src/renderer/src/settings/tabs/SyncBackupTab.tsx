@@ -10,11 +10,30 @@ import {
   type DevSyncStatus
 } from '@shared/devsync'
 import { SectionTitle, SettingRow, Toggle, Select } from './GeneralTab'
+import { takeSyncPair } from '../account-focus'
 
 type Target = { id: string; label: string; path: string; available: boolean; hint?: string; downloadUrl?: string }
 
 const fmt = (ts: number | null | undefined) =>
   ts ? new Date(ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+
+/** 同步范围的三个快捷预设：推荐 = 默认；只账户 = 只带账户与凭据；全部 = 含 Agent 对话、API Key、Webhook */
+function presetCategories(mode: 'recommended' | 'accounts' | 'all'): Partial<Record<DevSyncCategory, boolean>> {
+  const out: Partial<Record<DevSyncCategory, boolean>> = {}
+  for (const c of DEVSYNC_CATEGORIES) {
+    out[c.id] = mode === 'all' ? true : mode === 'accounts' ? c.id === 'accounts' : c.parent ? false : c.defaultOn
+  }
+  return out
+}
+
+/** 本机专用邮箱（Proton Bridge / 本机服务）：不能作为跨设备同步邮箱，也不能生成配对 */
+function isLocalOnly(a: AccountWithStatus): boolean {
+  const local = (h?: string) => {
+    const s = String(h ?? '').toLowerCase().replace(/^\[|\]$/g, '')
+    return s === 'localhost' || s.endsWith('.localhost') || s === '::1' || /^127\./.test(s)
+  }
+  return a.provider === 'proton' || local(a.imap?.host) || local(a.smtp?.host)
+}
 
 const inputCls = 'no-drag flex-1 min-w-0 text-sm bg-hover rounded-lg px-2.5 py-1.5 outline-none border border-line text-ink'
 const ghostBtn = 'no-drag shrink-0 text-xs px-3 py-1.5 rounded-lg border border-line text-ink-2 hover:bg-hover disabled:opacity-40'
@@ -43,6 +62,8 @@ function DevSyncSection() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [showGuide, setShowGuide] = useState(false)
+  /** 从「还没有账户 → 从另一台电脑快速开始」或 linkto://pair 进来：直接展开导入 */
+  const [pairIntent, setPairIntent] = useState(false)
 
   useEffect(() => {
     void Promise.all([api.devsyncStatus(), api.listAccounts()]).then(([s, list]) => {
@@ -61,6 +82,14 @@ function DevSyncSection() {
       }
       if (e.type === 'todo-sync-status' || e.type === 'trace-sync-status') void api.devsyncStatus().then(setSt)
     })
+  }, [])
+
+  // 从主窗口「从另一台电脑快速开始」/ linkto://pair 进入：展开导入表单
+  useEffect(() => {
+    const open = () => setPairIntent(true)
+    window.addEventListener('ms:settings-pair', open)
+    if (takeSyncPair() || location.hash.endsWith(':pair')) setPairIntent(true)
+    return () => window.removeEventListener('ms:settings-pair', open)
   }, [])
 
   if (!st) return null
@@ -99,6 +128,21 @@ function DevSyncSection() {
 
   const setCat = (id: DevSyncCategory, v: boolean) => void configure({ enabled: st.enabled, categories: { ...st.categories, [id]: v } })
 
+  /** 生成一个 20 位强口令并复制：避免每台设备都手输弱口令 */
+  const genPassphrase = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    const bytes = new Uint8Array(20)
+    crypto.getRandomValues(bytes)
+    const p = Array.from(bytes, b => alphabet[b % alphabet.length])
+      .join('')
+      .replace(/(.{4})/g, '$1-')
+      .replace(/-$/, '')
+    setPass(p)
+    setPass2(p)
+    void navigator.clipboard.writeText(p)
+    setMsg({ text: '已生成并复制 20 位口令，请存入密码管理器', ok: true })
+  }
+
   const syncNow = async () => {
     if (busy) return
     setBusy(true)
@@ -117,6 +161,8 @@ function DevSyncSection() {
         账户（含密码与授权令牌）、Agent 记忆、知识库、技能和各中心的数据，以加密邮件的形式存放在你自己邮箱的隐藏文件夹（{st.folder}）里，
         不经过任何第三方服务器。每台电脑选同一个邮箱、填同一个口令，就会自动合并：以最后一次修改为准，删除也会同步。
       </p>
+
+      <PairingPanel st={st} accounts={accounts} intent={pairIntent} onStatus={setSt} />
 
       {st.pendingDeletes.length > 0 && (
         <div role="alert" className="mb-3 rounded-2xl border px-4 py-3 text-xs leading-relaxed" style={{ background: 'var(--warn-soft)', borderColor: 'var(--border)', color: 'var(--warn-ink)' }}>
@@ -175,6 +221,12 @@ function DevSyncSection() {
               保存口令
             </button>
           </div>
+          <div className="mt-1.5 text-2xs text-ink-3">
+            <button onClick={genPassphrase} className="hover:underline" style={{ color: 'var(--accent-ink)' }}>
+              生成一个强口令并复制
+            </button>
+            <span className="ml-1.5">· 配对到另一台电脑时不用再手输</span>
+          </div>
         </div>
         <SettingRow label="本机名称" desc="在其他设备的「已知设备」和活动记录里显示">
           <input
@@ -220,6 +272,19 @@ function DevSyncSection() {
       </div>
 
       <SectionTitle>同步哪些内容</SectionTitle>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="text-2xs text-ink-3">快速选择</span>
+        <button onClick={() => void configure({ enabled: st.enabled, categories: presetCategories('recommended') })} className={ghostBtn}>
+          推荐
+        </button>
+        <button onClick={() => void configure({ enabled: st.enabled, categories: presetCategories('accounts') })} className={ghostBtn}>
+          只账户
+        </button>
+        <button onClick={() => void configure({ enabled: st.enabled, categories: presetCategories('all') })} className={ghostBtn}>
+          全部（含密钥）
+        </button>
+        <span className="ml-auto text-2xs text-ink-3">已开启 {top.filter(c => st.categories[c.id]).length} 类</span>
+      </div>
       <div className={`${card} py-1`}>
         {top.map(c => {
           const subs = DEVSYNC_CATEGORIES.filter(x => x.parent === c.id)
@@ -300,6 +365,208 @@ function DevSyncSection() {
           </li>
         </ol>
       )}
+    </div>
+  )
+}
+
+/** 设备配对：旧电脑生成「链接 + 配对码」，新电脑粘贴导入，自动添加同步邮箱并开启同步 */
+function PairingPanel(props: {
+  st: DevSyncStatus
+  accounts: AccountWithStatus[]
+  intent: boolean
+  onStatus(s: DevSyncStatus): void
+}) {
+  const [offer, setOffer] = useState<{ link: string; pin: string; expiresAt: number; email: string } | null>(null)
+  const [genBusy, setGenBusy] = useState(false)
+  const [genMsg, setGenMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [copied, setCopied] = useState<'link' | 'pin' | null>(null)
+  const [now, setNow] = useState(Date.now())
+  const [importOpen, setImportOpen] = useState(props.intent || !props.st.enabled)
+  const [link, setLink] = useState('')
+  const [pin, setPin] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const syncAccount = props.accounts.find(a => a.id === props.st.accountId)
+  const localOnly = !!syncAccount && isLocalOnly(syncAccount)
+  const canGenerate = props.st.enabled && props.st.hasPassphrase && !!syncAccount && !localOnly
+
+  useEffect(() => {
+    if (props.intent) setImportOpen(true)
+  }, [props.intent])
+
+  useEffect(() => {
+    if (!offer) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [offer])
+
+  useEffect(() => {
+    if (offer && now > offer.expiresAt) {
+      setOffer(null)
+      setGenMsg({ text: '配对链接已过期，请重新生成', ok: false })
+    }
+  }, [now, offer])
+
+  const generate = async () => {
+    if (genBusy) return
+    setGenBusy(true)
+    setGenMsg(null)
+    const r = await api.devsyncCreatePairing()
+    setGenBusy(false)
+    if (!r.ok || !r.link || !r.pin || !r.expiresAt) {
+      setGenMsg({ text: r.error ?? '生成失败', ok: false })
+      return
+    }
+    setOffer({ link: r.link, pin: r.pin, expiresAt: r.expiresAt, email: r.email ?? '' })
+    setNow(Date.now())
+  }
+
+  const copy = (kind: 'link' | 'pin') => {
+    if (!offer) return
+    void navigator.clipboard.writeText(kind === 'link' ? offer.link : offer.pin)
+    setCopied(kind)
+    window.setTimeout(() => setCopied(null), 1600)
+  }
+
+  const importNow = async () => {
+    if (busy || !link.trim() || !pin.trim()) return
+    setBusy(true)
+    setMsg(null)
+    const r = await api.devsyncImportPairing(link.trim(), pin.trim())
+    setBusy(false)
+    props.onStatus(r.status)
+    if (!r.ok) {
+      setMsg({ text: r.error ?? '导入失败', ok: false })
+      return
+    }
+    setLink('')
+    setPin('')
+    const from = r.fromDevice ? `（来自「${r.fromDevice}」）` : ''
+    setMsg({
+      ok: true,
+      text: r.pending
+        ? `已导入同步邮箱 ${r.email}${from}，正在建立连接；连上后会自动取回其余账户与数据。`
+        : `已导入同步邮箱 ${r.email}${from}，正在取回其余账户与数据…`
+    })
+  }
+
+  const remain = offer ? Math.max(0, Math.ceil((offer.expiresAt - now) / 1000)) : 0
+  const mm = String(Math.floor(remain / 60)).padStart(2, '0')
+  const ss = String(remain % 60).padStart(2, '0')
+
+  return (
+    <div className={`${card} mb-4 py-3`}>
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-ink">换新电脑？不用再手动加邮箱</div>
+          <div className="text-xs leading-relaxed text-ink-3 mt-0.5">
+            {props.st.enabled
+              ? '在这台电脑生成一次配对链接与配对码。新电脑粘贴后会自动添加同步邮箱、开启同步，并把其余账户、记忆与各中心数据取回来。'
+              : '如果这是新电脑，先在已经同步的那台电脑上生成配对链接，然后在这里粘贴导入——不用手动添加邮箱，也不用重新输入同步口令。'}
+          </div>
+        </div>
+        {props.st.enabled && (
+          <button onClick={() => void generate()} disabled={!canGenerate || genBusy} className={primaryBtn}>
+            {genBusy ? '生成中…' : '生成配对'}
+          </button>
+        )}
+      </div>
+
+      {props.st.enabled && !syncAccount && (
+        <div className="mt-2 text-xs leading-relaxed rounded-lg px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn-ink)' }}>
+          还没有可用的同步邮箱。请先在下方选择/添加一个邮箱，再生成配对。
+        </div>
+      )}
+      {props.st.enabled && syncAccount && !syncAccount.enabled && (
+        <div className="mt-2 text-xs leading-relaxed rounded-lg px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn-ink)' }}>
+          同步邮箱当前已停用。请先在「账户」页启用它，再生成配对。
+        </div>
+      )}
+      {props.st.enabled && localOnly && (
+        <div className="mt-2 text-xs leading-relaxed rounded-lg px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn-ink)' }}>
+          当前同步邮箱是本机专用账户（Proton Bridge / 本机服务），另一台电脑连不上，无法生成配对。请换一个通用邮箱作为同步邮箱。
+        </div>
+      )}
+      {props.st.enabled && !localOnly && !props.st.hasPassphrase && (
+        <div className="mt-2 text-xs leading-relaxed rounded-lg px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn-ink)' }}>
+          请先在下方设置同步口令，再生成配对。
+        </div>
+      )}
+      {genMsg && (
+        <div className="mt-2 text-xs leading-relaxed" style={{ color: genMsg.ok ? 'var(--ok-ink)' : 'var(--danger-ink)' }}>
+          {genMsg.text}
+        </div>
+      )}
+
+      {offer && (
+        <div className="mt-3 rounded-xl border border-line bg-hover px-3 py-2.5">
+          <div className="text-xs text-ink-2 leading-relaxed">
+            在新电脑打开 <b>设置 → 同步与备份</b>，把下面的链接粘贴到「从另一台电脑导入」，再输入配对码：
+          </div>
+          <textarea
+            readOnly
+            value={offer.link}
+            rows={3}
+            onFocus={e => e.currentTarget.select()}
+            className="no-drag w-full mt-2 text-[10px] font-mono leading-relaxed bg-panel rounded-lg px-2.5 py-2 outline-none border border-line text-ink-2"
+          />
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button onClick={() => copy('link')} className={ghostBtn}>
+              {copied === 'link' ? '已复制' : '复制链接'}
+            </button>
+            <span className="text-xs text-ink-3">配对码</span>
+            <code className="text-sm font-mono tracking-wider text-ink select-text">{offer.pin}</code>
+            <button onClick={() => copy('pin')} className={ghostBtn}>
+              {copied === 'pin' ? '已复制' : '复制配对码'}
+            </button>
+            <div className="flex-1" />
+            <span className="text-2xs tnum text-ink-3">{remain ? `${mm}:${ss} 后过期` : '已过期'}</span>
+          </div>
+          <div className="mt-2 text-2xs leading-relaxed text-ink-3">
+            链接里包含同步邮箱的加密凭据，请像密码一样对待；链接和配对码最好分开发送。15 分钟内有效。
+            {offer.email ? ` 同步邮箱：${offer.email}` : ''}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 pt-3 border-t border-[var(--border-soft)]">
+        <button onClick={() => setImportOpen(v => !v)} className="text-xs text-ink-2 hover:underline">
+          {importOpen ? '收起「从另一台电脑导入」' : '从另一台电脑导入配对 ▾'}
+        </button>
+        {importOpen && (
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={link}
+              onChange={e => setLink(e.target.value)}
+              rows={3}
+              placeholder="粘贴另一台电脑生成的配对链接（linkto://pair?d=…）"
+              className="no-drag w-full text-[10px] font-mono leading-relaxed bg-hover rounded-lg px-2.5 py-2 outline-none border border-line text-ink"
+            />
+            <div className="flex items-center gap-2">
+              <input
+                value={pin}
+                onChange={e => setPin(e.target.value)}
+                placeholder="配对码（XXXXX-XXXXX）"
+                autoComplete="off"
+                spellCheck={false}
+                className={inputCls}
+              />
+              <button onClick={() => void importNow()} disabled={busy || !link.trim() || !pin.trim()} className={primaryBtn}>
+                {busy ? '导入中…' : '导入并开始同步'}
+              </button>
+            </div>
+            {msg && (
+              <div className="text-xs leading-relaxed" style={{ color: msg.ok ? 'var(--ok-ink)' : 'var(--danger-ink)' }}>
+                {msg.text}
+              </div>
+            )}
+            <div className="text-2xs leading-relaxed text-ink-3">
+              导入会自动添加同步邮箱并开启同步；这台电脑上已有的账户会保留，并与另一台电脑的数据合并。
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

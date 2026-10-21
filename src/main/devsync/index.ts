@@ -33,6 +33,7 @@ import { KeyRing, TodoSyncError, VAULT_FOLDER, hashData, type StateRow, type Vau
 import { vaultRound, newVaultStats, type ApplyContext, type VaultStateStore } from './engine'
 import { buildAdapters, readDevices, writeDevice, CANDIDATE_SECRET, UI_PREFS_KEY, type Adapter } from './adapters'
 import { accountKeyOf, collectRefs, isDeviceBoundAccount, remapRefs } from './refs'
+import { openPairing, sealPairing } from './pairing'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -453,6 +454,130 @@ export class DevSyncService {
     return { ok: true }
   }
 
+  // ================================================================ 设备配对（快速配置另一台电脑）
+
+  /**
+   * 生成一次性配对包：同步邮箱的配置与凭据 + 同步口令 + 类别 + 可选 OAuth 应用配置 / 幽灵信中继。
+   * 15 分钟有效；配对码与链接分开传递。
+   */
+  createPairing(): {
+    ok: boolean
+    error?: string
+    link?: string
+    pin?: string
+    expiresAt?: number
+    email?: string
+  } {
+    const t = this.todoSettings()
+    if (!t.accountId) return { ok: false, error: '请先选择用于同步的邮箱' }
+    if (!this.settings().enabled) return { ok: false, error: '请先开启跨设备同步' }
+    const account = this.account(t.accountId)
+    if (!account) return { ok: false, error: '同步邮箱不存在，请重新选择' }
+    if (isDeviceBoundAccount(account)) {
+      return {
+        ok: false,
+        error: '当前同步邮箱是本机专用账户（如 Proton Bridge / 本机服务），另一台电脑连不上。请换一个通用邮箱作为同步邮箱。'
+      }
+    }
+    if (!account.enabled) return { ok: false, error: '同步邮箱当前已停用，请先在账户页启用' }
+    const passphrase = this.deps.appStore.loadSecret(PASS_SECRET)
+    if (!passphrase) return { ok: false, error: '尚未设置同步口令' }
+    const secret = account.authType === 'oauth' ? undefined : this.deps.appStore.loadSecret(`acct:${account.id}`) ?? undefined
+    const tokens = account.authType === 'oauth' ? this.deps.oauth.loadTokens(account.id) ?? undefined : undefined
+    if (account.authType === 'oauth' && !tokens) return { ok: false, error: '同步邮箱缺少授权令牌，请先在账户页重新授权' }
+    if (account.authType !== 'oauth' && !secret) return { ok: false, error: '同步邮箱缺少密码 / 授权码，请先在账户页填写' }
+    const offer = sealPairing({
+      device: this.deviceName(),
+      account: { config: { ...account }, secret, oauth: tokens },
+      passphrase,
+      categories: { ...this.status().categories },
+      oauthClients: this.deps.appStore.getRaw('oauthClients', null),
+      ghostRelay: this.deps.appStore.get<string>('ghost.relayUrl', '') || null
+    })
+    return { ok: true, ...offer, email: account.email }
+  }
+
+  /**
+   * 在新电脑导入配对包：先补 OAuth 应用配置，再添加同步邮箱（复用备份恢复的账户 / 凭据路径），
+   * 等连接就绪后写入口令并开启同步。其余账户与数据由第一轮同步自动拉回。
+   */
+  async importPairing(link: string, pin: string): Promise<{
+    ok: boolean
+    error?: string
+    status: DevSyncStatus
+    email?: string
+    fromDevice?: string
+    pending?: boolean
+    notes?: string[]
+  }> {
+    const opened = openPairing(link, pin)
+    if (!opened.ok) return { ok: false, error: opened.error, status: this.status() }
+    const p = opened.payload
+    const cfg = p.account.config as { provider?: string; email?: string; imap?: { host?: string }; smtp?: { host?: string } }
+    if (!cfg.provider || !cfg.email) return { ok: false, error: '配对包里缺少同步邮箱信息', status: this.status() }
+    if (isDeviceBoundAccount({ provider: cfg.provider, imap: cfg.imap, smtp: cfg.smtp })) {
+      return { ok: false, error: '配对包里的同步邮箱是本机专用账户，另一台电脑无法连接', status: this.status() }
+    }
+    // OAuth 应用凭据必须先到位，否则同步邮箱的 token 刷新会失败（只补缺失字段，不覆盖本机已有配置）
+    this.mergePairingOAuthClients(p.oauthClients)
+    const restored = await this.restoreAccounts(
+      [{ config: p.account.config, secret: p.account.secret, oauth: p.account.oauth }],
+      'overwrite'
+    )
+    const key = accountKeyOf({ provider: cfg.provider, email: cfg.email })
+    const local = this.deps.store.listAccounts().find(a => accountKeyOf(a) === key)
+    const notes = [...restored.added, ...restored.updated, ...restored.pending, ...restored.failed]
+    if (!local) {
+      return {
+        ok: false,
+        error: `同步邮箱导入失败：${restored.failed[0] ?? restored.pending[0] ?? '未知原因'}`,
+        status: this.status()
+      }
+    }
+    if (!this.hasCred(local)) {
+      return { ok: false, error: '同步邮箱的凭据没有导入成功，请重试，或在账户页手动填写这个邮箱', status: this.status(), notes }
+    }
+    // 凭据存在但测试没通过（密码被改 / OAuth 应用不匹配）：直接把原因带回去
+    const issue = this.status().accountIssues.find(i => i.accountId === local.id)
+    if (issue && issue.kind !== 'network') {
+      return { ok: false, error: `同步邮箱连不上：${issue.text}`, status: this.status(), notes }
+    }
+    // 幽灵信中继（可选）：本机没配过才写入，避免覆盖用户自己的中继
+    if (p.ghostRelay && !this.deps.appStore.get<string>('ghost.relayUrl', '')) this.deps.appStore.set('ghost.relayUrl', p.ghostRelay)
+    // 先落口令：即使随后 todoSync.configure 因网络问题失败，后续轮询也能用
+    this.deps.appStore.saveSecret(PASS_SECRET, p.passphrase)
+    const usable = await this.waitUsable(local.id, 20_000)
+    const configured = await this.configure({
+      enabled: true,
+      accountId: local.id,
+      passphrase: p.passphrase,
+      categories: p.categories as Partial<Record<DevSyncCategory, boolean>>,
+      deviceName: this.deviceName()
+    })
+    if (!configured.ok && usable) {
+      return { ok: false, error: configured.error ?? '同步开启失败', status: configured.status, email: local.email, fromDevice: p.device, notes }
+    }
+    // 刚连上时第一轮可能还没就绪：保持开启，后台轮询会自动补上
+    return {
+      ok: true,
+      status: this.status(),
+      email: local.email,
+      fromDevice: p.device,
+      pending: !usable || !!configured.status.lastError,
+      notes
+    }
+  }
+
+  /** 等同步邮箱的 IMAP 连接就绪（配对导入后最多等 20 秒） */
+  private async waitUsable(accountId: string, ms: number): Promise<boolean> {
+    const until = Date.now() + ms
+    while (Date.now() < until) {
+      if (this.deps.engine.getWorker(accountId)?.isUsable()) return true
+      await new Promise(r => setTimeout(r, 400))
+    }
+    return false
+  }
+
   // ================================================================ 调度
 
   start() {
@@ -816,6 +941,21 @@ export class DevSyncService {
     return res
   }
 
+  /** 配对导入：把源设备的 OAuth 应用配置补到本机缺失的字段上（本机已有值优先） */
+  private mergePairingOAuthClients(c: unknown) {
+    if (!c || typeof c !== 'object') return
+    const src = c as { google?: Record<string, unknown>; ms?: Record<string, unknown> }
+    const cur = (this.deps.appStore.getRaw<{ google?: Record<string, unknown>; ms?: Record<string, unknown> }>('oauthClients', {}) ?? {}) as {
+      google?: Record<string, unknown>
+      ms?: Record<string, unknown>
+    }
+    this.deps.appStore.set('oauthClients', {
+      ...cur,
+      google: { ...(src.google ?? {}), ...(cur.google ?? {}) },
+      ms: { ...(src.ms ?? {}), ...(cur.ms ?? {}) }
+    })
+  }
+
   oauthClientsForBackup(): unknown {
     return this.deps.appStore.getRaw('oauthClients', null)
   }
@@ -877,6 +1017,8 @@ export function registerDevSyncIpc(svc: DevSyncService) {
     devsyncStatus: () => svc.status(),
     devsyncConfigure: (input: DevSyncConfigureInput) => svc.configure(input ?? { enabled: false }),
     devsyncNow: () => svc.syncNow(),
+    devsyncCreatePairing: () => svc.createPairing(),
+    devsyncImportPairing: (link: string, pin: string) => svc.importPairing(String(link ?? ''), String(pin ?? '')),
     devsyncResolveDelete: (key: string, action: 'delete' | 'keep') => svc.resolveDelete(String(key), action === 'delete' ? 'delete' : 'keep'),
     devsyncUseCandidate: (accountId: string) => svc.useCandidate(String(accountId)),
     devsyncPushUiPrefs: (data: unknown) => svc.pushUiPrefs(data),

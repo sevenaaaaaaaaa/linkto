@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMail, type Scope } from '../stores/mail'
 import { cycleTheme, themeLabel } from '../lib/theme'
-import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh, IconRobot } from '../components/icons'
+import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh, IconRobot, IconGhost, IconLock } from '../components/icons'
 import { useSearch } from '../stores/search'
 import { askAgent } from '../lib/agent-ask'
 import type { MessageSummary } from '@shared/types'
@@ -94,6 +94,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },
       { id: 'nav-life', group: '前往', label: '生活档案（证件 / 保险 / 年检 / 域名 / 会员 / 保修到期）', keywords: 'life admin 生活档案 到期 续期 续保 护照 证件 保险 年检 域名 会员 保修 合同 租房 个税 体检 renewal expire passport', run: () => { goView('life'); props.onClose() } },
       { id: 'nav-trace', group: '前往', label: '留痕（口头约定 / 书面确认）', keywords: 'trace 留痕 口头 约定 书面确认 凭据 微信 电话 会议 聊天记录', run: () => { goView('trace'); props.onClose() } },
+      { id: 'nav-ghost', group: '前往', label: '幽灵信（端到端加密 · 阅后即焚）', keywords: 'ghost 幽灵信 加密 阅后即焚 私密 聊天 secure chat 匿名', icon: <IconGhost width={14} height={14} />, run: () => { props.onClose(); api.openGhost() } },
       { id: 'act-trace-capture', group: '前往', label: '记一笔留痕…', keywords: 'trace capture 记一笔 留痕 聊天 截图 口头 约定', run: () => { props.onClose(); openTraceCapture() } },
       { id: 'act-life-scan', group: '前往', label: '生活档案：扫描最近 2 年邮件', keywords: 'life scan 到期 续期 回填', run: () => { goView('life'); props.onClose(); void api.lifeScan(730) } },
       { id: 'nav-feeds', group: '前往', label: '订阅（RSS / AI 搜索订阅）', keywords: 'feeds rss atom feed 订阅源 资讯 新闻 博客 AI 搜索 主题 行业动态', run: () => { openFeeds(); props.onClose() } },
@@ -148,6 +149,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       {
         id: 'act-settings', group: '操作', label: '设置', hint: '⌘,', icon: <IconSettings width={14} height={14} />,
         run: () => { void api.openSettings(); props.onClose() }
+      },
+      {
+        id: 'act-pair-device', group: '操作', label: '添加另一台电脑（跨设备同步配对）', keywords: 'pair device 新电脑 新设备 跨设备 同步 配对 链接 配对码 迁移', icon: <IconLock width={14} height={14} />,
+        run: () => { props.onClose(); void api.openSettings('backup:pair') }
       },
       {
         id: 'act-theme', group: '外观', label: '明暗切换（跟随系统 / 浅色 / 深色）', hint: '⌘T',

@@ -164,6 +164,27 @@ export interface DevSyncConfigureInput {
   categories?: Partial<Record<DevSyncCategory, boolean>>
 }
 
+/** 旧电脑生成的短时配对包（链接 + 配对码，15 分钟有效） */
+export interface DevSyncPairingOffer {
+  ok: boolean
+  error?: string
+  link?: string
+  pin?: string
+  expiresAt?: number
+  email?: string
+}
+
+/** 新电脑导入结果：pending = 同步邮箱还在连接，后台会自动重试首轮 */
+export interface DevSyncPairingResult {
+  ok: boolean
+  error?: string
+  status: DevSyncStatus
+  email?: string
+  fromDevice?: string
+  pending?: boolean
+  notes?: string[]
+}
+
 // ---------------- 备份（backupx） ----------------
 
 export interface BackupxHeader {

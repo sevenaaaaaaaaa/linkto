@@ -75,7 +75,7 @@ const METHOD_NAMES = [
   // 升级向导 / 侧栏
   'upgradeState', 'upgradeSetSeen', 'upgradeLater', 'sidebarUsage',
   // 跨设备同步与备份
-  'devsyncStatus', 'devsyncConfigure', 'devsyncNow', 'devsyncResolveDelete', 'devsyncUseCandidate', 'devsyncPushUiPrefs', 'devsyncUiPrefs',
+  'devsyncStatus', 'devsyncConfigure', 'devsyncNow', 'devsyncCreatePairing', 'devsyncImportPairing', 'devsyncResolveDelete', 'devsyncUseCandidate', 'devsyncPushUiPrefs', 'devsyncUiPrefs',
   'backupxExport', 'backupxPick', 'backupxInspect', 'backupxRestore', 'backupxAutoGet', 'backupxAutoSet', 'backupxAutoRun',
   // 搜索索引 / 拼音
   'searchIndexStatus', 'pinyinKeys'

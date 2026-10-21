@@ -184,6 +184,11 @@ export class AccountWorker {
     this.loop().catch(() => {})
   }
 
+  /** 当前 IMAP 连接是否已就绪（配对导入后等待首次连接用） */
+  isUsable(): boolean {
+    return !!this.client?.usable
+  }
+
   stop() {
     this.running = false
     this.stopWatchdog()

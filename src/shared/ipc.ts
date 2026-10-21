@@ -794,6 +794,10 @@ export interface LinkToApi {
   /** 开启 / 关闭 / 改类别；邮箱、口令、设备名与待办同步共用。开启时立即同步一轮 */
   devsyncConfigure(input: import('./devsync').DevSyncConfigureInput): Promise<{ ok: boolean; error?: string; status: import('./devsync').DevSyncStatus }>
   devsyncNow(): Promise<import('./devsync').DevSyncStatus>
+  /** 生成给另一台电脑的短时配对包（含同步邮箱凭据，15 分钟有效） */
+  devsyncCreatePairing(): Promise<import('./devsync').DevSyncPairingOffer>
+  /** 在新电脑导入配对包：自动添加同步邮箱、写入口令并开启同步 */
+  devsyncImportPairing(link: string, pin: string): Promise<import('./devsync').DevSyncPairingResult>
   /** 另一台设备删除了账户：delete = 本机也删除；keep = 本机保留 */
   devsyncResolveDelete(key: string, action: 'delete' | 'keep'): Promise<import('./devsync').DevSyncStatus>
   /** 试用另一台设备同步来的本机专用凭据（用户确认后） */

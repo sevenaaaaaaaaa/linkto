@@ -10,7 +10,7 @@ import { useLifeBadge } from './life/LifeStrip'
 import { useTraceBadge } from './trace/TraceStrip'
 import {
   IconFlag, IconTrash, IconArchive, IconSend, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList
+  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -375,6 +375,20 @@ export function Sidebar() {
           </>
         )}
 
+        {/* 私密通信：幽灵信（独立窗口，不占导航布局） */}
+        <div className="mt-1.5">
+          <Row
+            icon={<IconGhost width={15} height={15} />}
+            label="幽灵信"
+            trailing={
+              <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>
+                端到端
+              </span>
+            }
+            onClick={() => api.openGhost()}
+          />
+        </div>
+
         {layout.more.length > 0 && (
           <>
             <GroupHeader
@@ -405,6 +419,9 @@ export function Sidebar() {
             还没有账户。
             <button className="block mt-1.5 hover:underline" style={{ color: 'var(--accent-ink)' }} onClick={() => api.openSettings('accounts')}>
               添加第一个邮箱 →
+            </button>
+            <button className="block mt-1 hover:underline" style={{ color: 'var(--muted)' }} onClick={() => api.openSettings('backup:pair')}>
+              从另一台电脑快速开始 →
             </button>
           </div>
         )}
@@ -437,11 +454,7 @@ export function Sidebar() {
           className="icon-btn w-7 h-7 inline-flex items-center justify-center"
           style={{ color: 'var(--faint)' }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="7" width="18" height="13" rx="3" />
-            <path d="M3 10l9 5 9-5" />
-            <path d="M8 7V5a4 4 0 0 1 8 0v2" opacity="0.55" />
-          </svg>
+          <IconGhost width={15} height={15} />
         </button>
         <button onClick={() => api.openSettings()} title="设置（⌘,）" className="icon-btn w-7 h-7 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
           <IconSettings width={15} height={15} />
