@@ -141,7 +141,7 @@ export const useSearch = create<SearchState>((set, get) => ({
       searchQuery: input,
       searchSpec: spec,
       nlResults: null,
-      ...(entering ? { messages: [], total: 0, selectedId: null, selectedIds: new Set<string>() } : {})
+      ...(entering ? { messages: [], total: 0, rawTotal: 0, fetched: 0, loadingMore: false, selectedId: null, selectedIds: new Set<string>() } : {})
     })
     await useMail.getState().loadMessages()
     if (seq !== runSeq) return
@@ -199,6 +199,9 @@ export const useSearch = create<SearchState>((set, get) => ({
       searchSpec: aiSpec,
       messages: page.items,
       total: page.total,
+      rawTotal: page.total,
+      fetched: page.items.length,
+      loadingMore: false,
       loading: false
     })
   },

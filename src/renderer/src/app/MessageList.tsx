@@ -15,7 +15,7 @@ import { noteMouseAction } from './Guidance'
 import { usePrefs, setPrefs } from '../lib/prefs'
 import { useInsights, splitKey } from '../lib/insights'
 import { Markdown } from '../components/Markdown'
-import { SearchBox, SearchHeader, SearchEmpty, SearchMore, Hl, useSearchTerms } from './MailSearch'
+import { SearchBox, SearchHeader, SearchEmpty, Hl, useSearchTerms } from './MailSearch'
 import { useSearch } from '../stores/search'
 import { ProjectTag } from './projects/ProjectBits'
 import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
@@ -314,8 +314,58 @@ function ThreadRow(props: {
   )
 }
 
+/**
+ * 列表底部：滚动到接近底部时自动续页；取完后给出「已显示全部」。
+ * 这是「邮件加载不完全」的修复点——以前列表固定只取 100 封，没有续页入口。
+ */
+function ListFooter(props: { rootRef: React.RefObject<HTMLDivElement | null> }) {
+  const shown = useMail(s => s.messages.length)
+  const total = useMail(s => s.total)
+  const rawTotal = useMail(s => s.rawTotal)
+  const fetched = useMail(s => s.fetched)
+  const loadingMore = useMail(s => s.loadingMore)
+  const sentinel = useRef<HTMLDivElement>(null)
+  const hasMore = fetched > 0 && fetched < rawTotal
+
+  useEffect(() => {
+    const node = sentinel.current
+    if (!node || !hasMore) return
+    if (typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) void useMail.getState().loadMore()
+      },
+      { root: props.rootRef.current, rootMargin: '700px 0px' }
+    )
+    io.observe(node)
+    return () => io.disconnect()
+  }, [hasMore, fetched, shown, props.rootRef])
+
+  if (!shown) return null
+  const count = total > shown ? `已显示 ${shown} / 共 ${total} 封` : `已显示 ${shown} 封`
+  return (
+    <div ref={sentinel} className="px-3 py-4 flex flex-col items-center gap-1.5" aria-live="polite">
+      {hasMore ? (
+        <button
+          onClick={() => void useMail.getState().loadMore()}
+          disabled={loadingMore}
+          className="inline-flex items-center gap-1.5 text-2xs tnum rounded-full px-3 py-1.5 transition-colors hover:bg-[var(--hover)] disabled:opacity-60"
+          style={{ color: 'var(--faint)' }}
+        >
+          {loadingMore && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />}
+          {loadingMore ? '正在加载更多…' : `${count} · 继续向下滚动`}
+        </button>
+      ) : (
+        <span className="text-2xs tnum" style={{ color: 'var(--faint)', opacity: 0.75 }}>{count} · 已到底部</span>
+      )}
+    </div>
+  )
+}
+
 export function MessageList() {
-  const { scope, messages, total, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
+  const { scope, messages, total, rawTotal, fetched, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
+  /** 还有未加载的邮件时，筛选计数只是「已加载范围内」的数量，用 + 标注避免误导 */
+  const partial = fetched > 0 && fetched < rawTotal
   const { accounts, folders } = useMail()
   const [classifying, setClassifying] = useState(false)
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
@@ -533,6 +583,12 @@ export function MessageList() {
     if (scope.kind !== 'search') useSearch.getState().detach()
     else if (!searchSpec && searchQuery) useSearch.setState({ input: searchQuery })
   }, [scope.kind, searchSpec, searchQuery])
+
+  // 换视图 / 换搜索词 / 改搜索条件回到顶部；同一视图的刷新（标已读、打旗标）保留滚动位置
+  const scrollKey = `${scope.kind}|${scope.folderId ?? ''}|${scope.accountId ?? ''}|${scope.category ?? ''}|${searchQuery}|${searchSpec ? JSON.stringify(searchSpec) : ''}`
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [scrollKey])
   useEffect(() => setExpandedThreads(new Set()), [scope, groupThreads])
 
   // 我的视图应用（Sidebar 派发）：还原过滤 chip 与重力滑块
@@ -823,12 +879,12 @@ export function MessageList() {
                 role="tab"
                 aria-selected={on}
                 onClick={() => setFilter(on && k !== 'all' ? 'all' : k)}
-                title={`${def.label}（${filterCounts[k] ?? 0}）`}
+                title={`${def.label}（${filterCounts[k] ?? 0}${partial ? '+' : ''}）${partial ? ' · 继续滚动加载更多后更准' : ''}`}
                 className="h-6 px-2 rounded-[var(--r-xs)] text-xs transition-colors"
                 style={on ? { background: 'var(--surface-strong)', color: 'var(--fg)', fontWeight: 500, boxShadow: 'var(--shadow-sm)' } : { color: 'var(--muted)' }}
               >
                 {def.label}
-                {k !== 'all' && <span className="ml-1 tnum" style={{ color: 'var(--faint)' }}>{filterCounts[k] ?? 0}</span>}
+                {k !== 'all' && <span className="ml-1 tnum" style={{ color: 'var(--faint)' }}>{filterCounts[k] ?? 0}{partial ? '+' : ''}</span>}
               </button>
             )
           })}
@@ -1220,7 +1276,7 @@ export function MessageList() {
         )}
           </div>
         ))}
-        {searchActive && <SearchMore />}
+        {!loading && messages.length > 0 && <ListFooter rootRef={listRef} />}
       </div>
 
       {askOpen && (

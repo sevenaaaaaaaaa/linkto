@@ -258,43 +258,6 @@ function useSearchIndexStatus(): SearchIndexStatus | null {
   return st
 }
 
-/** 结果列表底部：分页加载更多（每页与首屏同样大小） */
-export function SearchMore() {
-  const shown = useMail(m => m.messages.length)
-  const total = useMail(m => m.total)
-  const [busy, setBusy] = useState(false)
-  if (!shown || shown >= total) return null
-  const more = async () => {
-    const st = useMail.getState()
-    const spec = st.searchSpec
-    if (!spec || busy) return
-    setBusy(true)
-    try {
-      const page = await api.nlSearch({ ...spec, offset: st.messages.length })
-      const cur = useMail.getState()
-      if (cur.searchSpec !== spec) return
-      const seen = new Set(cur.messages.map(m => m.id))
-      useMail.setState({ messages: [...cur.messages, ...page.items.filter(m => !seen.has(m.id))], total: page.total })
-    } catch {
-      /* 下次再点 */
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="px-3 py-3 flex justify-center">
-      <button
-        onClick={() => void more()}
-        disabled={busy}
-        className="h-7 px-3 rounded-full border text-xs tnum disabled:opacity-60 hover:bg-[var(--hover)]"
-        style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-      >
-        {busy ? '加载中…' : `加载更多（已显示 ${shown} / 共 ${total}）`}
-      </button>
-    </div>
-  )
-}
-
 /** 搜索结果头部：N 个结果 · 关键词/AI · 范围，胶囊行，AI 理解 / 失败说明 */
 export function SearchHeader() {
   const s = useSearch()

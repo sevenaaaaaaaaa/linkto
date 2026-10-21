@@ -13,6 +13,8 @@ export interface Scope {
 
 const SORT_KEY = 'ms_sort'
 const THREADS_KEY = 'ms_threads'
+/** 列表每页条数：向下滚动自动续期，首屏保持轻量 */
+const PAGE_SIZE = 100
 
 export const loadSort = (): ListSort => (localStorage.getItem(SORT_KEY) as ListSort) || 'date'
 export const loadThreads = (): boolean => localStorage.getItem(THREADS_KEY) === '1'
@@ -46,6 +48,12 @@ interface MailState {
   scope: Scope
   messages: MessageSummary[]
   total: number
+  /** 服务端总命中数（账户栏过滤前）；仅用于判断是否还有下一页 */
+  rawTotal: number
+  /** 已从服务端取回的原始行数（分页游标；账户过滤前的数量，保证 offset 不跳页） */
+  fetched: number
+  /** 正在追加下一页 */
+  loadingMore: boolean
   selectedId: string | null
   selectedIds: Set<string>
   searchQuery: string
@@ -70,6 +78,8 @@ interface MailState {
   loadFolders(): Promise<void>
   setScope(scope: Scope): void
   loadMessages(): Promise<void>
+  /** 加载下一页（收件箱列表 / 搜索结果共用） */
+  loadMore(): Promise<void>
   select(id: string | null): void
   toggleSelect(id: string, shiftKey?: boolean): void
   selectAll(): void
@@ -90,6 +100,11 @@ const ACCOUNT_FILTERED_SCOPES = new Set<ScopeKind>(['flagged', 'pinned', 'snooze
 
 /** 列表加载序号：连续触发（如边输边搜）时只采用最后一次的结果 */
 let loadSeq = 0
+/** 上一次查询的指纹：同一查询的刷新保留已展开的分页，换视图 / 搜索词则回到首屏 */
+let lastQueryKey = ''
+
+const queryKey = (st: Pick<MailState, 'scope' | 'searchQuery' | 'searchSpec' | 'accountCtx'>): string =>
+  JSON.stringify([st.scope.kind, st.scope.folderId ?? null, st.scope.accountId ?? null, st.scope.category ?? null, st.searchQuery ?? null, st.searchSpec ?? null, st.accountCtx ?? null])
 
 export const useMail = create<MailState>((set, get) => ({
   accounts: [],
@@ -97,6 +112,9 @@ export const useMail = create<MailState>((set, get) => ({
   scope: { kind: 'unified', title: '收件箱' },
   messages: [],
   total: 0,
+  rawTotal: 0,
+  fetched: 0,
+  loadingMore: false,
   selectedId: null,
   selectedIds: new Set(),
   searchQuery: '',
@@ -128,20 +146,39 @@ export const useMail = create<MailState>((set, get) => ({
 
   setScope: scope => {
     const keepSearch = scope.kind === 'search'
-    set({ scope, messages: [], selectedId: null, selectedIds: new Set(), searchQuery: keepSearch ? get().searchQuery : '', searchSpec: keepSearch ? get().searchSpec : null })
+    lastQueryKey = ''
+    set({
+      scope,
+      messages: [],
+      total: 0,
+      rawTotal: 0,
+      fetched: 0,
+      loadingMore: false,
+      selectedId: null,
+      selectedIds: new Set(),
+      searchQuery: keepSearch ? get().searchQuery : '',
+      searchSpec: keepSearch ? get().searchSpec : null
+    })
     void get().loadMessages()
   },
 
   loadMessages: async () => {
-    const { scope, searchQuery, searchSpec } = get()
+    const st = get()
+    const { scope, searchQuery, searchSpec } = st
     const seq = ++loadSeq
+    // 同一查询的刷新（读信标已读、打旗标、新邮件到达）保留已展开的分页，避免列表缩回首屏
+    const key = queryKey(st)
+    // 用已取回的原始游标（而非过滤后的可见条数）保留分页，账户过滤时也不会缩水
+    const keep = key === lastQueryKey ? Math.min(Math.max(st.messages.length, st.fetched), 2000) : 0
+    lastQueryKey = key
     set({ loading: true })
     try {
       // 搜索框的结构化查询：走 nlSearch（FTS + 语法条件）
       if (scope.kind === 'search' && searchSpec) {
-        const page = await api.nlSearch(searchSpec)
+        const spec = keep > 0 ? { ...searchSpec, limit: Math.max(searchSpec.limit ?? PAGE_SIZE, keep) } : searchSpec
+        const page = await api.nlSearch(spec)
         if (seq !== loadSeq) return
-        set({ messages: page.items, total: page.total, loading: false })
+        set({ messages: page.items, total: page.total, rawTotal: page.total, fetched: page.items.length, loading: false, loadingMore: false })
         return
       }
       const page = await api.getMessages({
@@ -150,15 +187,76 @@ export const useMail = create<MailState>((set, get) => ({
         accountId: scope.accountId,
         category: scope.category,
         search: scope.kind === 'search' ? searchQuery : undefined,
-        limit: 100,
+        limit: Math.max(PAGE_SIZE, keep),
         offset: 0
       })
       if (seq !== loadSeq) return
       const ctx = get().accountCtx
-      const items = ctx && ACCOUNT_FILTERED_SCOPES.has(scope.kind) ? page.items.filter(m => m.accountId === ctx) : page.items
-      set({ messages: items, total: items.length === page.items.length ? page.total : items.length, loading: false })
+      const filtered = !!ctx && ACCOUNT_FILTERED_SCOPES.has(scope.kind)
+      const items = filtered ? page.items.filter(m => m.accountId === ctx) : page.items
+      set({ messages: items, total: filtered ? items.length : page.total, rawTotal: page.total, fetched: page.items.length, loading: false, loadingMore: false })
+      // 账户过滤把整页都滤掉时，自动再取一页，避免误显示「这里还没有邮件」
+      if (filtered && !items.length && page.items.length < page.total) void get().loadMore()
     } catch {
-      if (seq === loadSeq) set({ loading: false })
+      if (seq === loadSeq) set({ loading: false, loadingMore: false })
+    }
+  },
+
+  loadMore: async () => {
+    const st = get()
+    const { scope, searchSpec, loading, loadingMore, fetched, rawTotal } = st
+    if (loading || loadingMore || !fetched || fetched >= rawTotal) return
+    const seq = loadSeq
+    const filtered = !!st.accountCtx && ACCOUNT_FILTERED_SCOPES.has(scope.kind)
+    const seen = new Set(st.messages.map(m => m.id))
+    const appended: MessageSummary[] = []
+    let cursor = fetched
+    let nextRawTotal = rawTotal
+    set({ loadingMore: true })
+    try {
+      // 账户过滤可能让整页都不显示：继续取下一页（最多 4 页），避免底部「卡住不动」
+      for (let guard = 0; guard < 4; guard++) {
+        let items: MessageSummary[]
+        if (scope.kind === 'search' && searchSpec) {
+          const page = await api.nlSearch({ ...searchSpec, offset: cursor })
+          if (seq !== loadSeq) return
+          items = page.items
+          nextRawTotal = page.total
+        } else {
+          const page = await api.getMessages({
+            scope: scope.kind,
+            folderId: scope.folderId,
+            accountId: scope.accountId,
+            category: scope.category,
+            search: scope.kind === 'search' ? st.searchQuery : undefined,
+            limit: PAGE_SIZE,
+            offset: cursor
+          })
+          if (seq !== loadSeq) return
+          items = page.items
+          nextRawTotal = page.total
+        }
+        cursor += items.length
+        for (const m of items) {
+          if (seen.has(m.id)) continue
+          seen.add(m.id)
+          if (!filtered || m.accountId === st.accountCtx) appended.push(m)
+        }
+        // 已取完 / 取到非空可见结果 / 服务端返回空页：停止
+        if (!items.length || cursor >= nextRawTotal || appended.length) break
+      }
+      if (seq !== loadSeq) return
+      const cur = get()
+      const nextMessages = appended.length ? [...cur.messages, ...appended] : cur.messages
+      set({
+        messages: nextMessages,
+        total: filtered ? nextMessages.length : nextRawTotal,
+        rawTotal: nextRawTotal,
+        fetched: cursor,
+        loadingMore: false
+      })
+    } catch {
+      if (seq === loadSeq) set({ loadingMore: false })
     }
   },
 
