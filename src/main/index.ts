@@ -23,7 +23,7 @@ import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
 import { Notifier } from './notify'
-import { initNativeIntegration, setTrayUnread, applyLoginItem } from './native-integration'
+import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -221,6 +221,18 @@ function focusMainForNotification(messageId?: string) {
   else send()
 }
 
+/** 原生菜单 / Dock 动作：确保主窗口存在并把事件交给渲染层（冷启动时等页面就绪） */
+function sendToMainWindow(type: string, extra?: Record<string, unknown>) {
+  focusMainForNotification()
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return
+  const send = () => {
+    if (!win.isDestroyed()) win.webContents.send('event', { type, ...extra })
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(send, 900))
+  else setTimeout(send, 120)
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -239,6 +251,8 @@ function createMainWindow() {
       spellcheck: true
     }
   })
+  installWindowState(mainWindow)
+  attachNativeContextMenu(mainWindow)
   mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/mail' })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -315,6 +329,7 @@ function createSettingsWindow(tab?: string) {
       sandbox: true
     }
   })
+  attachNativeContextMenu(settingsWindow)
   settingsWindow.loadFile(join(__dirname, '../renderer/settings.html'), {
     hash: tab ? `/${tab}` : '/general'
   })
@@ -341,6 +356,7 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
       sandbox: true
     }
   })
+  attachNativeContextMenu(win)
   const query = prefill ? `?prefill=${encodeURIComponent(JSON.stringify(prefill))}` : ''
   win.loadFile(join(__dirname, '../renderer/index.html'), { hash: `/compose${query}` })
   win.once('ready-to-show', () => win.show())
@@ -374,6 +390,7 @@ function createGhostWindow() {
       sandbox: true
     }
   })
+  attachNativeContextMenu(ghostWindow)
   ghostWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ghost' })
   ghostWindow.webContents.once('did-finish-load', () => ghostWindow?.setTitle('幽灵信 · 端到端加密'))
   ghostWindow.once('ready-to-show', () => ghostWindow?.show())
@@ -428,6 +445,10 @@ function updateDockBadge() {
 }
 
 function buildAppMenu() {
+  const isMac = process.platform === 'darwin'
+  const devItems: Electron.MenuItemConstructorOptions[] = app.isPackaged
+    ? []
+    : [{ type: 'separator' }, { role: 'toggleDevTools', label: '开发者工具' }]
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'LinkTo',
@@ -439,7 +460,9 @@ function buildAppMenu() {
           accelerator: 'Cmd+,',
           click: () => createSettingsWindow()
         },
-        { type: 'separator' },
+        ...(isMac
+          ? ([{ type: 'separator' }, { role: 'services', label: '服务', submenu: [] }, { type: 'separator' }] as Electron.MenuItemConstructorOptions[])
+          : []),
         { role: 'hide', label: '隐藏' },
         { role: 'hideOthers', label: '隐藏其他' },
         { role: 'unhide', label: '全部显示' },
@@ -455,6 +478,8 @@ function buildAppMenu() {
           accelerator: 'Cmd+N',
           click: () => createComposeWindow()
         },
+        { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => sendToMainWindow('focus-search') },
+        { label: '刷新邮件', accelerator: 'Cmd+R', click: () => sendToMainWindow('native-refresh') },
         { type: 'separator' },
         { role: 'close', label: '关闭窗口' }
       ]
@@ -468,25 +493,42 @@ function buildAppMenu() {
         { role: 'cut', label: '剪切' },
         { role: 'copy', label: '拷贝' },
         { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' }
+        { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
+        { role: 'delete', label: '删除' },
+        { role: 'selectAll', label: '全选' },
+        { type: 'separator' },
+        { role: 'toggleSpellChecker', label: '自动检查拼写' },
+        ...(isMac
+          ? ([{ type: 'separator' }, { role: 'startSpeaking', label: '开始朗读' }, { role: 'stopSpeaking', label: '停止朗读' }] as Electron.MenuItemConstructorOptions[])
+          : [])
       ]
     },
     {
       label: '显示',
       submenu: [
-        { role: 'reload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom', label: '实际大小' },
+        { role: 'resetZoom', label: '实际大小', accelerator: 'Cmd+Shift+0' },
         { role: 'zoomIn', label: '放大' },
         { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: '进入全屏' }
+        { role: 'togglefullscreen', label: '切换全屏' },
+        ...devItems
       ]
     },
     {
       label: '窗口',
-      submenu: [{ role: 'minimize', label: '最小化' }, { role: 'zoom', label: '缩放' }]
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        ...(isMac ? ([{ type: 'separator' }, { role: 'front', label: '全部置于顶层' }] as Electron.MenuItemConstructorOptions[]) : [])
+      ]
+    },
+    {
+      role: 'help',
+      label: '帮助',
+      submenu: [
+        { label: 'LinkTo 帮助与更新日志', click: () => void shell.openExternal('https://github.com/sevenaaaaaaaaa/linkto') },
+        { label: '打开设置…', click: () => createSettingsWindow() }
+      ]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
@@ -977,7 +1019,10 @@ async function bootstrap() {
       showMainWindow()
       mainWindow?.webContents.send('event', { type: 'quick-add-todo' })
     },
-    quickTrace: () => openTraceCapture()
+    quickTrace: () => openTraceCapture(),
+    focusSearch: () => sendToMainWindow('focus-search'),
+    openGhost: () => createGhostWindow(),
+    openSettings: () => createSettingsWindow()
   })
   // 待办提醒：会议 / 固定时间开始前 5 分钟、带时刻的截止前 15 分钟（跟随通知总开关）
   startTodoReminders({
@@ -1145,6 +1190,7 @@ async function showKeychainNotice(kind: 'pending' | 'failed', signal?: AbortSign
 
 app.whenReady().then(() => {
   startupLog('ready')
+  setNativeAboutPanel()
   // 先开窗（界面不依赖钥匙串），再初始化数据层与后台服务
   createMainWindow()
   startupLog('main window created')

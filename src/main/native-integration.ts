@@ -1,4 +1,5 @@
-import { app, Menu, Tray, globalShortcut, nativeImage } from 'electron'
+import { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, nativeImage, screen, shell } from 'electron'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 export interface NativeIntegrationOptions {
@@ -9,6 +10,11 @@ export interface NativeIntegrationOptions {
   quickAddTodo?(): void
   /** 打开主窗口里的「记一笔留痕」浮层 */
   quickTrace?(): void
+  /** 打开主窗口并聚焦搜索框 */
+  focusSearch?(): void
+  /** 打开幽灵信 / 设置（Dock 与菜单栏） */
+  openGhost?(): void
+  openSettings?(): void
 }
 
 /** 解析 mailto:URL → 预填写信（地址/主题/正文） */
@@ -55,9 +61,13 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setMenu(
       Menu.buildFromTemplate([
+        { label: '搜索邮件…', click: () => opts.focusSearch?.() },
         { label: '写邮件', click: () => opts.openCompose({}) },
         { label: '新建待办…', click: () => opts.quickAddTodo?.() },
         ...(opts.quickTrace ? [{ label: '记一笔留痕…', click: () => opts.quickTrace?.() }] : []),
+        { type: 'separator' },
+        ...(opts.openGhost ? [{ label: '幽灵信', click: () => opts.openGhost?.() }] : []),
+        ...(opts.openSettings ? [{ label: '设置…', click: () => opts.openSettings?.() }] : []),
         { label: '打开 LinkTo', click: () => opts.showMain() }
       ])
     )
@@ -88,9 +98,13 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
       tray.setContextMenu(
         Menu.buildFromTemplate([
           { label: '打开 LinkTo', click: () => opts.showMain() },
+          { label: '搜索邮件…', click: () => opts.focusSearch?.() },
           { label: '写邮件', click: () => opts.openCompose({}) },
           { label: '新建待办…', accelerator: 'Alt+CommandOrControl+T', click: () => opts.quickAddTodo?.() },
           ...(opts.quickTrace ? [{ label: '记一笔留痕…', accelerator: TRACE_SHORTCUT, click: () => opts.quickTrace?.() }] : []),
+          { type: 'separator' },
+          ...(opts.openGhost ? [{ label: '幽灵信', click: () => opts.openGhost?.() }] : []),
+          ...(opts.openSettings ? [{ label: '设置…', click: () => opts.openSettings?.() }] : []),
           { type: 'separator' },
           {
             id: 'unread',
@@ -140,4 +154,156 @@ function joinAppRenderer(name: string): string {
 /** 按设置应用开机自启 */
 export function applyLoginItem(openAtLogin: boolean): void {
   app.setLoginItemSettings({ openAtLogin })
+}
+
+// ================================================================ macOS 原生细节
+
+/**
+ * 原生右键菜单：文本编辑（拼写建议 / 剪切拷贝粘贴）、选中文本（朗读 / 服务 / 共享）、
+ * 链接（打开 / 拷贝）、图片（拷贝）。应用自己右键菜单以外的区域终于有 macOS 该有的行为。
+ * GhostRead 焚毁阅读窗不挂这个（刻意禁用右键）。
+ */
+export function attachNativeContextMenu(win: BrowserWindow): void {
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = nativeContextTemplate(win, params)
+    if (template.length) Menu.buildFromTemplate(template).popup({ window: win })
+  })
+}
+
+function nativeContextTemplate(win: BrowserWindow, params: Electron.ContextMenuParams): Electron.MenuItemConstructorOptions[] {
+  const isMac = process.platform === 'darwin'
+  const items: Electron.MenuItemConstructorOptions[] = []
+  if (params.misspelledWord) {
+    const suggestions = params.dictionarySuggestions.slice(0, 5)
+    for (const s of suggestions) items.push({ label: s, click: () => win.webContents.replaceMisspelling(s) })
+    if (!suggestions.length) items.push({ label: '没有拼写建议', enabled: false })
+    items.push({
+      label: `添加到词典：“${params.misspelledWord}”`,
+      click: () => void win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+    })
+    items.push({ type: 'separator' })
+  }
+  if (params.isEditable) {
+    items.push(
+      { role: 'undo', label: '撤销' },
+      { role: 'redo', label: '重做' },
+      { type: 'separator' },
+      { role: 'cut', label: '剪切' },
+      { role: 'copy', label: '拷贝' },
+      { role: 'paste', label: '粘贴' },
+      { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
+      { role: 'delete', label: '删除' },
+      { type: 'separator' },
+      { role: 'selectAll', label: '全选' }
+    )
+  } else if (params.selectionText.trim()) {
+    const text = params.selectionText.trim()
+    items.push({ role: 'copy', label: '拷贝' })
+    if (isMac) {
+      items.push(
+        { role: 'startSpeaking', label: '朗读' },
+        { type: 'separator' },
+        { role: 'services', label: '服务', submenu: [] },
+        { role: 'shareMenu', label: '共享…', sharingItem: { texts: [text] } }
+      )
+    }
+  }
+  if (params.linkURL) {
+    if (items.length) items.push({ type: 'separator' })
+    items.push(
+      { label: '打开链接', click: () => void shell.openExternal(params.linkURL) },
+      { label: '拷贝链接', click: () => clipboard.writeText(params.linkURL) }
+    )
+  }
+  if ((params.mediaType === 'image' || params.mediaType === 'canvas') && params.x >= 0 && params.y >= 0) {
+    if (items.length) items.push({ type: 'separator' })
+    items.push({ label: '拷贝图片', click: () => win.webContents.copyImageAt(params.x, params.y) })
+  }
+  if (!app.isPackaged) {
+    if (items.length) items.push({ type: 'separator' })
+    items.push({ label: '检查元素', click: () => win.webContents.inspectElement(params.x, params.y) })
+  }
+  return items
+}
+
+interface SavedWindowState {
+  x: number
+  y: number
+  width: number
+  height: number
+  maximized?: boolean
+}
+
+/**
+ * 记住主窗口位置与大小（原生应用的基本行为）。
+ * 放在 userData 下，不依赖 appStore；窗口移出所有屏幕时回退默认位置。
+ */
+export function installWindowState(win: BrowserWindow, min = { width: 960, height: 600 }): void {
+  const file = join(app.getPath('userData'), 'window-state.json')
+  let saved: SavedWindowState | null = null
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as SavedWindowState
+    if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y) && parsed.width > 0 && parsed.height > 0) saved = parsed
+  } catch {
+    /* 首次运行 / 文件损坏 */
+  }
+  if (saved) {
+    const visible = screen.getAllDisplays().some(d => {
+      const a = d.workArea
+      return saved!.x + saved!.width > a.x && saved!.x < a.x + a.width && saved!.y + saved!.height > a.y && saved!.y < a.y + a.height
+    })
+    if (visible) {
+      win.setBounds({
+        x: saved.x,
+        y: saved.y,
+        width: Math.max(min.width, saved.width),
+        height: Math.max(min.height, saved.height)
+      })
+    }
+    if (saved.maximized) win.maximize()
+  }
+  let timer: NodeJS.Timeout | null = null
+  const persist = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      if (win.isDestroyed()) return
+      const b = win.getNormalBounds()
+      try {
+        writeFileSync(file, JSON.stringify({ ...b, maximized: win.isMaximized() }))
+      } catch {
+        /* 磁盘不可写不影响使用 */
+      }
+    }, 500)
+  }
+  win.on('resize', persist)
+  win.on('move', persist)
+  win.on('maximize', persist)
+  win.on('unmaximize', persist)
+  win.on('close', () => {
+    if (timer) clearTimeout(timer)
+    if (win.isDestroyed()) return
+    const b = win.getNormalBounds()
+    try {
+      writeFileSync(file, JSON.stringify({ ...b, maximized: win.isMaximized() }))
+    } catch {
+      /* ignore */
+    }
+  })
+}
+
+/** macOS「关于 LinkTo」面板（应用菜单第一项 / About 面板） */
+export function setNativeAboutPanel(): void {
+  if (process.platform !== 'darwin') return
+  try {
+    app.setAboutPanelOptions({
+      applicationName: 'LinkTo',
+      applicationVersion: app.getVersion(),
+      version: app.getVersion(),
+      copyright: '© 2026 LinKTo · OpenFlow',
+      credits: 'AI 原生邮件工作台',
+      website: 'https://github.com/sevenaaaaaaaaa/linkto'
+    })
+  } catch {
+    /* 旧系统不支持时忽略 */
+  }
 }

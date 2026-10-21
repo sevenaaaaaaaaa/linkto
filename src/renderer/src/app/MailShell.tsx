@@ -87,6 +87,17 @@ export function MailShell() {
     const onEv = (ev: unknown) => {
       const e = ev as { type: string; subject?: string; to?: string; accountId?: string; text?: string }
       if (e.type === 'outbox-changed') loadOutbox()
+      // 原生菜单 / Dock：搜索与刷新（不走浏览器 reload，保住滚动位置与未发送草稿）
+      if (e.type === 'focus-search') {
+        const input = document.querySelector('input[data-mail-search]') as HTMLInputElement | null
+        input?.focus()
+        input?.select()
+      }
+      if (e.type === 'native-refresh') {
+        void useMail.getState().loadAccounts()
+        void useMail.getState().loadFolders()
+        void useMail.getState().loadMessages()
+      }
       // 托盘 / ⌥⌘T「新建待办」、待办提醒点击：切到待办页再交给 TodoView（等它挂载）
       if (e.type === 'quick-add-todo' || e.type === 'open-todo') {
         goView('todo')
