@@ -51,6 +51,7 @@ const SHORTCUTS: [string, string][] = [
 export function PersonalTab() {
   const p = usePrefs()
   const isMac = document.documentElement.dataset.os === 'mac'
+  const nativeShell = document.documentElement.dataset.nativeShell === '1'
   const [accounts, setAccounts] = useState<AccountWithStatus[]>([])
   useEffect(() => {
     void api.listAccounts().then(setAccounts)
@@ -156,15 +157,17 @@ export function PersonalTab() {
               </span>
             </div>
           </SettingRow>
-          <SettingRow label="工具栏按钮" desc="在主窗口打开原生自定义面板，拖动排序 / 显示隐藏">
-            <button
-              className="no-drag h-7 rounded-[var(--r-sm)] px-3 text-xs"
-              style={{ background: 'var(--hover)', color: 'var(--fg)' }}
-              onClick={() => void api.macShellCustomize()}
-            >
-              自定义…
-            </button>
-          </SettingRow>
+          {nativeShell && (
+            <SettingRow label="工具栏按钮" desc="在主窗口打开原生自定义面板，拖动排序 / 显示隐藏">
+              <button
+                className="no-drag h-7 rounded-[var(--r-sm)] px-3 text-xs"
+                style={{ background: 'var(--hover)', color: 'var(--fg)' }}
+                onClick={() => void api.macShellCustomize()}
+              >
+                自定义…
+              </button>
+            </SettingRow>
+          )}
           <SettingRow label="图标粗细" desc="SF Symbols 字重；切换时后台重渲染一次">
             <Seg
               value={p.sfWeight}
