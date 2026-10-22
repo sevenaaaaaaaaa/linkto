@@ -4,15 +4,16 @@ import { join } from 'node:path'
 
 /** 原生工具栏回调（来自 NSToolbar 的按钮 / 搜索框） */
 export interface MacShellAction {
-  action: 'compose' | 'ghost' | 'settings' | 'search' | 'search-ai'
+  action: 'compose' | 'ghost' | 'settings' | 'search' | 'search-ai' | 'theme' | 'close'
   query?: string
 }
 
 interface NativeShellModule {
-  attach(handle: Buffer, callback: (action: MacShellAction) => void): boolean
+  attach(handle: Buffer, callback: (action: MacShellAction) => void, kind: 'main' | 'settings'): boolean
   setTitle(text: string): void
   setSearch(text: string): void
   focusSearch(): void
+  customize(): boolean
 }
 
 let mod: NativeShellModule | null = null
@@ -41,18 +42,26 @@ function load(): NativeShellModule | null {
   return null
 }
 
-/** 在当前主窗口上挂载真正的 NSToolbar；返回是否成功 */
-export function attachMacShell(win: Electron.BrowserWindow, onAction: (a: MacShellAction) => void): boolean {
+function attach(win: Electron.BrowserWindow, onAction: (a: MacShellAction) => void, kind: 'main' | 'settings'): boolean {
   const native = load()
   if (!native) return false
   try {
-    attached = native.attach(win.getNativeWindowHandle(), onAction)
-    return attached
+    return native.attach(win.getNativeWindowHandle(), onAction, kind)
   } catch (err) {
-    console.warn('[mac-shell] attach failed:', err instanceof Error ? err.message : err)
-    attached = false
+    console.warn('[mac-shell] attach failed:', kind, err instanceof Error ? err.message : err)
     return false
   }
+}
+
+/** 主窗口：真正的 NSToolbar（搜索 / AI / 写邮件 / 幽灵信 / 设置） */
+export function attachMacShell(win: Electron.BrowserWindow, onAction: (a: MacShellAction) => void): boolean {
+  attached = attach(win, onAction, 'main')
+  return attached
+}
+
+/** 设置窗口：轻量 NSToolbar（标题 / 切换外观 / 关闭），可原生自定义 */
+export function attachSettingsShell(win: Electron.BrowserWindow, onAction: (a: MacShellAction) => void): boolean {
+  return attach(win, onAction, 'settings')
 }
 
 export function macShellSetTitle(title: string): void {
@@ -69,6 +78,16 @@ export function macShellFocusSearch(): boolean {
   try {
     mod.focusSearch()
     return true
+  } catch {
+    return false
+  }
+}
+
+/** 打开主窗口工具栏的原生自定义面板（拖动排序 / 显示隐藏，系统自动保存） */
+export function macShellCustomize(): boolean {
+  if (!attached || !mod) return false
+  try {
+    return mod.customize()
   } catch {
     return false
   }

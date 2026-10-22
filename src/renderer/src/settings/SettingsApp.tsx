@@ -13,6 +13,7 @@ import { AttachmentsTab } from './tabs/AttachmentsTab'
 import { ShareTab } from './tabs/ShareTab'
 import { FeedsTab } from './tabs/FeedsTab'
 import { parseSettingsTab } from './account-focus'
+import { cycleTheme } from '../lib/theme'
 import {
   IconSettings, IconUser, IconBell, IconCompose, IconBook, IconSearch,
   IconLayers, IconSparkles, IconPlug, IconArchive, IconPalette, IconCheckSquare, IconAttach, IconSend, IconRss
@@ -73,6 +74,13 @@ export default function SettingsApp() {
     return m ? parseSettingsTab(m[1]) : 'personal'
   })
   const [q, setQ] = useState('')
+
+  // 设置窗原生 NSToolbar：切换外观 / 全屏时收起 Web 顶部留白
+  useMailEvent(ev => {
+    const e = ev as { type: string; on?: boolean }
+    if (e.type === 'theme-cycle') cycleTheme()
+    if (e.type === 'native-shell-fullscreen') document.documentElement.dataset.nativeShellFull = e.on ? '1' : ''
+  })
 
   useEffect(() => {
     const onHash = () => {

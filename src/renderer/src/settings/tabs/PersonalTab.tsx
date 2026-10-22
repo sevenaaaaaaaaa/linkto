@@ -138,12 +138,32 @@ export function PersonalTab() {
       {isMac && (
         <>
           <SectionTitle>原生外观</SectionTitle>
-          <SettingRow label="侧栏材质" desc="更透更接近桌面；更实保证深色/浅色文字对比">
-            <Seg
-              value={p.nativeMaterial}
-              onChange={v => setPrefs({ nativeMaterial: v })}
-              options={[{ value: 'clear', label: '更透' }, { value: 'balanced', label: '平衡' }, { value: 'solid', label: '更实' }]}
-            />
+          <SettingRow label="侧栏材质" desc="拖动调整：越低越透，越高越实（36–82%）">
+            <div className="no-drag flex items-center gap-2.5">
+              <input
+                aria-label="侧栏材质强度"
+                type="range"
+                min={36}
+                max={82}
+                step={1}
+                value={p.nativeTint}
+                onChange={e => setPrefs({ nativeTint: Number(e.target.value) })}
+                className="h-1.5 w-[150px] cursor-pointer rounded-full"
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              <span className="w-8 text-right text-xs tabular-nums" style={{ color: 'var(--muted)' }}>
+                {p.nativeTint}%
+              </span>
+            </div>
+          </SettingRow>
+          <SettingRow label="工具栏按钮" desc="在主窗口打开原生自定义面板，拖动排序 / 显示隐藏">
+            <button
+              className="no-drag h-7 rounded-[var(--r-sm)] px-3 text-xs"
+              style={{ background: 'var(--hover)', color: 'var(--fg)' }}
+              onClick={() => void api.macShellCustomize()}
+            >
+              自定义…
+            </button>
           </SettingRow>
           <SettingRow label="图标粗细" desc="SF Symbols 字重；切换时后台重渲染一次">
             <Seg

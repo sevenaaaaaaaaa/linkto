@@ -24,7 +24,7 @@ import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
-import { attachMacShell, macShellFocusSearch, type MacShellAction } from './mac-shell'
+import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -273,6 +273,14 @@ function focusSearchNative() {
   if (!macShellFocusSearch()) sendToMainWindow('focus-search')
 }
 
+/** 设置窗口原生工具栏：关闭 / 切换外观；标题由 Web 侧栏负责 */
+function handleSettingsShellAction(action: MacShellAction) {
+  const win = settingsWindow
+  if (!win || win.isDestroyed()) return
+  if (action.action === 'close') win.close()
+  else if (action.action === 'theme') win.webContents.send('event', { type: 'theme-cycle' })
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -389,10 +397,17 @@ function createSettingsWindow(tab?: string) {
       sandbox: true
     }
   })
+  let nativeShell = false
+  if (process.platform === 'darwin') nativeShell = attachSettingsShell(settingsWindow, handleSettingsShellAction)
   attachNativeContextMenu(settingsWindow)
   settingsWindow.loadFile(join(__dirname, '../renderer/settings.html'), {
-    hash: tab ? `/${tab}` : '/general'
+    hash: tab ? `/${tab}` : '/general',
+    ...(nativeShell ? { query: { nativeShell: '1' } } : {})
   })
+  if (nativeShell) {
+    settingsWindow.on('enter-full-screen', () => settingsWindow?.webContents.send('event', { type: 'native-shell-fullscreen', on: true }))
+    settingsWindow.on('leave-full-screen', () => settingsWindow?.webContents.send('event', { type: 'native-shell-fullscreen', on: false }))
+  }
   settingsWindow.once('ready-to-show', () => settingsWindow?.show())
   settingsWindow.on('closed', () => {
     settingsWindow = null
@@ -572,6 +587,7 @@ function buildAppMenu() {
         { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
+        { label: '自定义工具栏…', click: () => macShellCustomize() },
         ...devItems
       ]
     },

@@ -130,6 +130,8 @@ export interface LinkToApi {
   macShellSetTitle(title: string): Promise<void>
   macShellSetSearch(text: string): Promise<void>
   macShellFocusSearch(): Promise<void>
+  /** 打开主窗口原生工具栏自定义面板（拖动排序 / 显示隐藏） */
+  macShellCustomize(): Promise<boolean>
   getNotificationSettings(): Promise<NotificationSettings>
   setNotificationSettings(s: NotificationSettings): Promise<void>
   notifyTest(): Promise<boolean>

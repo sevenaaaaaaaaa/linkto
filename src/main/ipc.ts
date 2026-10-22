@@ -4,7 +4,7 @@ import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
-import { macShellSetTitle, macShellSetSearch, macShellFocusSearch } from './mac-shell'
+import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
 import type { GhostService } from './ghost/service'
 import type {
   AccountConfig,
@@ -928,6 +928,7 @@ export function registerIpc(ctx: AppContext) {
     macShellFocusSearch: () => {
       macShellFocusSearch()
     },
+    macShellCustomize: () => macShellCustomize(),
     setGeneralSettings: ([s]: [GeneralSettings]) => {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效

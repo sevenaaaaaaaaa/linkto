@@ -18,9 +18,12 @@ static const NSToolbarItemIdentifier kAISearchItem = @"com.linkto.toolbar.ai-sea
 static const NSToolbarItemIdentifier kComposeItem = @"com.linkto.toolbar.compose";
 static const NSToolbarItemIdentifier kGhostItem = @"com.linkto.toolbar.ghost";
 static const NSToolbarItemIdentifier kSettingsItem = @"com.linkto.toolbar.settings";
+static const NSToolbarItemIdentifier kThemeItem = @"com.linkto.toolbar.theme";
+static const NSToolbarItemIdentifier kCloseItem = @"com.linkto.toolbar.close";
 
 @interface LinkToToolbarHost : NSObject <NSToolbarDelegate, NSSearchFieldDelegate>
 @property (nonatomic, weak) NSWindow *window;
+@property (nonatomic, copy) NSString *kind;
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSTextField *titleField;
 @property (nonatomic, strong) NSSearchField *searchField;
@@ -30,7 +33,8 @@ static const NSToolbarItemIdentifier kSettingsItem = @"com.linkto.toolbar.settin
 @property (nonatomic) napi_ref callback;
 @end
 
-static LinkToToolbarHost *gHost = nil;
+static LinkToToolbarHost *gHost = nil;       // 主窗口
+static LinkToToolbarHost *gSettingsHost = nil; // 设置窗口
 
 @implementation LinkToToolbarHost
 
@@ -83,26 +87,31 @@ static LinkToToolbarHost *gHost = nil;
   return item;
 }
 
+- (BOOL)isSettingsToolbar { return [self.kind isEqualToString:@"settings"]; }
+
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
+  if ([self isSettingsToolbar]) return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kThemeItem, kCloseItem ];
   return @[ kTitleItem, kSearchItem, kAISearchItem, NSToolbarFlexibleSpaceItemIdentifier, kComposeItem, kGhostItem, kSettingsItem ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
+  if ([self isSettingsToolbar]) return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kThemeItem, kCloseItem ];
   return @[ kTitleItem, kSearchItem, kAISearchItem, NSToolbarFlexibleSpaceItemIdentifier, kComposeItem, kGhostItem, kSettingsItem ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag {
   if ([identifier isEqualToString:kTitleItem]) {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
-    self.titleField = [NSTextField labelWithString:@"LinkTo"];
+    NSString *initial = [self isSettingsToolbar] ? @"设置" : @"LinkTo";
+    self.titleField = [NSTextField labelWithString:initial];
     self.titleField.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
     self.titleField.textColor = NSColor.labelColor;
     self.titleField.lineBreakMode = NSLineBreakByTruncatingTail;
     self.titleField.frame = NSMakeRect(0, 0, 180, 22);
     if (self.pendingTitle.length) self.titleField.stringValue = self.pendingTitle;
     item.view = self.titleField;
-    item.label = @"LinkTo";
-    item.paletteLabel = @"LinkTo";
+    item.label = initial;
+    item.paletteLabel = initial;
     item.minSize = NSMakeSize(120, 22);
     item.maxSize = NSMakeSize(280, 22);
     return item;
@@ -135,6 +144,12 @@ static LinkToToolbarHost *gHost = nil;
   if ([identifier isEqualToString:kSettingsItem]) {
     return [self makeButtonItem:identifier symbol:@"gearshape" label:@"设置" action:@selector(settingsAction:)];
   }
+  if ([identifier isEqualToString:kThemeItem]) {
+    return [self makeButtonItem:identifier symbol:@"circle.lefthalf.filled" label:@"切换外观" action:@selector(themeAction:)];
+  }
+  if ([identifier isEqualToString:kCloseItem]) {
+    return [self makeButtonItem:identifier symbol:@"xmark" label:@"关闭" action:@selector(closeAction:)];
+  }
   return nil;
 }
 
@@ -142,6 +157,8 @@ static LinkToToolbarHost *gHost = nil;
 - (void)composeAction:(id)sender { [self emit:@"compose" query:nil]; }
 - (void)ghostAction:(id)sender { [self emit:@"ghost" query:nil]; }
 - (void)settingsAction:(id)sender { [self emit:@"settings" query:nil]; }
+- (void)themeAction:(id)sender { [self emit:@"theme" query:nil]; }
+- (void)closeAction:(id)sender { [self emit:@"close" query:nil]; }
 
 - (void)controlTextDidChange:(NSNotification *)notification {
   if (notification.object == self.searchField) [self emit:@"search" query:self.searchField.stringValue];
@@ -175,9 +192,20 @@ static NSWindow *WindowFromHandle(napi_env env, napi_value value) {
   return nil;
 }
 
+static NSString *StringFromNapi(napi_env env, napi_value value) {
+  size_t len = 0;
+  if (napi_get_value_string_utf8(env, value, nullptr, 0, &len) != napi_ok) return nil;
+  char *buf = (char *)malloc(len + 1);
+  if (!buf) return nil;
+  napi_get_value_string_utf8(env, value, buf, len + 1, &len);
+  NSString *out = [NSString stringWithUTF8String:buf];
+  free(buf);
+  return out;
+}
+
 static napi_value Attach(napi_env env, napi_callback_info info) {
-  size_t argc = 2;
-  napi_value argv[2];
+  size_t argc = 3;
+  napi_value argv[3];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
   napi_value result = nullptr;
   napi_get_boolean(env, false, &result);
@@ -187,23 +215,34 @@ static napi_value Attach(napi_env env, napi_callback_info info) {
   napi_typeof(env, argv[1], &type);
   if (!window || type != napi_function) return result;
 
-  if (gHost) {
-    gHost.window = nil;
-    gHost = nil;
+  NSString *kind = @"main";
+  if (argc >= 3) {
+    napi_valuetype kindType = napi_undefined;
+    napi_typeof(env, argv[2], &kindType);
+    if (kindType == napi_string) {
+      NSString *parsed = StringFromNapi(env, argv[2]);
+      if (parsed.length) kind = parsed;
+    }
   }
+  BOOL isSettings = [kind isEqualToString:@"settings"];
+  LinkToToolbarHost *previous = isSettings ? gSettingsHost : gHost;
+  if (previous) previous.window = nil;
+
   LinkToToolbarHost *host = [LinkToToolbarHost new];
   host.window = window;
+  host.kind = kind;
   host.env = env;
   napi_ref callbackRef = nullptr;
   if (napi_create_reference(env, argv[1], 1, &callbackRef) != napi_ok) return result;
   host.callback = callbackRef;
 
-  NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"com.linkto.main.toolbar"];
+  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar", kind];
+  NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:identifier];
   toolbar.delegate = host;
   toolbar.displayMode = NSToolbarDisplayModeIconOnly;
   toolbar.sizeMode = NSToolbarSizeModeRegular;
-  toolbar.allowsUserCustomization = NO;
-  toolbar.autosavesConfiguration = NO;
+  toolbar.allowsUserCustomization = YES;
+  toolbar.autosavesConfiguration = YES;
   toolbar.showsBaselineSeparator = NO;
   host.toolbar = toolbar;
 
@@ -214,7 +253,8 @@ static napi_value Attach(napi_env env, napi_callback_info info) {
   window.styleMask |= NSWindowStyleMaskFullSizeContentView;
   toolbar.visible = YES;
 
-  gHost = host;
+  if (isSettings) gSettingsHost = host;
+  else gHost = host;
   napi_get_boolean(env, true, &result);
   return result;
 }
@@ -252,12 +292,24 @@ static napi_value FocusSearch(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+static napi_value Customize(napi_env env, napi_callback_info info) {
+  napi_value result = nullptr;
+  napi_get_boolean(env, false, &result);
+  if (!gHost || !gHost.window || !gHost.window.toolbar) return result;
+  [NSApp activateIgnoringOtherApps:YES];
+  [gHost.window makeKeyAndOrderFront:nil];
+  [gHost.window.toolbar runCustomizationPalette:nil];
+  napi_get_boolean(env, true, &result);
+  return result;
+}
+
 static napi_value Init(napi_env env, napi_value exports) {
   napi_property_descriptor desc[] = {
     { "attach", nullptr, Attach, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "setTitle", nullptr, SetTitle, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "setSearch", nullptr, SetSearch, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "focusSearch", nullptr, FocusSearch, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "customize", nullptr, Customize, nullptr, nullptr, nullptr, napi_default, nullptr },
   };
   napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
   return exports;

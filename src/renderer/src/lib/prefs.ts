@@ -24,8 +24,8 @@ export interface UiPrefs {
   defaultRail: 'context' | 'agent' | 'none'
   /** 界面字体：Geist + 苹方 / 纯系统字体 */
   uiFont: 'geist' | 'system'
-  /** macOS 原生侧栏材质强度：更透 / 平衡 / 更实 */
-  nativeMaterial: 'clear' | 'balanced' | 'solid'
+  /** macOS 原生侧栏材质强度：主题底色百分比（36–82，越低越透） */
+  nativeTint: number
   /** macOS SF Symbols 字重 */
   sfWeight: 'regular' | 'medium' | 'semibold'
   /** macOS SF Symbols 视觉缩放 */
@@ -50,7 +50,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   highlights: true,
   defaultRail: 'context',
   uiFont: 'geist',
-  nativeMaterial: 'balanced',
+  nativeTint: 58,
   sfWeight: 'regular',
   sfScale: 'normal',
   sidebar: { followup: true, snoozed: true, flagged: true, pinned: true, brief: true, kb: true, onboarding: true },
@@ -65,9 +65,19 @@ export function getPrefs(): UiPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<UiPrefs>
     const nav = raw.nav ?? DEFAULT_NAV_PREFS
+    const legacy = raw as { nativeMaterial?: 'clear' | 'balanced' | 'solid' }
+    const rawTint =
+      typeof raw.nativeTint === 'number'
+        ? raw.nativeTint
+        : legacy.nativeMaterial === 'clear'
+          ? 40
+          : legacy.nativeMaterial === 'solid'
+            ? 74
+            : 58
     return {
       ...DEFAULT_PREFS,
       ...raw,
+      nativeTint: Math.min(82, Math.max(36, Math.round(rawTint))),
       sidebar: { ...DEFAULT_PREFS.sidebar, ...(raw.sidebar ?? {}) },
       nav: { placement: nav.placement ?? {}, order: Array.isArray(nav.order) ? nav.order : [], autoPinned: Array.isArray(nav.autoPinned) ? nav.autoPinned : null }
     }
@@ -97,8 +107,7 @@ export function applyPrefsToDocument(p: UiPrefs = getPrefs()) {
   if (p.uiFont === 'system') root.style.setProperty('--font-body', "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Segoe UI', sans-serif")
   else root.style.removeProperty('--font-body')
   // macOS 原生材质强度（% 主题底色）与 SF Symbols 视觉缩放
-  const tint = p.nativeMaterial === 'clear' ? 40 : p.nativeMaterial === 'solid' ? 74 : 58
-  root.style.setProperty('--native-tint', `${tint}%`)
+  root.style.setProperty('--native-tint', `${Math.min(82, Math.max(36, Math.round(p.nativeTint)))}%`)
   root.style.setProperty('--sf-scale', p.sfScale === 'small' ? '0.9' : p.sfScale === 'large' ? '1.12' : '1')
 }
 
