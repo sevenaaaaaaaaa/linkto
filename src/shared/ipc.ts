@@ -303,6 +303,10 @@ export interface LinkToApi {
   openCompose(prefill?: Partial<ComposeDraft>): Promise<void>
   onEvent(cb: (ev: unknown) => void): () => void
   getVersions(): Promise<{ app: string; electron: string; node: string }>
+  /** 检查 GitHub Releases 最新版本 */
+  checkForUpdates(force?: boolean): Promise<import('./updates').UpdateCheckResult>
+  /** 打开发布页 / 安装包下载（只接受 GitHub 域名） */
+  openUpdateUrl(url: string): Promise<void>
   quit(): Promise<void>
   /** 联网状态（主进程 net.isOnline）+ 断网期间暂存、待联网后同步的操作数 */
   connectivity(): Promise<{ online: boolean; pendingOps: number }>

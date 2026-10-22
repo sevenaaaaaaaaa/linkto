@@ -151,6 +151,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
         run: () => { void api.openSettings(); props.onClose() }
       },
       {
+        id: 'act-check-updates', group: '操作', label: '检查更新…', keywords: 'update 更新 升级 版本 在线更新 新版本', icon: <IconRefresh width={14} height={14} />,
+        run: () => { props.onClose(); void api.openSettings('general') }
+      },
+      {
         id: 'act-pair-device', group: '操作', label: '添加另一台电脑（跨设备同步配对）', keywords: 'pair device 新电脑 新设备 跨设备 同步 配对 链接 配对码 迁移', icon: <IconLock width={14} height={14} />,
         run: () => { props.onClose(); void api.openSettings('backup:pair') }
       },

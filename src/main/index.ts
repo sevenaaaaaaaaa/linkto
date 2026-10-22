@@ -25,6 +25,7 @@ import { GhostService } from './ghost/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
 import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
+import { checkForUpdates, compareVersions } from './updates'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -284,6 +285,56 @@ function handleSettingsShellAction(action: MacShellAction) {
 /** 原生 NSToolbar 混合壳：默认开启；LINKTO_NATIVE_SHELL=0 可回退到应用自己的标题栏 */
 const NATIVE_SHELL_ENABLED = process.env.LINKTO_NATIVE_SHELL !== '0'
 
+
+/** 菜单 / 托盘「检查更新」：原生对话框展示版本、说明与下载入口 */
+async function checkUpdatesFromMenu() {
+  const result = await checkForUpdates(true)
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const show = (opts: Electron.MessageBoxOptions) => (parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts))
+  try {
+    if (result.error) {
+      await show({
+        type: 'warning',
+        title: '检查更新失败',
+        message: '暂时无法检查更新',
+        detail: result.error,
+        buttons: ['知道了']
+      })
+      return
+    }
+    if (!result.hasUpdate) {
+      const newer = !!result.latestVersion && compareVersions(result.latestVersion, result.currentVersion) < 0
+      await show({
+        type: 'info',
+        title: '检查更新',
+        message: '已是最新版本',
+        detail: `当前版本 ${result.currentVersion}${result.latestVersion ? ` · GitHub 最新 ${result.latestVersion}` : ''}${newer ? '（当前版本比发布页更新）' : ''}`,
+        buttons: ['好']
+      })
+      return
+    }
+    const notes = result.notes.trim().slice(0, 4000)
+    const detail = `当前版本 ${result.currentVersion} → 新版本 ${result.latestVersion}${result.publishedAt ? ` · ${new Date(result.publishedAt).toLocaleDateString('zh-CN')}` : ''}${notes ? `\n\n${notes}` : ''}`
+    const buttons = result.asset ? ['下载更新', '打开发布页', '稍后'] : ['打开发布页', '稍后']
+    const response = await show({
+      type: 'info',
+      title: '发现新版本',
+      message: `LinkTo ${result.latestVersion} 可用`,
+      detail,
+      buttons,
+      defaultId: 0,
+      cancelId: buttons.length - 1
+    })
+    if (result.asset && response.response === 0) {
+      await shell.openExternal(result.asset.url)
+    } else if (result.releaseUrl && response.response <= 1) {
+      await shell.openExternal(result.releaseUrl)
+    }
+  } catch {
+    /* 对话框被关闭 / 窗口已销毁：不处理 */
+  }
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -536,6 +587,7 @@ function buildAppMenu() {
       label: 'LinkTo',
       submenu: [
         { role: 'about', label: '关于 LinkTo（林可兔）' },
+        { label: '检查更新…', click: () => void checkUpdatesFromMenu() },
         { type: 'separator' },
         {
           label: '设置…',
@@ -613,6 +665,7 @@ function buildAppMenu() {
       label: '帮助',
       submenu: [
         { label: 'LinkTo 帮助与更新日志', click: () => void shell.openExternal('https://github.com/sevenaaaaaaaaa/linkto') },
+        { label: '检查更新…', click: () => void checkUpdatesFromMenu() },
         { label: '打开设置…', click: () => createSettingsWindow() }
       ]
     }

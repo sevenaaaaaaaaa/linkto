@@ -57,7 +57,7 @@ const METHOD_NAMES = [
   'financeList', 'financeCreate', 'financeUpdate', 'financeDelete', 'financeMarkPaid', 'financeMakeTodo', 'financeFromMessage',
   'financeMessages', 'financePair', 'financeUnpair', 'financeScan', 'financeExportCsv',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
-  'openSettings', 'openCompose', 'getVersions', 'quit', 'connectivity',
+  'openSettings', 'openCompose', 'getVersions', 'checkForUpdates', 'openUpdateUrl', 'quit', 'connectivity',
   // 项目 / 时间线
   'listProjects', 'getProject', 'saveProject', 'deleteProject', 'projectFromMessage', 'projectAddMessages', 'projectRemoveMessages',
   'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects',

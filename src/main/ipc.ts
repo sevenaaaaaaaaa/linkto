@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
 import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
+import { checkForUpdates, openUpdateUrl } from './updates'
 import type { GhostService } from './ghost/service'
 import type {
   AccountConfig,
@@ -1681,6 +1682,8 @@ export function registerIpc(ctx: AppContext) {
     openCompose: ([prefill]: [Partial<ComposeDraft> | undefined]) => ctx.openCompose(prefill),
 
     getVersions: () => ({ app: app.getVersion(), electron: process.versions.electron, node: process.versions.node }),
+    checkForUpdates: ([force]: [boolean?]) => checkForUpdates(!!force),
+    openUpdateUrl: ([url]: [string]) => openUpdateUrl(String(url ?? '')),
     quit: () => app.quit(),
 
     connectivity: () => ({ online: net.isOnline(), pendingOps: store.listPendingOps().length })
