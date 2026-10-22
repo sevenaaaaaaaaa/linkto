@@ -24,6 +24,12 @@ mac:
   # 「LinkTo Local Signing」（scripts/setup-signing.sh 一次性创建）时，用 -c.mac.identity 覆盖为它：
   # 签名稳定 → 钥匙串「始终允许」跨版本保留；没有该身份时保持 ad-hoc。
   identity: "-"
+  # SF Symbols 运行时渲染器（AppKit 小工具；只在 macOS 使用，非 macOS 图标自动回退 SVG）
+  extraResources:
+    - from: packaging/macos/sf-symbols
+      to: sf-symbols
+  binaries:
+    - Contents/Resources/sf-symbols
 dmg:
   # DMG layout: app + Applications link + Gatekeeper helper + install notes.
   # Paths are relative to the repo root (electron-builder must run from there).

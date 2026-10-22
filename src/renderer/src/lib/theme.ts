@@ -34,10 +34,20 @@ export function resolvedTheme(): 'light' | 'dark' {
   return pref === 'auto' ? (systemPrefersDark() ? 'dark' : 'light') : pref
 }
 
+/** 让 macOS 原生 vibrancy 材质跟随应用明暗（而不是反过来的系统明暗） */
+function syncNativeAppearance(): void {
+  if (document.documentElement.dataset.os !== 'mac') return
+  const forced = findPreset(activePresetId())?.scheme
+  const pref = getThemePref()
+  const source = forced ?? (pref === 'auto' ? 'system' : pref)
+  void window.api?.setNativeAppearance?.(source)
+}
+
 /** 应用明暗（auto 跟随系统）；预设激活时需重跑 applyThemePreset 使其跟随新明暗 */
 export function applyTheme(): void {
   document.documentElement.dataset.theme = resolvedTheme()
   applyThemePreset()
+  syncNativeAppearance()
   listeners.forEach(fn => fn())
 }
 
@@ -118,5 +128,13 @@ export function initTheme(): void {
   applyTheme()
   window.matchMedia(MATCH_DARK).addEventListener('change', () => {
     if (getThemePref() === 'auto') applyTheme()
+  })
+  // 主窗口与设置窗共享 localStorage：一边切明暗 / 预设，另一边同步（原生磨砂材质是全局的，必须一致）
+  window.addEventListener('storage', e => {
+    if (e.key === THEME_KEY || e.key === PRESET_KEY) applyTheme()
+  })
+  // 主进程广播：系统明暗 / 另一窗口切换主题（vibrancy 材质是全局的，内容必须一起变）
+  window.api?.onEvent?.(ev => {
+    if ((ev as { type?: string } | null)?.type === 'theme-changed') applyTheme()
   })
 }

@@ -122,6 +122,10 @@ export interface LinkToApi {
   // ---------- 设置 ----------
   getGeneralSettings(): Promise<GeneralSettings>
   setGeneralSettings(s: GeneralSettings): Promise<void>
+  /** 把应用当前明暗告诉主进程，让 macOS vibrancy 材质与主题一致 */
+  setNativeAppearance(source: 'system' | 'light' | 'dark'): Promise<void>
+  /** macOS SF Symbols 运行时渲染结果（symbol 名 → data URL）；非 macOS / 失败返回 {} */
+  systemSymbols(): Promise<Record<string, string>>
   getNotificationSettings(): Promise<NotificationSettings>
   setNotificationSettings(s: NotificationSettings): Promise<void>
   notifyTest(): Promise<boolean>

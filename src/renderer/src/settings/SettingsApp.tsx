@@ -95,8 +95,8 @@ export default function SettingsApp() {
   const page = PAGES.find(p => p.id === tab) ?? PAGES[0]
 
   return (
-    <div className="h-full flex" style={{ background: 'var(--bg)' }}>
-      <aside className="w-[220px] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--bg-soft)' }}>
+    <div className="h-full flex" style={{ background: 'var(--native-shell-bg, var(--bg))' }}>
+      <aside className="w-[220px] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--native-sidebar-bg, var(--bg-soft))' }}>
         {/* 红绿灯区 */}
         <div className="drag-region h-[52px] shrink-0" />
         <div className="px-3 pb-3">
@@ -150,7 +150,7 @@ export default function SettingsApp() {
         </nav>
       </aside>
 
-      <main className="flex-1 min-w-0 h-full flex flex-col">
+      <main className="flex-1 min-w-0 h-full flex flex-col" style={{ background: 'var(--bg)' }}>
         <header className="drag-region shrink-0 px-8 pt-7 pb-4">
           <h1 className="text-lg font-semibold" style={{ color: 'var(--fg)', letterSpacing: '-0.01em' }}>{page.label}</h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>{page.desc}</p>

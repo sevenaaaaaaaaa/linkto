@@ -1,8 +1,9 @@
-import { BrowserWindow, ipcMain, dialog, shell, app, net } from 'electron'
+import { BrowserWindow, ipcMain, dialog, shell, app, net, nativeTheme } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
+import { systemSymbols } from './system-symbols'
 import type { GhostService } from './ghost/service'
 import type {
   AccountConfig,
@@ -915,6 +916,12 @@ export function registerIpc(ctx: AppContext) {
     // ================= 设置 =================
 
     getGeneralSettings: () => appStore.get('general', DEFAULT_GENERAL),
+    /** 让 macOS 原生磨砂材质跟随应用自身的明暗 / 主题预设 */
+    setNativeAppearance: ([source]: ['system' | 'light' | 'dark']) => {
+      const next = source === 'light' || source === 'dark' ? source : 'system'
+      if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next
+    },
+    systemSymbols: () => systemSymbols(),
     setGeneralSettings: ([s]: [GeneralSettings]) => {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效

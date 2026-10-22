@@ -278,7 +278,9 @@ export function MailShell() {
       {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
         <>
           <MessageList />
-          <Reader />
+          <div className="flex-1 min-w-0 h-full flex" style={{ background: 'var(--bg)' }}>
+            <Reader />
+          </div>
           <ContextRail />
           <MovePalette />
           {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}

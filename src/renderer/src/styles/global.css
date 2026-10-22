@@ -199,6 +199,24 @@
   color-scheme: light;
 }
 
+/* ---------- macOS 原生外观：SF Pro 系统字体 + 原生磨砂侧栏 ---------- */
+html[data-os='mac'] {
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Monaco, monospace;
+}
+html[data-native-material='1'] {
+  /* 原生磨砂 + 60% 主题底色：既能透出桌面，又保证深色/浅色下文字始终有足够对比 */
+  --native-shell-bg: color-mix(in oklab, var(--bg) 58%, transparent);
+  --native-sidebar-bg: color-mix(in oklab, var(--bg) 58%, transparent);
+}
+html[data-native-material='1'] body {
+  background: transparent;
+}
+html[data-native-material='1'] body::before {
+  display: none;
+}
+
 /* ---------- 1 · 色板（深色 = 墨夜） ---------- */
 [data-theme='dark'] {
   --bg: oklch(14.5% 0.006 260);

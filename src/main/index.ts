@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
@@ -241,7 +241,8 @@ function createMainWindow() {
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#F4F5F7',
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#F4F5F7',
+    ...(process.platform === 'darwin' ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const } : {}),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -320,7 +321,8 @@ function createSettingsWindow(tab?: string) {
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#F4F5F7',
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#F4F5F7',
+    ...(process.platform === 'darwin' ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const } : {}),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -348,6 +350,7 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
     backgroundColor: '#F4F5F7',
+    ...(process.platform === 'darwin' ? { tabbingIdentifier: 'linkto-compose' } : {}),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -519,7 +522,9 @@ function buildAppMenu() {
       submenu: [
         { role: 'minimize', label: '最小化' },
         { role: 'zoom', label: '缩放' },
-        ...(isMac ? ([{ type: 'separator' }, { role: 'front', label: '全部置于顶层' }] as Electron.MenuItemConstructorOptions[]) : [])
+        ...(isMac
+          ? ([{ type: 'separator' }, { role: 'front', label: '全部置于顶层' }, { type: 'separator' }, { role: 'mergeAllWindows', label: '合并所有窗口' }, { role: 'moveTabToNewWindow', label: '将标签页移到新窗口' }, { role: 'selectPreviousTab', label: '上一个标签页' }, { role: 'selectNextTab', label: '下一个标签页' }] as Electron.MenuItemConstructorOptions[])
+          : [])
       ]
     },
     {
@@ -1191,6 +1196,8 @@ async function showKeychainNotice(kind: 'pending' | 'failed', signal?: AbortSign
 app.whenReady().then(() => {
   startupLog('ready')
   setNativeAboutPanel()
+  // 原生明暗变化（系统或应用内切换）→ 所有窗口同步重跑主题，避免磨砂材质与内容一个深一个浅
+  nativeTheme.on('updated', () => broadcast({ type: 'theme-changed' }))
   // 先开窗（界面不依赖钥匙串），再初始化数据层与后台服务
   createMainWindow()
   startupLog('main window created')
