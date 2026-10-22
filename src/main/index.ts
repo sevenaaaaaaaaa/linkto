@@ -281,8 +281,8 @@ function handleSettingsShellAction(action: MacShellAction) {
   else if (action.action === 'theme') win.webContents.send('event', { type: 'theme-cycle' })
 }
 
-/** 原生 NSToolbar 混合壳：默认关闭，避免替换应用自己的标题栏；LINKTO_NATIVE_SHELL=1 可试用 */
-const NATIVE_SHELL_EXPERIMENTAL = process.env.LINKTO_NATIVE_SHELL === '1'
+/** 原生 NSToolbar 混合壳：默认开启；LINKTO_NATIVE_SHELL=0 可回退到应用自己的标题栏 */
+const NATIVE_SHELL_ENABLED = process.env.LINKTO_NATIVE_SHELL !== '0'
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -304,7 +304,7 @@ function createMainWindow() {
     }
   })
   let nativeShell = false
-  if (process.platform === 'darwin' && NATIVE_SHELL_EXPERIMENTAL) nativeShell = attachMacShell(mainWindow, handleMacShellAction)
+  if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachMacShell(mainWindow, handleMacShellAction)
   installWindowState(mainWindow)
   if (nativeShell) {
     // NSToolbar 会给窗口帧加 52px：布局完成后再收一次，避免底边被挤出屏幕
@@ -401,7 +401,7 @@ function createSettingsWindow(tab?: string) {
     }
   })
   let nativeShell = false
-  if (process.platform === 'darwin' && NATIVE_SHELL_EXPERIMENTAL) nativeShell = attachSettingsShell(settingsWindow, handleSettingsShellAction)
+  if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachSettingsShell(settingsWindow, handleSettingsShellAction)
   attachNativeContextMenu(settingsWindow)
   settingsWindow.loadFile(join(__dirname, '../renderer/settings.html'), {
     hash: tab ? `/${tab}` : '/general',
@@ -590,7 +590,7 @@ function buildAppMenu() {
         { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
-        ...(NATIVE_SHELL_EXPERIMENTAL ? [{ label: '自定义工具栏…', click: () => macShellCustomize() }] : []),
+        ...(NATIVE_SHELL_ENABLED ? [{ label: '自定义工具栏…', click: () => macShellCustomize() }] : []),
         ...devItems
       ]
     },
