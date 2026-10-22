@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 
 /// LinkTo SF Symbols 渲染器（macOS 系统 API，不随包分发 Apple 图标资源）
-/// 用法: sf-symbols <输出目录> <点大小> <symbol 名称...>
+/// 用法: sf-symbols <输出目录> <点大小> <字重 regular|medium|semibold> <symbol 名称...>
 /// 输出: <名称去点>.png（黑字透明底，作为 CSS mask 使用）
 
-func render(_ name: String, pointSize: CGFloat, output: String) -> Bool {
+func render(_ name: String, pointSize: CGFloat, weight: NSFont.Weight, output: String) -> Bool {
   guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return false }
-  let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+  let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
   let image = base.withSymbolConfiguration(config) ?? base
   let px = Int((pointSize * 2).rounded())
   guard px > 0, let rep = NSBitmapImageRep(
@@ -42,15 +42,17 @@ func render(_ name: String, pointSize: CGFloat, output: String) -> Bool {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard args.count >= 3 else {
-  FileHandle.standardError.write(Data("usage: sf-symbols <outdir> <point-size> <name...>\n".utf8))
+guard args.count >= 4 else {
+  FileHandle.standardError.write(Data("usage: sf-symbols <outdir> <point-size> <weight> <name...>\n".utf8))
   exit(2)
 }
 let dir = args[0]
 let pointSize = CGFloat(Double(args[1]) ?? 18)
+let weightName = args[2]
+let weight: NSFont.Weight = weightName == "medium" ? .medium : weightName == "semibold" ? .semibold : .regular
 try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-for name in args.dropFirst(2) {
+for name in args.dropFirst(3) {
   let file = (dir as NSString).appendingPathComponent(name.replacingOccurrences(of: ".", with: "_") + ".png")
-  let ok = render(name, pointSize: pointSize, output: file)
+  let ok = render(name, pointSize: pointSize, weight: weight, output: file)
   print("\(ok ? "ok" : "missing") \(name)")
 }

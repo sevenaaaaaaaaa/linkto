@@ -105,7 +105,7 @@ export function TriageView() {
 
   return (
     <div className="flex-1 min-w-0 h-full flex flex-col" style={{ background: 'var(--bg)' }}>
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0" />
+      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0" />
       <div className="flex-1 overflow-y-auto flex flex-col items-center px-8 pb-10">
         <div className="w-full max-w-[680px] flex items-center gap-3 mb-6">
           <span className="text-xs" style={{ color: 'var(--muted)' }}>逐封处理 · 需要你处理</span>

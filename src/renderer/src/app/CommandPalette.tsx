@@ -212,6 +212,8 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
     const toList = (ai: boolean) => () => {
       props.onClose()
       goView('mail')
+      // 命令面板是 Web 侧发起搜索：同步到原生工具栏搜索框；原生输入本身不回写
+      void window.api?.macShellSetSearch?.(q)
       void useSearch.getState().run(q, ai ? { ai: true } : { commit: true })
     }
     return [

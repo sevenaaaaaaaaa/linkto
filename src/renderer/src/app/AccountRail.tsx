@@ -33,7 +33,7 @@ export function AccountRail() {
     /* 外层与侧栏同底色：顶部 52px 是和侧栏连成一体的标题带，红绿灯落在这里（不再受深色栏宽度约束）；
        深色账户栏从标题带下方开始，四周留边做成圆角柱 */
     <div className="w-[var(--rail-w)] shrink-0 h-full flex flex-col" style={{ background: 'var(--native-shell-bg, var(--bg))' }}>
-      <div className="drag-region h-[var(--titlebar-h)] w-full shrink-0" />
+      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] w-full shrink-0" />
     <nav
       aria-label="账户"
       className="flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-lg)] flex flex-col items-center"

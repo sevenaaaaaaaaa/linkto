@@ -33,6 +33,7 @@ import { CommandPalette } from './CommandPalette'
 import { ShareHost, openShare, currentShareIds } from './share/SharePanel'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
+import { useSearch } from '../stores/search'
 import { api } from '../lib/api'
 import { cycleTheme, themeLabel } from '../lib/theme'
 import { IconClock } from '../components/icons'
@@ -44,7 +45,23 @@ export function MailShell() {
   const view = useView()
   const triage = useMail(st => st.triage)
   const rail = useMail(st => st.rail)
+  const nativeShell = document.documentElement.dataset.nativeShell === '1'
+  const scopeKind = useMail(st => st.scope.kind)
+  const accountCtx = useMail(st => st.accountCtx)
+  const accounts = useMail(st => st.accounts)
   usePrefs() // 订阅个性化偏好：设置窗改动后即时应用到根节点
+
+  // 原生 NSToolbar：标题跟随当前账户，搜索框跟随应用内搜索状态（程序化 setStringValue 不会触发回调，不会回环）
+  useEffect(() => {
+    if (!nativeShell) return
+    const acc = accountCtx ? accounts.find(a => a.id === accountCtx) : null
+    void window.api?.macShellSetTitle?.(acc ? acc.name : '全部账户')
+  }, [nativeShell, accountCtx, accounts])
+  useEffect(() => {
+    if (!nativeShell) return
+    // 只处理「离开搜索」：清空原生搜索框。正在输入时不要用 store 回写，避免慢 220ms 的查询把用户刚打的字覆盖掉
+    if (scopeKind !== 'search') void window.api?.macShellSetSearch?.('')
+  }, [nativeShell, scopeKind])
   useInsightEvents()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToastState] = useState<ToastPayload | null>(null)
@@ -85,10 +102,27 @@ export function MailShell() {
     let statusTimer = 0
     let progressTimer = 0
     const onEv = (ev: unknown) => {
-      const e = ev as { type: string; subject?: string; to?: string; accountId?: string; text?: string }
+      const e = ev as { type: string; subject?: string; to?: string; accountId?: string; text?: string; query?: string; on?: boolean }
       if (e.type === 'outbox-changed') loadOutbox()
+      // 原生 NSToolbar：搜索框 / AI 搜索 / 全屏时收起 Web 顶部留白
+      if (e.type === 'native-search') {
+        const q = String(e.query ?? '')
+        if (!q.trim()) useSearch.getState().clear()
+        else void useSearch.getState().run(q, { commit: false })
+      }
+      if (e.type === 'native-search-ai') {
+        const q = String(e.query ?? '')
+        if (q.trim()) void useSearch.getState().run(q, { ai: true, commit: true })
+      }
+      if (e.type === 'native-shell-fullscreen') {
+        document.documentElement.dataset.nativeShellFull = e.on ? '1' : ''
+      }
       // 原生菜单 / Dock：搜索与刷新（不走浏览器 reload，保住滚动位置与未发送草稿）
       if (e.type === 'focus-search') {
+        if (document.documentElement.dataset.nativeShell === '1') {
+          void window.api?.macShellFocusSearch?.()
+          return
+        }
         const input = document.querySelector('input[data-mail-search]') as HTMLInputElement | null
         input?.focus()
         input?.select()
@@ -259,7 +293,8 @@ export function MailShell() {
         window.dispatchEvent(new CustomEvent('ms:snooze-menu', { detail: [state.selectedId] }))
       } else if (e.key === 'f' && meta) {
         e.preventDefault()
-        ;(document.querySelector('input[data-mail-search]') as HTMLInputElement | null)?.focus()
+        if (document.documentElement.dataset.nativeShell === '1') void window.api?.macShellFocusSearch?.()
+        else (document.querySelector('input[data-mail-search]') as HTMLInputElement | null)?.focus()
       }
     }
     window.addEventListener('keydown', onKey)

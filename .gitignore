@@ -8,3 +8,4 @@ dist/
 *.db-shm
 ops/
 .build/
+native/macos-shell/build/

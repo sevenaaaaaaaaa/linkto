@@ -285,7 +285,7 @@ export function Sidebar() {
 
   return (
     <div className="relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border)]" style={{ background: 'var(--native-sidebar-bg, var(--bg))' }}>
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 pl-5 pr-3">
+      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 pl-5 pr-3">
         <div className="flex-1 min-w-0 flex flex-col leading-tight">
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--fg)' }}>{ctxAccount ? ctxAccount.name : '全部账户'}</span>
           <span className="text-2xs truncate" style={{ color: 'var(--faint)' }}>{ctxAccount ? ctxAccount.email : `${accounts.length} 个邮箱`}</span>

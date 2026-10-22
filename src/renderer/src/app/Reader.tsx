@@ -488,7 +488,7 @@ export function Reader() {
     const senders = [...new Set(picked.map(m => displayName(m.from)))]
     return (
       <div className="flex-1 min-w-0 h-full flex flex-col">
-        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
+        <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="w-full max-w-[420px] fade-in">
             <div className="text-xl font-semibold tight tnum" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)' }}>
@@ -540,7 +540,7 @@ export function Reader() {
   if (!msg) {
     return (
       <div className="flex-1 min-w-0 h-full flex flex-col relative overflow-hidden">
-        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
+        <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
         <div className="shrink-0 px-6 pb-4 space-y-3">
           <div className="h-[24px] w-[60%] rounded-lg shimmer" />
           <div className="flex items-center gap-3">

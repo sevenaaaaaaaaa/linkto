@@ -222,7 +222,7 @@ function EmptyState() {
   }
   return (
     <div className="flex-1 min-w-0 h-full flex flex-col">
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0" />
+      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0" />
       <div className="flex-1 flex items-center justify-center px-8">
         <div className="max-w-[440px] w-full">
           <span className="w-10 h-10 rounded-[var(--r-md)] inline-flex items-center justify-center ai-chip">

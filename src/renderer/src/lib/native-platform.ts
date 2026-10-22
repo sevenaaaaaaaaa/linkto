@@ -13,4 +13,6 @@ export function initNativePlatform(): void {
   const isSettings = location.pathname.endsWith('settings.html')
   const isSheet = location.hash.startsWith('#/compose') || location.hash.startsWith('#/ghost')
   if (isSettings || !isSheet) el.dataset.nativeMaterial = '1'
+  // 主进程成功挂上 NSToolbar 时，loadFile 会带 ?nativeShell=1；Web 顶部让出原生工具栏高度
+  if (!isSheet && new URLSearchParams(location.search).get('nativeShell') === '1') el.dataset.nativeShell = '1'
 }

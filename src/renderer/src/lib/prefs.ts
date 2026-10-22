@@ -24,6 +24,12 @@ export interface UiPrefs {
   defaultRail: 'context' | 'agent' | 'none'
   /** 界面字体：Geist + 苹方 / 纯系统字体 */
   uiFont: 'geist' | 'system'
+  /** macOS 原生侧栏材质强度：更透 / 平衡 / 更实 */
+  nativeMaterial: 'clear' | 'balanced' | 'solid'
+  /** macOS SF Symbols 字重 */
+  sfWeight: 'regular' | 'medium' | 'semibold'
+  /** macOS SF Symbols 视觉缩放 */
+  sfScale: 'small' | 'normal' | 'large'
   /** 旧版侧栏开关（只读兼容：关掉过的入口在新侧栏里默认隐藏；新设置写在 nav） */
   sidebar: { followup: boolean; snoozed: boolean; flagged: boolean; pinned: boolean; brief: boolean; kb: boolean; onboarding: boolean }
   /** 单键快捷键（E / S / R / V / J / K）——与输入法冲突时可关闭 */
@@ -44,6 +50,9 @@ export const DEFAULT_PREFS: UiPrefs = {
   highlights: true,
   defaultRail: 'context',
   uiFont: 'geist',
+  nativeMaterial: 'balanced',
+  sfWeight: 'regular',
+  sfScale: 'normal',
   sidebar: { followup: true, snoozed: true, flagged: true, pinned: true, brief: true, kb: true, onboarding: true },
   singleKey: true,
   projectTags: true,
@@ -87,6 +96,10 @@ export function applyPrefsToDocument(p: UiPrefs = getPrefs()) {
   root.style.setProperty('--reader-max', p.readerWidth === 'comfort' ? '760px' : 'none')
   if (p.uiFont === 'system') root.style.setProperty('--font-body', "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Segoe UI', sans-serif")
   else root.style.removeProperty('--font-body')
+  // macOS 原生材质强度（% 主题底色）与 SF Symbols 视觉缩放
+  const tint = p.nativeMaterial === 'clear' ? 40 : p.nativeMaterial === 'solid' ? 74 : 58
+  root.style.setProperty('--native-tint', `${tint}%`)
+  root.style.setProperty('--sf-scale', p.sfScale === 'small' ? '0.9' : p.sfScale === 'large' ? '1.12' : '1')
 }
 
 export function usePrefs(): UiPrefs {

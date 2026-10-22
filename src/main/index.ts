@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, shell } from 'electron'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
@@ -24,6 +24,7 @@ import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
+import { attachMacShell, macShellFocusSearch, type MacShellAction } from './mac-shell'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -233,6 +234,45 @@ function sendToMainWindow(type: string, extra?: Record<string, unknown>) {
   else setTimeout(send, 120)
 }
 
+let nativeSearchTimer: NodeJS.Timeout | null = null
+let nativeSearchQuery = ''
+
+/** 原生工具栏动作：写邮件 / 幽灵信 / 设置 / 搜索（220ms 去抖）/ AI 搜索 */
+function handleMacShellAction(action: MacShellAction) {
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return
+  switch (action.action) {
+    case 'compose':
+      createComposeWindow()
+      break
+    case 'ghost':
+      createGhostWindow()
+      break
+    case 'settings':
+      createSettingsWindow()
+      break
+    case 'search': {
+      nativeSearchQuery = action.query ?? ''
+      if (nativeSearchTimer) clearTimeout(nativeSearchTimer)
+      nativeSearchTimer = setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.send('event', { type: 'native-search', query: nativeSearchQuery })
+      }, 220)
+      break
+    }
+    case 'search-ai':
+      win.webContents.send('event', { type: 'native-search-ai', query: action.query ?? '' })
+      break
+    default:
+      break
+  }
+}
+
+/** ⌘F / Dock「搜索邮件」：优先聚焦原生 NSSearchField，没有原生壳时回退 Web 搜索框 */
+function focusSearchNative() {
+  focusMainForNotification()
+  if (!macShellFocusSearch()) sendToMainWindow('focus-search')
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -252,9 +292,27 @@ function createMainWindow() {
       spellcheck: true
     }
   })
+  let nativeShell = false
+  if (process.platform === 'darwin') nativeShell = attachMacShell(mainWindow, handleMacShellAction)
   installWindowState(mainWindow)
+  if (nativeShell) {
+    // NSToolbar 会给窗口帧加 52px：布局完成后再收一次，避免底边被挤出屏幕
+    const fit = () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      const b = mainWindow.getBounds()
+      const maxH = screen.getDisplayMatching(b).workAreaSize.height - 10
+      if (b.height > maxH) mainWindow.setSize(b.width, Math.max(600, maxH))
+    }
+    fit()
+    setTimeout(fit, 280)
+    mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('event', { type: 'native-shell-fullscreen', on: true }))
+    mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('event', { type: 'native-shell-fullscreen', on: false }))
+  }
   attachNativeContextMenu(mainWindow)
-  mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/mail' })
+  mainWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+    hash: '/mail',
+    ...(nativeShell ? { query: { nativeShell: '1' } } : {})
+  })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
@@ -481,7 +539,7 @@ function buildAppMenu() {
           accelerator: 'Cmd+N',
           click: () => createComposeWindow()
         },
-        { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => sendToMainWindow('focus-search') },
+        { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => focusSearchNative() },
         { label: '刷新邮件', accelerator: 'Cmd+R', click: () => sendToMainWindow('native-refresh') },
         { type: 'separator' },
         { role: 'close', label: '关闭窗口' }
@@ -1025,7 +1083,7 @@ async function bootstrap() {
       mainWindow?.webContents.send('event', { type: 'quick-add-todo' })
     },
     quickTrace: () => openTraceCapture(),
-    focusSearch: () => sendToMainWindow('focus-search'),
+    focusSearch: () => focusSearchNative(),
     openGhost: () => createGhostWindow(),
     openSettings: () => createSettingsWindow()
   })

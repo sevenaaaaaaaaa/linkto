@@ -28,7 +28,9 @@ export function SfSymbol(props: P) {
     maskRepeat: 'no-repeat',
     WebkitMaskPosition: 'center',
     maskPosition: 'center',
-    ...style
+    ...style,
+    // 视觉缩放不改变布局；保留调用方自己的 transform（如 chevron 旋转）
+    transform: style?.transform ? `${style.transform} scale(var(--sf-scale, 1))` : 'scale(var(--sf-scale, 1))'
   }
   return <span aria-hidden="true" className={className} style={maskStyle} />
 }

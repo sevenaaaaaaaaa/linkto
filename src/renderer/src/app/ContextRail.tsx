@@ -56,7 +56,7 @@ export function ContextRail() {
       className="w-[var(--context-w)] shrink-0 h-full flex flex-col border-l border-[var(--border)]"
       style={{ background: 'var(--bg)' }}
     >
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-1 px-2 border-b border-[var(--border-soft)]">
+      <div className="drag-region native-shell-context-header h-[var(--titlebar-h)] shrink-0 flex items-center gap-1 px-2 border-b border-[var(--border-soft)]">
         <Tab active={rail === 'context'} onClick={() => toggleRail('context')} icon={<IconUser width={13} height={13} />} label="上下文" />
         <Tab active={rail === 'agent'} onClick={() => toggleRail('agent')} icon={<IconRobot width={13} height={13} />} label="Agent" kbd="⌘J" />
         <div className="flex-1" />

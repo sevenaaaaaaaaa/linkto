@@ -236,7 +236,7 @@ export function FeedReader(props: { id: string | null }) {
   if (!props.id) {
     return (
       <div className="flex-1 min-w-0 h-full flex flex-col">
-        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
+        <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center px-6 text-balance">
             <div className="text-md font-medium" style={{ color: 'var(--faint)' }}>选择一条订阅开始阅读</div>
@@ -252,7 +252,7 @@ export function FeedReader(props: { id: string | null }) {
   if (!item) {
     return (
       <div className="flex-1 min-w-0 h-full flex flex-col">
-        <div className="drag-region h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
+        <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 border-b border-[var(--border-soft)]" />
         <div className="px-6 pt-5 space-y-3">
           {loading ? (
             <>

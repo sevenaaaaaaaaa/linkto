@@ -828,7 +828,7 @@ export function MessageList() {
 
   return (
     <div className="surface relative w-[var(--list-w)] min-w-[300px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
-      <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
+      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
         <SearchBox />
       </div>
 

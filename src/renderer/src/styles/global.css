@@ -206,15 +206,31 @@ html[data-os='mac'] {
   --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Monaco, monospace;
 }
 html[data-native-material='1'] {
-  /* 原生磨砂 + 60% 主题底色：既能透出桌面，又保证深色/浅色下文字始终有足够对比 */
-  --native-shell-bg: color-mix(in oklab, var(--bg) 58%, transparent);
-  --native-sidebar-bg: color-mix(in oklab, var(--bg) 58%, transparent);
+  /* 原生磨砂 + 主题底色：强度由「个性化 → 原生外观」的 --native-tint 控制 */
+  --native-shell-bg: color-mix(in oklab, var(--bg) var(--native-tint, 58%), transparent);
+  --native-sidebar-bg: color-mix(in oklab, var(--bg) var(--native-tint, 58%), transparent);
 }
 html[data-native-material='1'] body {
   background: transparent;
 }
 html[data-native-material='1'] body::before {
   display: none;
+}
+
+/* ---------- 原生 NSToolbar 混合壳：Web 内容让出 52px 顶部 ---------- */
+html[data-native-shell='1'] body {
+  padding-top: 52px;
+  box-sizing: border-box;
+}
+html[data-native-shell='1'] .native-web-titlebar {
+  display: none;
+}
+html[data-native-shell='1'] .native-shell-context-header {
+  height: 44px;
+  min-height: 44px;
+}
+html[data-native-shell='1'][data-native-shell-full='1'] body {
+  padding-top: 0;
 }
 
 /* ---------- 1 · 色板（深色 = 墨夜） ---------- */

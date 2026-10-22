@@ -77,3 +77,6 @@ export const SF_SYMBOL_BY_ICON = {
 } as const
 
 export const SF_SYMBOL_LIST: string[] = Array.from(new Set(Object.values(SF_SYMBOL_BY_ICON)))
+
+export type SfSymbolWeight = 'regular' | 'medium' | 'semibold'
+export const SF_SYMBOL_WEIGHTS: SfSymbolWeight[] = ['regular', 'medium', 'semibold']

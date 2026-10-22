@@ -50,6 +50,7 @@ const SHORTCUTS: [string, string][] = [
  */
 export function PersonalTab() {
   const p = usePrefs()
+  const isMac = document.documentElement.dataset.os === 'mac'
   const [accounts, setAccounts] = useState<AccountWithStatus[]>([])
   useEffect(() => {
     void api.listAccounts().then(setAccounts)
@@ -134,9 +135,40 @@ export function PersonalTab() {
         </>
       )}
 
+      {isMac && (
+        <>
+          <SectionTitle>原生外观</SectionTitle>
+          <SettingRow label="侧栏材质" desc="更透更接近桌面；更实保证深色/浅色文字对比">
+            <Seg
+              value={p.nativeMaterial}
+              onChange={v => setPrefs({ nativeMaterial: v })}
+              options={[{ value: 'clear', label: '更透' }, { value: 'balanced', label: '平衡' }, { value: 'solid', label: '更实' }]}
+            />
+          </SettingRow>
+          <SettingRow label="图标粗细" desc="SF Symbols 字重；切换时后台重渲染一次">
+            <Seg
+              value={p.sfWeight}
+              onChange={v => setPrefs({ sfWeight: v })}
+              options={[{ value: 'regular', label: '常规' }, { value: 'medium', label: '中等' }, { value: 'semibold', label: '加粗' }]}
+            />
+          </SettingRow>
+          <SettingRow label="图标大小" desc="统一缩放 SF Symbols，不改变布局">
+            <Seg
+              value={p.sfScale}
+              onChange={v => setPrefs({ sfScale: v })}
+              options={[{ value: 'small', label: '小' }, { value: 'normal', label: '标准' }, { value: 'large', label: '大' }]}
+            />
+          </SettingRow>
+        </>
+      )}
+
       <SectionTitle>字体与快捷键</SectionTitle>
-      <SettingRow label="界面字体" desc="Geist 搭配苹方；或完全使用系统字体">
-        <Seg value={p.uiFont} onChange={v => setPrefs({ uiFont: v })} options={[{ value: 'geist', label: 'Geist' }, { value: 'system', label: '系统' }]} />
+      <SettingRow label="界面字体" desc={isMac ? 'macOS 固定使用系统 SF Pro / SF Mono' : 'Geist 搭配苹方；或完全使用系统字体'}>
+        {isMac ? (
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>SF Pro</span>
+        ) : (
+          <Seg value={p.uiFont} onChange={v => setPrefs({ uiFont: v })} options={[{ value: 'geist', label: 'Geist' }, { value: 'system', label: '系统' }]} />
+        )}
       </SettingRow>
       <SettingRow label="单键快捷键" desc="E / S / R / V / J / K 等不带 ⌘ 的快捷键；与输入法冲突时可关闭">
         <Toggle checked={p.singleKey} onChange={v => setPrefs({ singleKey: v })} />

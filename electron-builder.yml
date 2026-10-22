@@ -6,9 +6,11 @@ directories:
 files:
   - out/**
   - package.json
+  - native/macos-shell/linkto_shell.node
 asarUnpack:
   - node_modules/node-llama-cpp/**
   - node_modules/@node-llama-cpp/**
+  - native/macos-shell/**
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns
@@ -30,6 +32,7 @@ mac:
       to: sf-symbols
   binaries:
     - Contents/Resources/sf-symbols
+    - Contents/Resources/app.asar.unpacked/native/macos-shell/linkto_shell.node
 dmg:
   # DMG layout: app + Applications link + Gatekeeper helper + install notes.
   # Paths are relative to the repo root (electron-builder must run from there).

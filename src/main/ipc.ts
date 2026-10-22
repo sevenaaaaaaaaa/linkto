@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
+import { macShellSetTitle, macShellSetSearch, macShellFocusSearch } from './mac-shell'
 import type { GhostService } from './ghost/service'
 import type {
   AccountConfig,
@@ -921,7 +922,12 @@ export function registerIpc(ctx: AppContext) {
       const next = source === 'light' || source === 'dark' ? source : 'system'
       if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next
     },
-    systemSymbols: () => systemSymbols(),
+    systemSymbols: ([weight]: [string?]) => systemSymbols(weight ?? 'regular'),
+    macShellSetTitle: ([title]: [string]) => macShellSetTitle(String(title ?? '')),
+    macShellSetSearch: ([text]: [string]) => macShellSetSearch(String(text ?? '')),
+    macShellFocusSearch: () => {
+      macShellFocusSearch()
+    },
     setGeneralSettings: ([s]: [GeneralSettings]) => {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效
