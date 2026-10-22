@@ -891,7 +891,7 @@ function PasswordForm(props: {
             {pasteFeedback.text}
           </div>
         )}
-        <Field label="显示名称" value={name} onChange={setName} placeholder="如 Seven Gmail" />
+        <Field label="显示名称" value={name} onChange={setName} placeholder="如 工作邮箱" />
         <button
           onClick={() => setShowAdvanced(s => !s)}
           className="w-full flex items-center justify-between py-2.5 border-b border-ink/[0.04] text-sm text-zinc-500 hover:text-zinc-700"

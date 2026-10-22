@@ -10,8 +10,8 @@ db.prepare(
   `INSERT OR REPLACE INTO accounts (id, provider, name, email, color, enabled, signature_id,
     imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, user, created_at)
    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-).run(acc, 'gmail', 'Seven Gmail', 'seven@gmail.com', '#22c55e', 1, null,
-  'imap.gmail.com', 993, 1, 'smtp.gmail.com', 465, 1, 'seven@gmail.com', now)
+).run(acc, 'gmail', 'Demo Gmail', 'demo@example.com', '#22c55e', 1, null,
+  'imap.gmail.com', 993, 1, 'smtp.gmail.com', 465, 1, 'demo@example.com', now)
 
 db.prepare(
   `INSERT OR REPLACE INTO folders (id, account_id, path, name, special, sort_order, hidden, total, unread, last_sync_uid, uid_validity)
@@ -22,9 +22,9 @@ const mails = [
   {
     id: `${acc}::INBOX::1`, uid: 1,
     from_name: '王小明', from_addr: 'xiaoming@partner.co', subject: '关于 Q4 联合推广方案的建议',
-    text: 'Seven 你好，\n\n关于 Q4 的联合推广，我整理了三个方向：\n1. 与设计社区联合举办活动\n2. 联名内容共创\n3. 交叉投放\n\n周三下午3点电话聊一下？\n\n王小明',
+    text: '你好，\n\n关于 Q4 的联合推广，我整理了三个方向：\n1. 与设计社区联合举办活动\n2. 联名内容共创\n3. 交叉投放\n\n周三下午3点电话聊一下？\n\n王小明',
     snippet: '关于 Q4 的联合推广，我整理了三个方向：1. 与设计社区联合举办活动 2. 联名内容共创…',
-    category: 'personal', nl: 0, unread: 1, mins: 30, html: '<p>Seven 你好：</p><p>关于 <b>Q4 联合推广</b>，我整理了三个方向：</p><ul><li>与设计社区联合举办活动</li><li>联名内容共创</li><li>交叉投放</li></ul><p>周三下午3点电话聊一下？</p><p>王小明</p>'
+    category: 'personal', nl: 0, unread: 1, mins: 30, html: '<p>你好：</p><p>关于 <b>Q4 联合推广</b>，我整理了三个方向：</p><ul><li>与设计社区联合举办活动</li><li>联名内容共创</li><li>交叉投放</li></ul><p>周三下午3点电话聊一下？</p><p>王小明</p>'
   },
   {
     id: `${acc}::INBOX::2`, uid: 2,

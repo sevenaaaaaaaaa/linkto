@@ -1,6 +1,6 @@
 # CLAUDE.md — Mail Studio (LinkTo)
 
-> AI 原生邮件工作台 · LinKTo / OpenFlow 家族。仓库 `github.com/sevenaaaaaaaaa/linkto`；本地唯一工作目录 `~/LinkTo`（旧的嵌套克隆 `~/LinkTo/mail-studio/` 已弃用，勿在其中开发或发版）。
+> AI 原生邮件工作台 · LinKTo / OpenFlow 家族。仓库 `github.com/sevenaaaaaaaaa/linkto`；本地工作目录为仓库根目录（旧的嵌套克隆已弃用，勿在其中开发或发版）。
 
 ## 接手必读
 

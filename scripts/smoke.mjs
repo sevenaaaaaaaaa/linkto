@@ -27,7 +27,7 @@ const main = async () => {
 
   // 1. 签名
   results.push(['签名保存/读取', await evalInPage(`(async () => {
-    await window.api.saveSignature({ id: 'sig-test', name: '测试签名', html: '<p>Seven</p>', defaults: ['all'], updatedAt: Date.now() })
+    await window.api.saveSignature({ id: 'sig-test', name: '测试签名', html: '<p>Demo</p>', defaults: ['all'], updatedAt: Date.now() })
     const list = await window.api.listSignatures()
     return list.length === 1 && list[0].name === '测试签名' ? 'PASS' : 'FAIL: ' + JSON.stringify(list)
   })()`)])

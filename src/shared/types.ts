@@ -39,7 +39,7 @@ export interface SmtpConfig {
 export interface AccountConfig {
   id: string
   provider: ProviderKey
-  /** 显示名称，如 "Seven Gmail" */
+  /** 显示名称，如 "工作邮箱" */
   name: string
   email: string
   color: string
