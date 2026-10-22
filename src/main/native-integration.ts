@@ -66,7 +66,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
         { label: '新建待办…', click: () => opts.quickAddTodo?.() },
         ...(opts.quickTrace ? [{ label: '记一笔留痕…', click: () => opts.quickTrace?.() }] : []),
         { type: 'separator' },
-        ...(opts.openGhost ? [{ label: '幽灵信', click: () => opts.openGhost?.() }] : []),
+        ...(opts.openGhost ? [{ label: '加密沟通（幽灵信）', click: () => opts.openGhost?.() }] : []),
         ...(opts.openSettings ? [{ label: '设置…', click: () => opts.openSettings?.() }] : []),
         { label: '打开 LinkTo', click: () => opts.showMain() }
       ])
@@ -103,7 +103,7 @@ export function initNativeIntegration(opts: NativeIntegrationOptions): void {
           { label: '新建待办…', accelerator: 'Alt+CommandOrControl+T', click: () => opts.quickAddTodo?.() },
           ...(opts.quickTrace ? [{ label: '记一笔留痕…', accelerator: TRACE_SHORTCUT, click: () => opts.quickTrace?.() }] : []),
           { type: 'separator' },
-          ...(opts.openGhost ? [{ label: '幽灵信', click: () => opts.openGhost?.() }] : []),
+          ...(opts.openGhost ? [{ label: '加密沟通（幽灵信）', click: () => opts.openGhost?.() }] : []),
           ...(opts.openSettings ? [{ label: '设置…', click: () => opts.openSettings?.() }] : []),
           { type: 'separator' },
           {

@@ -58,6 +58,7 @@ export function Reader() {
   const [toast, setToast] = useState('')
   const [showRemote, setShowRemote] = useState(false)
   const [remoteCount, setRemoteCount] = useState(0)
+  const [inlineUrls, setInlineUrls] = useState<Record<string, string>>({})
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -156,14 +157,41 @@ export function Reader() {
     }
   }, [selectedId, loadMessages])
 
-  const cidMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    if (msg) {
-      for (const a of msg.attachments) {
-        if (a.inline && a.contentId) map[a.contentId.toLowerCase()] = a.id
-      }
+  // 内嵌图片（cid:...）：把附件字节转成 blob URL。直接写 attachment id 会得到无效 src，图片会被“吞掉”。
+  useEffect(() => {
+    if (!msg) {
+      setInlineUrls({})
+      return
     }
-    return map
+    const inline = msg.attachments.filter(a => a.contentId && (a.inline || a.contentType.startsWith('image/')))
+    if (!inline.length) {
+      setInlineUrls({})
+      return
+    }
+    let alive = true
+    const urls: Record<string, string> = {}
+    const created: string[] = []
+    void Promise.all(
+      inline.map(async a => {
+        const cid = a.contentId!.replace(/^<|>$/g, '').toLowerCase()
+        try {
+          const r = await api.getInlineImage(a.id)
+          if (!r || !alive) return
+          const blob = new Blob([r.data], { type: a.contentType || 'image/png' })
+          const url = URL.createObjectURL(blob)
+          urls[cid] = url
+          created.push(url)
+        } catch {
+          /* 附件尚未下载 / 读取失败：保留缺图，不阻塞正文 */
+        }
+      })
+    ).then(() => {
+      if (alive) setInlineUrls(urls)
+    })
+    return () => {
+      alive = false
+      created.forEach(url => URL.revokeObjectURL(url))
+    }
   }, [msg])
 
   // 验证码 / 登录链接检测（本地正则，零成本）
@@ -245,7 +273,7 @@ export function Reader() {
     const source = msg.html ?? (msg.text ? `<p style="white-space:pre-wrap">${escapeHtmlMinor(msg.text)}</p>` : '<p style="color:var(--faint)">（此邮件没有正文内容）</p>')
     const { html, remoteImages } = sanitizeEmailHtml(source, {
       allowRemote,
-      resolveCid: cid => cidMap[cid.toLowerCase()] ?? cidMap[`<${cid.toLowerCase()}>`] ?? null
+      resolveCid: cid => inlineUrls[cid.replace(/^<|>$/g, '').toLowerCase()] ?? null
     })
     setRemoteCount(allowRemote ? 0 : remoteImages)
     // 复用已有 shadow root（切风格 / 设置异步到达时 div 仍在挂载，重复 attachShadow 会抛异常）
@@ -278,7 +306,7 @@ export function Reader() {
     })
     // AI 划重点：把理解结果里的原句片段在正文中用荧光标出（只包裹文本节点，不改动邮件结构）
     if (insight?.highlights.length && getPrefs().highlights) highlightPhrases(root, insight.highlights)
-  }, [msg, settings, showRemote, cidMap, skin, insight?.highlights.join('\u0001')])
+  }, [msg, settings, showRemote, inlineUrls, skin, insight?.highlights.join('\u0001')])
 
   const showBlocked = () => setShowRemote(true)
 
@@ -879,14 +907,14 @@ export function Reader() {
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {remoteCount > 0 && (
           <div className="mb-3 flex items-center gap-2 text-xs rounded-[var(--r-sm)] px-3.5 py-2.5" style={{ background: 'var(--warn-soft)', color: 'var(--muted)' }}>
-            <span>为保护隐私，已拦截 {remoteCount} 张远程图片（可能包含追踪像素）</span>
+            <span>为保护隐私，已拦截 {remoteCount} 个远程图片 / 背景资源（可能包含追踪像素）</span>
             <button onClick={showBlocked} className="ml-auto hover:underline shrink-0" style={{ color: 'var(--accent)' }}>
               本次显示
             </button>
           </div>
         )}
         <div
-          className="overflow-hidden mx-auto"
+          className="mx-auto"
           style={
             skin
               ? { borderRadius: 'var(--r-md)' }

@@ -10,7 +10,7 @@ import { useLifeBadge } from './life/LifeStrip'
 import { useTraceBadge } from './trace/TraceStrip'
 import {
   IconFlag, IconTrash, IconArchive, IconSend, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost
+  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost, IconLock
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -314,6 +314,21 @@ export function Sidebar() {
         </button>
       </div>
 
+      <div className="px-2 pb-2 shrink-0">
+        <button
+          onClick={() => api.openGhost()}
+          title="加密沟通（幽灵信）：端到端加密 · 阅后即焚 · 不绑账号"
+          className="w-full h-9 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] border transition-colors hover:brightness-[1.02]"
+          style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
+        >
+          <IconLock width={15} height={15} />
+          <span className="flex-1 text-left text-sm font-medium">加密沟通</span>
+          <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
+            幽灵信
+          </span>
+        </button>
+      </div>
+
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         {layout.core.map(entry)}
         {pendingCount > 0 && (
@@ -374,20 +389,6 @@ export function Sidebar() {
             {smartOpen && layout.smart.map(entry)}
           </>
         )}
-
-        {/* 私密通信：幽灵信（独立窗口，不占导航布局） */}
-        <div className="mt-1.5">
-          <Row
-            icon={<IconGhost width={15} height={15} />}
-            label="幽灵信"
-            trailing={
-              <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>
-                端到端
-              </span>
-            }
-            onClick={() => api.openGhost()}
-          />
-        </div>
 
         {layout.more.length > 0 && (
           <>
@@ -450,7 +451,7 @@ export function Sidebar() {
         </button>
         <button
           onClick={() => api.openGhost()}
-          title="幽灵信 · 端到端加密阅后即焚"
+          title="加密沟通（幽灵信）· 端到端加密阅后即焚"
           className="icon-btn w-7 h-7 inline-flex items-center justify-center"
           style={{ color: 'var(--faint)' }}
         >

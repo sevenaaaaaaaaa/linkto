@@ -457,7 +457,7 @@ function createGhostWindow() {
     height: 660,
     minWidth: 640,
     minHeight: 520,
-    title: '幽灵信 · 端到端加密',
+    title: '加密沟通 · 幽灵信',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 },
     backgroundColor: '#F4F5F7',
@@ -471,8 +471,11 @@ function createGhostWindow() {
   })
   attachNativeContextMenu(ghostWindow)
   ghostWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ghost' })
-  ghostWindow.webContents.once('did-finish-load', () => ghostWindow?.setTitle('幽灵信 · 端到端加密'))
-  ghostWindow.once('ready-to-show', () => ghostWindow?.show())
+  ghostWindow.webContents.once('did-finish-load', () => ghostWindow?.setTitle('加密沟通 · 幽灵信'))
+  ghostWindow.once('ready-to-show', () => {
+    ghostWindow?.show()
+    ghostWindow?.focus()
+  })
   ghostWindow.on('closed', () => {
     ghostWindow = null
   })
@@ -557,6 +560,7 @@ function buildAppMenu() {
           accelerator: 'Cmd+N',
           click: () => createComposeWindow()
         },
+        { label: '加密沟通（幽灵信）…', accelerator: 'Cmd+Shift+G', click: () => createGhostWindow() },
         { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => focusSearchNative() },
         { label: '刷新邮件', accelerator: 'Cmd+R', click: () => sendToMainWindow('native-refresh') },
         { type: 'separator' },

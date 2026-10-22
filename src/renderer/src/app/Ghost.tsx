@@ -108,8 +108,8 @@ export function GhostWindow() {
     <div className="h-screen flex flex-col bg-[oklch(0.97_0.005_106)] text-[oklch(0.22_0.02_106)]">
       {/* 顶栏 */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-black/8 bg-white/60 backdrop-blur">
-        <div className="text-[15px] font-semibold tracking-wide">幽灵信</div>
-        <div className="text-xs text-black/45">端到端加密 · 阅后即焚 · 不含任何账号身份</div>
+        <div className="text-[15px] font-semibold tracking-wide">加密沟通</div>
+        <div className="text-xs text-black/45">幽灵信 · 端到端加密 · 阅后即焚 · 不含任何账号身份</div>
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setTab('inbox')}
