@@ -39,7 +39,7 @@ const METHOD_NAMES = [
   'attachArchiveControl', 'attachArchiveStatus', 'attachReveal', 'attachOpen', 'attachSaveMany', 'attachThumbs', 'attachAddProton',
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus', 'createTodo', 'updateTodo', 'aiPlanTodos', 'todoFromMessage',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
-  'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'openGhost', 'openGhostReader',
+  'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'ghostRelayUrl', 'ghostRelaySetUrl', 'openGhost', 'openGhostReader',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
