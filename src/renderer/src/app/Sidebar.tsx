@@ -318,12 +318,12 @@ export function Sidebar() {
         <button
           onClick={() => api.openGhost()}
           title="加密沟通（幽灵信）：端到端加密 · 阅后即焚 · 不绑账号"
-          className="w-full h-9 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] border transition-colors hover:brightness-[1.02]"
-          style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
+          className="w-full h-9 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] border transition-all hover:brightness-[1.06]"
+          style={{ background: 'linear-gradient(135deg, var(--rail-bg), color-mix(in oklab, var(--rail-bg) 82%, var(--accent)))', borderColor: 'var(--rail-line)', color: 'var(--rail-fg)', boxShadow: 'var(--shadow-sm)' }}
         >
-          <IconLock width={15} height={15} />
+          <IconLock width={15} height={15} style={{ color: 'var(--rail-fg)' }} />
           <span className="flex-1 text-left text-sm font-medium">加密沟通</span>
-          <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}>
+          <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--rail-line)', color: 'var(--rail-fg)' }}>
             幽灵信
           </span>
         </button>

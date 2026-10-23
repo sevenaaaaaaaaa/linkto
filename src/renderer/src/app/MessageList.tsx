@@ -1158,7 +1158,13 @@ export function MessageList() {
         )}
         {!loading && !messages.length && searchActive && <SearchEmpty />}
         {!loading && !messages.length && !searchActive && (
-          <div className="p-10 text-center">
+          <div className="fade-in p-10 text-center">
+            <div
+              className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[var(--r-md)]"
+              style={{ background: 'var(--surface-strong)', border: '1px solid var(--border-soft)' }}
+            >
+              <IconInbox width={20} height={20} style={{ color: 'var(--faint)' }} />
+            </div>
             <div className="text-sm" style={{ color: 'var(--muted)' }}>这里还没有邮件</div>
             {(scope.kind === 'unified' || scope.kind === 'category') && (
               <div className="mt-2 text-xs" style={{ color: 'var(--faint)' }}>收件箱同步后会出现在这里</div>

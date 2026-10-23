@@ -236,7 +236,8 @@ static napi_value Attach(napi_env env, napi_callback_info info) {
   if (napi_create_reference(env, argv[1], 1, &callbackRef) != napi_ok) return result;
   host.callback = callbackRef;
 
-  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar", kind];
+  // v2：重置一次 NSToolbar 自动保存配置（旧版本可能保存了空配置，导致顶部只剩空白标题栏）
+  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar.v2", kind];
   NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:identifier];
   toolbar.delegate = host;
   toolbar.displayMode = NSToolbarDisplayModeIconOnly;

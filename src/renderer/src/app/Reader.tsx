@@ -11,7 +11,7 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot, IconSend
+  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot, IconSend, IconCompose
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { AttachmentBadge } from './attachments/AttachmentBadge'
@@ -554,11 +554,32 @@ export function Reader() {
   if (!selectedId) {
     return (
       <div className="flex-1 min-w-0 h-full flex items-center justify-center">
-        <div className="text-center px-6 text-balance">
-          <div className="text-md font-medium" style={{ color: 'var(--faint)' }}>选择一封邮件开始阅读</div>
-          <div className="mt-1.5 text-xs" style={{ color: 'var(--faint)', opacity: 0.75 }}>
-            ⌘K 命令面板 · J/K 切换 · R 回复 · ⌘T 明暗
+        <div className="fade-in relative w-full max-w-[360px] px-6 text-center">
+          <div
+            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full blur-3xl"
+            style={{ background: 'var(--accent-soft)', opacity: 0.9 }}
+          />
+          <div
+            className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[var(--r-lg)]"
+            style={{ background: 'var(--surface-strong)', border: '1px solid var(--border-soft)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <IconMailDot width={28} height={28} style={{ color: 'var(--muted)' }} />
           </div>
+          <div className="relative text-[15px] font-semibold" style={{ color: 'var(--fg)' }}>选择一封邮件开始阅读</div>
+          <div className="relative mt-1.5 text-xs leading-relaxed" style={{ color: 'var(--faint)' }}>
+            从左侧列表选择，或按 ⌘K 搜索邮件、向 Agent 提问。
+          </div>
+          <div className="relative mt-5 flex items-center justify-center gap-3 text-[10px]" style={{ color: 'var(--faint)' }}>
+            <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--border)] px-1.5 py-0.5" style={{ fontFamily: 'var(--font-mono)' }}>J/K</kbd> 切换</span>
+            <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--border)] px-1.5 py-0.5" style={{ fontFamily: 'var(--font-mono)' }}>R</kbd> 回复</span>
+            <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--border)] px-1.5 py-0.5" style={{ fontFamily: 'var(--font-mono)' }}>?</kbd> 快捷键</span>
+          </div>
+          <button
+            onClick={() => void api.openCompose()}
+            className="btn-liquid relative mt-5 inline-flex h-8 items-center gap-1.5 rounded-[var(--r-sm)] px-3 text-xs font-medium"
+          >
+            <IconCompose width={14} height={14} /> 写邮件
+          </button>
         </div>
       </div>
     )
