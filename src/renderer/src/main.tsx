@@ -9,7 +9,8 @@ import { initNativePlatform } from './lib/native-platform'
 import { loadSystemSymbols } from './lib/system-symbols'
 
 initNativePlatform()
-loadSystemSymbols()
+// 撰写 / 幽灵信 / 焚毁阅读窗不加载整套 SF Symbols；它们只用少量图标，回退 SVG 即可
+if (!/^#\/(compose|ghost)/.test(location.hash)) loadSystemSymbols()
 initTheme()
 applyPrefsToDocument()
 // 个性化设置参与跨设备同步（设置 → 同步与备份）

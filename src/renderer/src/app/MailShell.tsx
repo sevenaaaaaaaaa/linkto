@@ -1,15 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useView, goView, viewFromHash } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
 import { Sidebar } from './Sidebar'
 import { AccountRail } from './AccountRail'
 import { FolderManager } from './FolderManager'
-import { TriageView } from './TriageView'
-import { TodoView } from './TodoView'
-import { FinanceView } from './finance/FinanceView'
-import { LifeView } from './life/LifeView'
-import { FeedsView } from './feeds/FeedsView'
-import { TraceView } from './trace/TraceView'
 import { TraceCaptureHost } from './trace/TraceCapture'
 import { openFinance } from '../lib/finance'
 import { ContextRail } from './ContextRail'
@@ -19,11 +13,6 @@ import { getPrefs, usePrefs } from '../lib/prefs'
 import { useInsightEvents } from '../lib/insights'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
-import { KbView } from './KbView'
-import { InsightsView } from './InsightsView'
-import { AgentView } from './AgentView'
-import { AttachmentsView } from './attachments/AttachmentsView'
-import { ProjectsView } from './projects/ProjectsView'
 import { ProjectPickerHost } from './projects/ProjectBits'
 import { OnboardingScanHost } from './agent/AutomationPanel'
 import { SkillRunHost } from './agent/skill-ui'
@@ -41,6 +30,19 @@ import { IconClock } from '../components/icons'
 import type { ScheduledSend } from '@shared/types'
 import { describeAIError, friendlyFailure, isAIError, type ToastPayload } from '../lib/ai-error'
 import { useConnectivity } from '../lib/connectivity'
+
+// 非首屏视图按需加载：首屏（邮件列表 / 阅读）不下载 Agent、财务、订阅、留痕等大模块
+const TriageView = lazy(() => import('./TriageView').then(m => ({ default: m.TriageView })))
+const TodoView = lazy(() => import('./TodoView').then(m => ({ default: m.TodoView })))
+const FinanceView = lazy(() => import('./finance/FinanceView').then(m => ({ default: m.FinanceView })))
+const LifeView = lazy(() => import('./life/LifeView').then(m => ({ default: m.LifeView })))
+const FeedsView = lazy(() => import('./feeds/FeedsView').then(m => ({ default: m.FeedsView })))
+const TraceView = lazy(() => import('./trace/TraceView').then(m => ({ default: m.TraceView })))
+const KbView = lazy(() => import('./KbView').then(m => ({ default: m.KbView })))
+const InsightsView = lazy(() => import('./InsightsView').then(m => ({ default: m.InsightsView })))
+const AgentView = lazy(() => import('./AgentView').then(m => ({ default: m.AgentView })))
+const AttachmentsView = lazy(() => import('./attachments/AttachmentsView').then(m => ({ default: m.AttachmentsView })))
+const ProjectsView = lazy(() => import('./projects/ProjectsView').then(m => ({ default: m.ProjectsView })))
 
 export function MailShell() {
   const view = useView()
@@ -325,18 +327,20 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
-        <>
-          <MessageList />
-          <div className="flex-1 min-w-0 h-full flex" style={{ background: 'var(--bg)' }}>
-            <Reader />
-          </div>
-          <ContextRail />
-          <MovePalette />
-          {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}
-          {!rail && <DropWell bottom={outbox.length ? 296 : 24} />}
-        </>
-      )}
+      <Suspense fallback={<div className="flex-1 min-w-0 h-full" style={{ background: 'var(--bg)' }} />}>
+        {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
+          <>
+            <MessageList />
+            <div className="flex-1 min-w-0 h-full flex" style={{ background: 'var(--bg)' }}>
+              <Reader />
+            </div>
+            <ContextRail />
+            <MovePalette />
+            {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}
+            {!rail && <DropWell bottom={outbox.length ? 296 : 24} />}
+          </>
+        )}
+      </Suspense>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ShortcutSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <ProjectPickerHost />

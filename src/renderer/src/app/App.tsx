@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMail } from '../stores/mail'
 import { useMailEvent } from '../lib/api'
-import { MailShell } from './MailShell'
-import { ComposeWindow } from './Compose'
-import { GhostWindow } from './Ghost'
-import { GhostRead } from './GhostRead'
 import { parseComposePrefill } from '../preload/parse'
 import type { ComposeDraft } from '@shared/types'
+
+// 按窗口路由拆包：撰写窗不再加载整个邮箱、幽灵信不再加载邮件列表与 TipTap
+const MailShell = lazy(() => import('./MailShell').then(m => ({ default: m.MailShell })))
+const ComposeWindow = lazy(() => import('./Compose').then(m => ({ default: m.ComposeWindow })))
+const GhostWindow = lazy(() => import('./Ghost').then(m => ({ default: m.GhostWindow })))
+const GhostRead = lazy(() => import('./GhostRead').then(m => ({ default: m.GhostRead })))
 
 function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread'; prefill?: Partial<ComposeDraft>; ghostId?: string } {
   const hash = location.hash
@@ -25,6 +27,7 @@ function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread'; prefill?: 
 
 export default function App() {
   const [r, setR] = useState(route)
+  const isMail = r.name === 'mail'
   const { loadAccounts, loadFolders, loadMessages, loadAccounts: reloadAccounts } = useMail()
 
   useEffect(() => {
@@ -33,15 +36,18 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // 只有主邮箱窗口需要账户 / 文件夹 / 列表；撰写窗、幽灵信、焚毁阅读窗不再做这些无用功
   useEffect(() => {
+    if (!isMail) return
     void (async () => {
       await loadAccounts()
       await loadFolders()
       await loadMessages()
     })()
-  }, [loadAccounts, loadFolders, loadMessages])
+  }, [isMail, loadAccounts, loadFolders, loadMessages])
 
   useMailEvent(ev => {
+    if (!isMail) return
     if (ev.type === 'messages-changed') {
       void useMail.getState().loadMessages()
       void useMail.getState().loadFolders()
@@ -65,22 +71,26 @@ export default function App() {
 
   // 窗口聚焦时刷新账户与文件夹，避免多窗口 / 长时间闲置后的数据滞后
   useEffect(() => {
+    if (!isMail) return
     const onFocus = () => {
       void reloadAccounts()
       void useMail.getState().loadFolders()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [reloadAccounts])
+  }, [isMail, reloadAccounts])
 
-  if (r.name === 'compose') {
-    return <ComposeWindow prefill={r.prefill} />
-  }
-  if (r.name === 'ghost') {
-    return <GhostWindow />
-  }
-  if (r.name === 'ghostread') {
-    return r.ghostId ? <GhostRead id={r.ghostId} /> : null
-  }
-  return <MailShell />
+  return (
+    <Suspense fallback={<div className="h-screen w-screen" style={{ background: 'var(--bg)' }} />}>
+      {r.name === 'compose' ? (
+        <ComposeWindow prefill={r.prefill} />
+      ) : r.name === 'ghost' ? (
+        <GhostWindow />
+      ) : r.name === 'ghostread' ? (
+        r.ghostId ? <GhostRead id={r.ghostId} /> : null
+      ) : (
+        <MailShell />
+      )}
+    </Suspense>
+  )
 }
