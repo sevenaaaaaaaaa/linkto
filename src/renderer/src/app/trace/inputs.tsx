@@ -147,7 +147,7 @@ export function MaterialComposer(props: {
         <div className="flex flex-col gap-1.5">
           {props.shots.map(s => (
             <div key={s.key} className="flex items-start gap-2.5 rounded-[var(--r-sm)] border px-2 py-1.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-soft)' }}>
-              <img src={s.url} alt="" className="w-12 h-12 object-cover rounded-[var(--r-xs)] shrink-0 border" style={{ borderColor: 'var(--border)' }} />
+              <img src={s.url} alt="" className="w-12 h-12 object-cover rounded-[var(--r-xs)] shrink-0 border" style={{ borderColor: 'var(--border)' }} loading="lazy" decoding="async" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className="truncate" style={{ color: 'var(--fg)' }}>{s.name}</span>

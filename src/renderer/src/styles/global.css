@@ -72,6 +72,12 @@
   src: url('/fonts/jetbrains-mono-600.woff2') format('woff2');
 }
 
+/* 长邮件列表：保留 DOM（搜索/多选/滚动锚点仍可用），只对视口附近的行做布局与绘制 */
+.mail-row-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 84px;
+}
+
 /* ================================================================
  * Design Tokens v2 · 「石墨纸 + 铜绿」（Phase C，2026-10）
  * 规范来源：docs/design/tokens-v2.css（审计原文仅本地 ops/design/DESIGN-AUDIT.md §3）

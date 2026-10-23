@@ -34,6 +34,9 @@ export function sanitizeEmailHtml(
 
   const imgs = doc.querySelectorAll('img')
   for (const img of [...imgs]) {
+    // 邮件图片默认懒加载 + 异步解码，长邮件不会一次性解码所有图
+    img.setAttribute('loading', 'lazy')
+    img.setAttribute('decoding', 'async')
     const src = (img.getAttribute('src') ?? '').trim()
     if (src.startsWith('cid:')) {
       const resolved = opts.resolveCid(src.slice(4).replace(/[<>]/g, ''))

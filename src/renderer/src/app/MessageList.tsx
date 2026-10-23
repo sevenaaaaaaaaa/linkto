@@ -167,7 +167,7 @@ function MessageRow(props: {
         e.dataTransfer.setData('text/ms-mail-ids', ids.join(','))
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      className={`relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
+      className={`mail-row-cv relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors ${props.indent ? 'pl-9' : ''}`}
       style={{
         viewTransitionName: `mrow-${msg.id}`,
         background: props.selected || checked ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent'
@@ -264,7 +264,7 @@ function ThreadRow(props: {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         data-lens-id={latest.id}
-        className="relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors"
+        className="mail-row-cv relative flex gap-2.5 pl-4 pr-3 py-[var(--row-py)] border-b border-[var(--border-soft)] cursor-default transition-colors"
         style={{ viewTransitionName: `mrow-${latest.id}`, background: props.anyChecked && threadMulti ? 'var(--selected)' : hover ? 'var(--hover)' : 'transparent' }}
       >
         {props.colorByAccount[latest.accountId] && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: props.colorByAccount[latest.accountId], opacity: 0.85 }} />}

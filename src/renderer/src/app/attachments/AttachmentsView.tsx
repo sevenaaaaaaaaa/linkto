@@ -660,7 +660,7 @@ function SuggestCard(props: {
 
 function FileGlyph(props: { it: AttachmentItem; thumb?: string; big?: boolean }) {
   const { it } = props
-  if (props.thumb) return <img src={props.thumb} alt="" className="w-full h-full object-cover" draggable={false} />
+  if (props.thumb) return <img src={props.thumb} alt="" className="w-full h-full object-cover" draggable={false} loading="lazy" decoding="async" />
   return (
     <span className="flex flex-col items-center justify-center gap-1" style={{ color: 'var(--faint)' }}>
       <span
