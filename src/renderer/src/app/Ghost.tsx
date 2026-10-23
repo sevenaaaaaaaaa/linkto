@@ -20,6 +20,7 @@ export function GhostWindow() {
   const [to, setTo] = useState('')
   const [ghostTo, setGhostTo] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [relayUrl, setRelayUrl] = useState('')
@@ -86,6 +87,23 @@ export function GhostWindow() {
     }
   }
 
+  // 窗口级键盘：Esc 关闭；在写信页 ⌘↵ 投递
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        window.close()
+        return
+      }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && tab === 'compose') {
+        e.preventDefault()
+        void send()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tab, send])
+
   const saveRelay = async () => {
     await api.ghostRelaySetUrl(relayInput)
     setRelayUrl(relayInput.trim().replace(/\/+$/, ''))
@@ -107,10 +125,10 @@ export function GhostWindow() {
   return (
     <div className="h-screen flex flex-col bg-[oklch(0.97_0.005_106)] text-[oklch(0.22_0.02_106)]">
       {/* 顶栏 */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-black/8 bg-white/60 backdrop-blur">
+      <div className="drag-region flex items-center gap-3 pl-[76px] pr-5 py-3 border-b border-black/8 bg-white/60 backdrop-blur">
         <div className="text-[15px] font-semibold tracking-wide">加密沟通</div>
         <div className="text-xs text-black/45">幽灵信 · 端到端加密 · 阅后即焚 · 不含任何账号身份</div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="no-drag ml-auto flex items-center gap-2">
           <button
             onClick={() => setTab('inbox')}
             className={`px-3 py-1.5 rounded-lg text-xs ${tab === 'inbox' ? 'bg-[oklch(0.45_0.07_180)] text-white' : 'bg-black/5 hover:bg-black/10'}`}
@@ -132,7 +150,7 @@ export function GhostWindow() {
         </div>
       </div>
 
-      {notice && <div className="px-5 py-2 text-xs bg-[oklch(0.93_0.03_180)] border-b border-black/5">{notice}</div>}
+      {notice && <div className="px-5 py-2 text-xs bg-[oklch(0.93_0.03_180)] border-b border-black/5" aria-live="polite">{notice}</div>}
 
       <div className="flex-1 overflow-auto px-5 py-4">
         {tab === 'inbox' ? (
@@ -275,15 +293,27 @@ export function GhostWindow() {
                 className="mt-1 w-full rounded-lg border border-black/10 bg-white/80 px-2.5 py-2 text-[10px] font-mono leading-relaxed"
               />
             </label>
-            <label className="block">
+            <div className="block">
               <span className="text-xs text-black/55">打开口令（口头或另一渠道告诉对方；设置后无法更改）</span>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-black/10 bg-white/80 px-2.5 py-2 text-sm"
-              />
-            </label>
+              <div className="relative mt-1">
+                <input
+                  aria-label="打开口令"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full rounded-lg border border-black/10 bg-white/80 px-2.5 py-2 pr-14 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="no-drag absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-2xs text-black/45 hover:bg-black/5"
+                  aria-label={showPassword ? '隐藏口令' : '显示口令'}
+                >
+                  {showPassword ? '隐藏' : '显示'}
+                </button>
+              </div>
+            </div>
             <label className="block">
               <span className="text-xs text-black/55">正文（阅后即焚，对方关闭阅读窗即永久销毁）</span>
               <textarea
@@ -300,6 +330,7 @@ export function GhostWindow() {
             >
               {busy ? '加密投递中…' : '加密并投递'}
             </button>
+            <div className="text-center text-[10px] text-black/35">⌘↵ 投递 · Esc 关闭窗口</div>
           </div>
         )}
       </div>

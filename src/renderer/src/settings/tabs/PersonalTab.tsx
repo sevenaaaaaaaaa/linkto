@@ -5,6 +5,7 @@ import { SidebarEditor } from '../../app/upgrade/SidebarEditor'
 import { SectionTitle, SettingRow, Toggle } from './GeneralTab'
 import { ACCOUNT_COLORS } from '@shared/presets'
 import type { AccountWithStatus } from '@shared/types'
+import { SHORTCUT_GROUPS } from '../../lib/shortcuts'
 
 /** 分段选择：选项少于 5 个时比下拉更快 */
 function Seg<T extends string | number>(props: { value: T; options: { value: T; label: string }[]; onChange(v: T): void }) {
@@ -29,20 +30,18 @@ function Seg<T extends string | number>(props: { value: T; options: { value: T; 
   )
 }
 
-const SHORTCUTS: [string, string][] = [
-  ['⌘K', '命令面板 · 搜索或直接提问'],
-  ['⌘J', '右侧栏切到 Agent'],
-  ['⌘0 / ⌘1–9', '全部账户 / 切到第 N 个账户'],
-  ['⌘N', '写邮件'],
-  ['J / K', '下一封 / 上一封'],
-  ['E（或 A）', '归档'],
-  ['S', '稍后处理'],
-  ['R', '回复'],
-  ['V', '移动到文件夹（AI 先猜目标）'],
-  ['⌫', '删除'],
-  ['⌘T', '切换明暗'],
-  ['逐封处理里', 'E 归档 · S 稍后 · R 回复 · ↓ 跳过 · Esc 退出']
-]
+const SHORTCUTS: [string, string][] = (() => {
+  const seen = new Set<string>()
+  const rows: [string, string][] = []
+  for (const group of SHORTCUT_GROUPS) {
+    for (const item of group.items) {
+      if (seen.has(item.keys)) continue
+      seen.add(item.keys)
+      rows.push([item.keys, item.label])
+    }
+  }
+  return rows
+})()
 
 /**
  * 个性化：列表、阅读、侧栏（入口钉住 / 更多 / 隐藏与排序）、账户颜色、字体与快捷键。

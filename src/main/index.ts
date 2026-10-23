@@ -665,6 +665,7 @@ function buildAppMenu() {
       label: '帮助',
       submenu: [
         { label: 'LinkTo 帮助与更新日志', click: () => void shell.openExternal('https://github.com/sevenaaaaaaaaa/linkto') },
+        { label: '键盘快捷键…', click: () => sendToMainWindow('shortcuts') },
         { label: '检查更新…', click: () => void checkUpdatesFromMenu() },
         { label: '打开设置…', click: () => createSettingsWindow() }
       ]

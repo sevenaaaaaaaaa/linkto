@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMail, type Scope } from '../stores/mail'
 import { cycleTheme, themeLabel } from '../lib/theme'
-import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh, IconRobot, IconGhost, IconLock } from '../components/icons'
+import { IconSearch, IconSparkles, IconCompose, IconSettings, IconInbox, IconRefresh, IconRobot, IconGhost, IconLock, IconList } from '../components/icons'
 import { useSearch } from '../stores/search'
 import { askAgent } from '../lib/agent-ask'
 import type { MessageSummary } from '@shared/types'
@@ -153,6 +153,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       {
         id: 'act-check-updates', group: '操作', label: '检查更新…', keywords: 'update 更新 升级 版本 在线更新 新版本', icon: <IconRefresh width={14} height={14} />,
         run: () => { props.onClose(); void api.openSettings('general') }
+      },
+      {
+        id: 'act-shortcuts', group: '操作', label: '键盘快捷键…', hint: '?', keywords: 'keyboard shortcuts 快捷键 帮助 键盘', icon: <IconList width={14} height={14} />,
+        run: () => { props.onClose(); window.dispatchEvent(new CustomEvent('ms:shortcuts')) }
       },
       {
         id: 'act-pair-device', group: '操作', label: '添加另一台电脑（跨设备同步配对）', keywords: 'pair device 新电脑 新设备 跨设备 同步 配对 链接 配对码 迁移', icon: <IconLock width={14} height={14} />,
@@ -355,6 +359,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
         <div className="flex items-center gap-3 px-4 py-2 border-t border-[var(--border-soft)] text-2xs" style={{ color: 'var(--faint)' }}>
           <span>↑↓ 选择</span>
           <span>↵ 执行</span>
+          <span>? 快捷键</span>
           <span className="flex-1" />
           <span className="inline-flex items-center gap-1"><IconSparkles width={10} height={10} /> LinkTo 命令面板</span>
         </div>

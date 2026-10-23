@@ -30,6 +30,7 @@ import { SkillRunHost } from './agent/skill-ui'
 import { ContentAccessHost } from './attachments/ContentAccess'
 import { UpgradeWizardHost } from './upgrade/UpgradeWizard'
 import { CommandPalette } from './CommandPalette'
+import { ShortcutSheet } from './ShortcutSheet'
 import { ShareHost, openShare, currentShareIds } from './share/SharePanel'
 import { LensLayer, RipplePanel, SonarBar, DropWell } from './interactions'
 import { useMail } from '../stores/mail'
@@ -64,6 +65,7 @@ export function MailShell() {
   }, [nativeShell, scopeKind])
   useInsightEvents()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [toast, setToastState] = useState<ToastPayload | null>(null)
   const toastTimer = useRef(0)
   /** 全局 toast：字符串（旧用法）或带动作按钮的对象；字符串若是可识别的 AI 错误，自动附上「去设置 AI」等动作 */
@@ -117,6 +119,7 @@ export function MailShell() {
       if (e.type === 'native-shell-fullscreen') {
         document.documentElement.dataset.nativeShellFull = e.on ? '1' : ''
       }
+      if (e.type === 'shortcuts') setShortcutsOpen(true)
       // 原生菜单 / Dock：搜索与刷新（不走浏览器 reload，保住滚动位置与未发送草稿）
       if (e.type === 'focus-search') {
         if (document.documentElement.dataset.nativeShell === '1') {
@@ -168,6 +171,12 @@ export function MailShell() {
     const onToggle = () => setPaletteOpen(o => !o)
     window.addEventListener('ms:toggle-palette', onToggle)
     return () => window.removeEventListener('ms:toggle-palette', onToggle)
+  }, [])
+
+  useEffect(() => {
+    const onShortcuts = () => setShortcutsOpen(true)
+    window.addEventListener('ms:shortcuts', onShortcuts)
+    return () => window.removeEventListener('ms:shortcuts', onShortcuts)
   }, [])
 
   // 全局指针跟随高光：为 [data-glow] 元素写入 --mx/--my，让光斑随鼠标在玻璃表面流动
@@ -237,6 +246,12 @@ export function MailShell() {
         return
       }
       if (typing) return
+      // ? 打开可搜索的键盘快捷键面板
+      if (!meta && e.key === '?') {
+        e.preventDefault()
+        setShortcutsOpen(true)
+        return
+      }
       // 单键快捷键可在「个性化」里关闭（与输入法 / 无障碍工具冲突时）
       if (!meta && !getPrefs().singleKey && /^[a-zA-Z]$/.test(e.key)) return
 
@@ -323,6 +338,7 @@ export function MailShell() {
         </>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <ProjectPickerHost />
       <SkillRunHost />
       <OnboardingScanHost />
