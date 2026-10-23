@@ -240,7 +240,11 @@ export function Sidebar() {
   // 财务 / 生活档案的角标在侧栏里是弱色（muteCount），但汇总到「更多」时算提醒（到期 / 逾期）
   const moreSum = moreBadge(layout.more, { ...badges, finance: { count: financeBadge }, life: { count: lifeBadge } })
 
+  // 同一入口若因旧配置同时出现在两个分组，只渲染第一次，避免重复（例如「生活档案」）
+  const renderedNav = new Set<NavId>()
   const entry = (id: NavId): React.ReactNode => {
+    if (renderedNav.has(id)) return null
+    renderedNav.add(id)
     switch (id) {
       case 'inbox':
         return <Row key={id} icon={navIcon(id)} label="收件箱" unread={inboxUnread} active={is('unified') || is('account')} onClick={goInbox} />

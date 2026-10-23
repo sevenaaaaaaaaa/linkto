@@ -15,12 +15,13 @@ const SUBS: { tab: AgentTab; label: string; icon: React.ReactNode }[] = [
 ]
 
 function useAgentOpen(): [boolean, (v?: boolean) => void] {
-  const key = 'ms_side_agent'
+  // v2：默认收起子项，保持侧栏安静；点击 Agent 或右侧箭头仍可展开
+  const key = 'ms_side_agent_v2'
   const [open, setOpen] = useState(() => {
     try {
-      return localStorage.getItem(key) !== '0'
+      return localStorage.getItem(key) === '1'
     } catch {
-      return true
+      return false
     }
   })
   return [

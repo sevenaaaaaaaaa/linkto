@@ -1,6 +1,6 @@
 {
   "name": "linkto",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "LinkTo 林可兔 — AI 原生邮件工作台",
   "main": "./out/main/index.js",
   "author": "LinKTo · OpenFlow",

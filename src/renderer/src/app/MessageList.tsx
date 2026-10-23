@@ -6,7 +6,7 @@ import { api, fmtDate, displayName } from '../lib/api'
 import { subjectIsAuth } from '../lib/auth-detect'
 import { SnoozeMenu, snoozeTargets, fmtSnooze } from './SnoozeMenu'
 import { MenuButton, type MenuItem } from '../components/Menu'
-import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing } from '../components/icons'
+import { IconMore, IconFilter, IconSearch, IconSparkles, IconAttach, IconFlag, IconRefresh, IconClose, IconArchive, IconTrash, IconPin, IconKey, IconChat, IconInbox, IconFolder, IconClock, IconSave, IconBellRing, IconSend } from '../components/icons'
 import type { BulkTodo, Folder, ListSort, MailInsight, MessageSummary, TodayBrief } from '@shared/types'
 import { AccountErrorBanner } from './AccountIssues'
 import { toastAIError } from '../lib/ai-error'
@@ -762,6 +762,9 @@ export function MessageList() {
     { kind: 'check', label: '邮箱时光机', icon: <IconClock width={13} height={13} />, checked: timeOpen, onSelect: toggleTime },
     { kind: 'check', label: '重力滑块', icon: <IconSparkles width={13} height={13} />, checked: gravityOpen || gravity > 0, onSelect: () => { if (gravityOpen || gravity > 0) { setGravity(0); setGravityOpen(false) } else setGravityOpen(true) } },
     { kind: 'sep' },
+    ...(scope.kind === 'unified' || scope.kind === 'folder' || scope.kind === 'category'
+      ? [{ kind: 'action' as const, label: classifying ? 'AI 整理中…' : 'AI 整理：分类 个人 / 通知 / 订阅 / 噪声', icon: <IconSparkles width={13} height={13} />, onSelect: () => void aiOrganize() }]
+      : []),
     { kind: 'action', label: '存为「我的视图」…', icon: <IconSave width={13} height={13} />, onSelect: () => setSaveViewOpen(true) }
   ]
   const runJudgeFollowups = async () => {
@@ -904,18 +907,7 @@ export function MessageList() {
             <IconSparkles width={14} height={14} className={judgeBusy ? 'spinning' : ''} />
           </button>
         )}
-        {(scope.kind === 'unified' || scope.kind === 'folder' || scope.kind === 'category') && (
-          <button
-            onClick={aiOrganize}
-            disabled={classifying || !messages.length}
-            title="AI 整理：分类 个人 / 通知 / 订阅 / 噪声"
-            className="icon-btn no-drag h-7 w-7 inline-flex items-center justify-center disabled:opacity-40"
-            style={{ color: 'var(--accent-ink)' }}
-          >
-            <IconSparkles width={14} height={14} className={classifying ? 'spinning' : ''} />
-          </button>
-        )}
-        <MenuButton title="列表选项：排序 / 聚合 / 双轨 / 时光机 / 重力 / 存视图" items={listMenu} width={232}>
+        <MenuButton title="列表选项：整理 / 排序 / 聚合 / 双轨 / 时光机 / 重力 / 存视图" items={listMenu} width={232}>
           <IconMore width={15} height={15} />
         </MenuButton>
       </div>
@@ -1353,6 +1345,7 @@ function BulkBar(props: {
     { kind: 'sep' },
     { kind: 'action', label: 'AI 魔法排序', icon: <IconSparkles width={13} height={13} />, onSelect: props.onMagicSort },
     { kind: 'action', label: 'AI 提问（基于所选邮件）', icon: <IconChat width={13} height={13} />, onSelect: props.onAsk },
+    { kind: 'action', label: '分享 / 导出', icon: <IconSend width={13} height={13} />, onSelect: () => openShare(currentShareIds()) },
     { kind: 'sep' },
     { kind: 'action', label: '删除', icon: <IconTrash width={13} height={13} />, danger: true, onSelect: props.onDelete }
   ]
@@ -1378,7 +1371,6 @@ function BulkBar(props: {
           <BulkBtn onClick={props.onSnooze}>稍后</BulkBtn>
         </>
       )}
-      <BulkBtn onClick={() => openShare(currentShareIds())}>分享</BulkBtn>
       <div className="relative" ref={ref}>
         <BulkBtn onClick={() => props.setMoveMenu(!props.moveMenu)}>移动</BulkBtn>
         {props.moveMenu && (
