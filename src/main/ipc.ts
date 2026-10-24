@@ -954,6 +954,16 @@ export function registerIpc(ctx: AppContext) {
       return true
     },
     aiLocalRemove: ([modelId]: [string]) => localEngine.removeModel(modelId),
+    /** 选择并导入自选 GGUF 大模型（登记原文件路径，不复制） */
+    aiLocalImportCustom: async () => {
+      const res = await dialog.showOpenDialog({
+        title: '选择 GGUF 模型文件',
+        properties: ['openFile'],
+        filters: [{ name: 'GGUF 模型', extensions: ['gguf'] }]
+      })
+      if (res.canceled || !res.filePaths[0]) return { ok: false, error: '已取消' }
+      return localEngine.addCustomModel(res.filePaths[0])
+    },
     /** 探测本机推理服务（Ollama / LM Studio / llama.cpp），返回首个在线端点与模型列表 */
     aiProbeLocal: async () => {
       const candidates = [
@@ -1269,6 +1279,9 @@ export function registerIpc(ctx: AppContext) {
     screenerPendingCount: () => store.screenerPendingCount(),
 
     aiScreenSuggest: ([addr]: [string]) => insights.screenSuggest(addr),
+
+    /** AI 从邮件统计建议订阅主题（设置 → 订阅） */
+    feedSuggestTopics: () => insights.feedSuggestTopics(),
 
     getSplitSignals: () => ({ known: store.getKnownSenders() }),
 

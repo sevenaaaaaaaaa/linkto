@@ -146,6 +146,8 @@ export interface LinkToApi {
   aiLocalDownload(modelId: string): Promise<{ ok: boolean; error?: string }>
   aiLocalCancelDownload(): Promise<boolean>
   aiLocalRemove(modelId: string): Promise<{ ok: boolean; error?: string }>
+  /** 弹文件选择器导入自选 GGUF 大模型（8B/14B 等），登记原文件路径 */
+  aiLocalImportCustom(): Promise<{ ok: boolean; error?: string }>
 
   // ---------- 签名 / 模板 / 规则 ----------
   listSignatures(): Promise<Signature[]>
@@ -363,12 +365,12 @@ export interface LinkToApi {
   /** 发件人上下文（右侧栏）：往来统计、Agent 记忆、你答应过的事、相关知识库条目 */
   senderContext(messageId: string): Promise<{ addr: string; name: string; total: number; lastAt: number | null; sentByMe: number; memories: string[]; promises: string[]; related: { id: string; title: string; kind: 'kb' | 'message' }[] } | null>
 
-  // ---------- MCP 服务（外部 AI Agent 访问本地邮件） ----------
-  getMcpStatus(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  // ---------- MCP 服务（外部 AI Agent 访问本地邮件 / 共用本地模型） ----------
+  getMcpStatus(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; openaiUrl: string; token: string; error?: string }>
   /** 开关本地 MCP 服务；首次开启自动生成 token */
-  setMcpEnabled(enabled: boolean, port?: number): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  setMcpEnabled(enabled: boolean, port?: number): Promise<{ enabled: boolean; port: number; running: boolean; url: string; openaiUrl: string; token: string; error?: string }>
   /** 重新生成 token（旧 token 立即失效） */
-  regenerateMcpToken(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; token: string; error?: string }>
+  regenerateMcpToken(): Promise<{ enabled: boolean; port: number; running: boolean; url: string; openaiUrl: string; token: string; error?: string }>
 
   // ---------- 待办跨设备同步（经自己邮箱的隐藏文件夹 LinkTo-Sync） ----------
   todoSyncStatus(): Promise<TodoSyncStatus>
@@ -712,6 +714,8 @@ export interface LinkToApi {
   feedUnreadTotal(): Promise<number>
   feedAddTopic(input: Partial<import('./feeds').FeedTopic> & { query: string; group?: string | null }): Promise<import('./feeds').FeedSource>
   feedRunTopic(id: string): Promise<import('./feeds').FeedTopicRunResult>
+  /** AI 从邮件统计里建议值得订阅的主题（设置 → 订阅 → AI 推荐） */
+  feedSuggestTopics(): Promise<{ ok: boolean; error?: string; topics: { query: string; reason: string; cadence: 'daily' | 'weekly' }[] }>
   feedGetSettings(): Promise<import('./feeds').FeedSettings>
   feedSetSettings(patch: Partial<import('./feeds').FeedSettings>): Promise<import('./feeds').FeedSettings>
   /** 搜索 API Key 是否已填（不回传 Key 本身） */

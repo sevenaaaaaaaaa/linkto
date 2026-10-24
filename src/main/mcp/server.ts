@@ -2,15 +2,19 @@ import { app } from 'electron'
 import { searchTerms, rankByTerms } from '../search-terms'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import type { Address, MessageSummary } from '@shared/types'
+import type { Address, ComposeDraft, MessageSummary } from '@shared/types'
 import type { MailStore } from '../db'
 import type { AppStore } from '../store'
+import type { LocalEngine } from '../ai/local-engine'
+import type { Outbox } from '../mail/outbox'
 
 /**
  * 本地 MCP 服务（Model Context Protocol · Streamable HTTP）：
- * 让 Claude Code / Claude Desktop / Cursor 等外部 Agent 读取邮件、管理待办、保存草稿。
+ * 让 Claude Code / Claude Desktop / Cursor 等外部 Agent 读取邮件、管理待办、保存草稿、发信。
+ * 同一服务顺带暴露 OpenAI 兼容端点（/v1/chat/completions），OpenFlow 家族工具把
+ * base URL 指过来即可共用本地大模型，无需各自再跑一份。
  *  - 仅监听 127.0.0.1，Bearer token 鉴权，Origin 校验防 DNS rebinding
- *  - 只读邮件 + 写本地待办 / 本地草稿，绝不发信
+ *  - 读邮件 + 待办/草稿；发信走发件队列并带 30 秒撤销窗口
  *  - 手写 JSON-RPC 2.0，无第三方依赖
  */
 
@@ -26,6 +30,8 @@ export interface McpStatus {
   port: number
   running: boolean
   url: string
+  /** OpenAI 兼容端点（家族工具 / 任意支持自定义 OpenAI base URL 的客户端接入用） */
+  openaiUrl: string
   token: string
   error?: string
 }
@@ -35,6 +41,10 @@ export interface McpDeps {
   appStore: AppStore
   /** 广播事件给渲染进程（待办 / 草稿变更后刷新界面） */
   event(payload: unknown): void
+  /** 本地推理引擎：/v1/chat/completions 的后端 */
+  local: LocalEngine
+  /** 发件队列：send_email 走 30s 撤销窗口 */
+  outbox: Outbox
 }
 
 const SETTINGS_KEY = 'mcp'
@@ -43,6 +53,8 @@ const MAX_BODY = 1024 * 1024
 const SUPPORTED_VERSIONS = ['2025-06-18', '2025-03-26']
 const LATEST_VERSION = '2025-06-18'
 const BODY_LIMIT_CHARS = 20_000
+/** MCP 发信的撤销窗口：进发件队列后 30 秒才真正发出 */
+const SEND_UNDO_MS = 30_000
 
 // ---------- JSON-RPC ----------
 
@@ -211,6 +223,27 @@ const TOOLS = [
     }
   },
   {
+    name: 'send_email',
+    description:
+      '发送一封邮件。邮件先进入 LinkTo 发件队列，30 秒撤销窗口后才真正发出（期间用户可在队列里撤销）。Send an email via the LinkTo outbox — it actually goes out after a 30-second undo window.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'array', items: { type: 'string' }, description: '收件人 / recipients, "a@b.com" or "Name <a@b.com>"' },
+        cc: { type: 'array', items: { type: 'string' }, description: '抄送 / cc' },
+        subject: { type: 'string' },
+        body: { type: 'string', description: '纯文本正文 / plain-text body' },
+        account_email: { type: 'string', description: '发件账户 / sending account email（缺省用第一个启用的账户）' }
+      },
+      required: ['to', 'subject', 'body']
+    }
+  },
+  {
+    name: 'list_accounts',
+    description: '列出已配置的邮件账户（发信前确认用哪个账户）。List configured mail accounts (email, name, enabled).',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
     name: 'search_knowledge',
     description: '检索 LinkTo 知识库（收藏的邮件、笔记），返回最相关的 8 条。Search the LinkTo knowledge base; returns the top 8 items.',
     inputSchema: {
@@ -272,6 +305,7 @@ export class McpService {
       port: s.port,
       running: !!this.server,
       url: `http://127.0.0.1:${port}/mcp`,
+      openaiUrl: `http://127.0.0.1:${port}/v1`,
       token: s.enabled ? this.token() : this.deps.appStore.loadSecret(TOKEN_ID),
       ...(this.lastError ? { error: this.lastError } : {})
     }
@@ -394,6 +428,44 @@ export class McpService {
       this.json(res, 403, rpcError(null, -32000, 'Forbidden origin'))
       return
     }
+    // ---- OpenAI 兼容端点（家族工具 / 支持 custom base URL 的客户端共用本地模型）----
+    if (path === '/v1/models') {
+      if (req.method !== 'GET') {
+        res.setHeader('Allow', 'GET')
+        this.json(res, 405, this.openaiErrorBody(405, 'Method not allowed'))
+        return
+      }
+      if (!this.authorized(req.headers.authorization)) {
+        res.setHeader('WWW-Authenticate', 'Bearer')
+        this.json(res, 401, this.openaiErrorBody(401, 'Unauthorized'))
+        return
+      }
+      const { models } = this.deps.local.localStatus()
+      const data = models.filter(m => m.downloaded).map(m => ({ id: m.id, object: 'model', created: 0, owned_by: 'linkto-local' }))
+      this.json(res, 200, { object: 'list', data })
+      return
+    }
+    if (path === '/v1/chat/completions') {
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST')
+        this.json(res, 405, this.openaiErrorBody(405, 'Method not allowed'))
+        return
+      }
+      if (!this.authorized(req.headers.authorization)) {
+        res.setHeader('WWW-Authenticate', 'Bearer')
+        this.json(res, 401, this.openaiErrorBody(401, 'Unauthorized'))
+        return
+      }
+      const declared = Number(req.headers['content-length'] ?? 0)
+      if (declared > MAX_BODY) {
+        this.json(res, 413, this.openaiErrorBody(413, 'Request body too large'))
+        req.resume()
+        return
+      }
+      const raw = await this.readBody(req)
+      await this.handleChat(res, raw)
+      return
+    }
     if (path !== '/mcp') {
       this.json(res, 404, rpcError(null, -32000, 'Not found'))
       return
@@ -447,6 +519,98 @@ export class McpService {
     }
   }
 
+  // ---------- OpenAI 兼容 /v1/chat/completions ----------
+
+  private openaiErrorBody(status: number, message: string) {
+    return { error: { message, type: 'linkto_error', code: status } }
+  }
+
+  /** 解析请求里的 model：已知 id 直接用；否则回落到「设置里的本地模型」或首个已下载模型 */
+  private resolveLocalModel(requested: string | undefined): { id?: string; error?: string } {
+    const { models } = this.deps.local.localStatus()
+    if (requested) {
+      const hit = models.find(m => m.id === requested)
+      if (hit) {
+        if (!hit.downloaded) return { error: `模型 ${requested} 尚未就绪，请在 LinkTo 设置 → AI 中下载或检查源文件` }
+        return { id: hit.id }
+      }
+    }
+    const ai = this.deps.appStore.getAI()
+    if (ai.baseURL === 'builtin-local' && ai.model) {
+      const hit = models.find(m => m.id === ai.model && m.downloaded)
+      if (hit) return { id: hit.id }
+    }
+    const first = models.find(m => m.downloaded)
+    if (!first) return { error: '没有可用的本地模型：请在 LinkTo 设置 → AI 中下载内置模型或导入 GGUF 文件' }
+    return { id: first.id }
+  }
+
+  private async handleChat(res: ServerResponse, raw: string | null) {
+    if (raw === null) {
+      this.json(res, 413, this.openaiErrorBody(413, 'Request body too large'))
+      return
+    }
+    res.on('error', () => {}) // 客户端中途断开时不让 socket 错误冒泡
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(raw)
+    } catch {
+      this.json(res, 400, this.openaiErrorBody(400, 'Invalid JSON'))
+      return
+    }
+    const rawMessages = payload.messages
+    if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
+      this.json(res, 400, this.openaiErrorBody(400, 'messages must be a non-empty array'))
+      return
+    }
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = []
+    for (const m of rawMessages) {
+      const role = (m as { role?: unknown })?.role
+      const content = (m as { content?: unknown })?.content
+      if ((role !== 'system' && role !== 'user' && role !== 'assistant') || typeof content !== 'string') {
+        this.json(res, 400, this.openaiErrorBody(400, 'each message must be {role: system|user|assistant, content: string}'))
+        return
+      }
+      messages.push({ role, content })
+    }
+    const resolved = this.resolveLocalModel(typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : undefined)
+    if (!resolved.id) {
+      this.json(res, 400, this.openaiErrorBody(400, resolved.error ?? 'no local model available'))
+      return
+    }
+    const modelId = resolved.id
+    const created = Math.floor(Date.now() / 1000)
+    const id = `chatcmpl-${randomUUID()}`
+    const maxTokens = typeof payload.max_tokens === 'number' ? payload.max_tokens : undefined
+    const temperature = typeof payload.temperature === 'number' ? payload.temperature : undefined
+    try {
+      if (payload.stream === true) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+        const chunk = (delta: Record<string, unknown>, finish: string | null) =>
+          `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: modelId, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+        await this.deps.local.stream(modelId, messages, d => res.write(chunk({ content: d }, null)), { maxTokens, temperature })
+        res.write(chunk({}, 'stop'))
+        res.write('data: [DONE]\n\n')
+        res.end()
+      } else {
+        const text = await this.deps.local.stream(modelId, messages, () => {}, { maxTokens, temperature })
+        this.json(res, 200, {
+          id,
+          object: 'chat.completion',
+          created,
+          model: modelId,
+          choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        })
+      }
+    } catch (err) {
+      console.error('[mcp] chat completion failed:', err)
+      const message = err instanceof Error ? err.message : String(err)
+      if (res.headersSent) res.end()
+      else this.json(res, 500, this.openaiErrorBody(500, message))
+    }
+  }
+
   /** 处理单条 JSON-RPC 消息；通知 / 响应返回 null */
   private async dispatch(msg: unknown): Promise<object | null> {
     if (!msg || typeof msg !== 'object') return rpcError(null, -32600, 'Invalid Request')
@@ -465,7 +629,7 @@ export class McpService {
           protocolVersion: SUPPORTED_VERSIONS.includes(requested) ? requested : LATEST_VERSION,
           capabilities: { tools: {} },
           serverInfo: { name: 'linkto', version: app.getVersion() },
-          instructions: 'LinkTo 本地邮件：可搜索/读取邮件、管理待办、保存本地草稿（不会发信）。LinkTo local mail: search/read mail, manage todos, save local drafts (never sends).'
+          instructions: 'LinkTo 本地邮件：可搜索/读取邮件、管理待办、保存本地草稿、经 30 秒撤销窗口发信。LinkTo local mail: search/read mail, manage todos, save local drafts, send email via the outbox with a 30-second undo window.'
         })
       }
       case 'ping':
@@ -520,6 +684,56 @@ export class McpService {
     const acct = this.deps.store.listAccounts().find(a => a.email.toLowerCase() === e || a.user.toLowerCase() === e)
     if (!acct) throw new ToolInputError(`找不到账户 ${email}（no account with this email）`)
     return acct
+  }
+
+  /** send_email / save_draft 共用：校验参数并组装草稿（账户：显式指定 > 回复原账户 > 首个启用 > 第一个） */
+  private draftFromArgs(args: Record<string, unknown>): { draft: ComposeDraft; account: ReturnType<MailStore['listAccounts']>[number] } {
+    const { store } = this.deps
+    const toRaw = args.to
+    if (!Array.isArray(toRaw) || toRaw.length === 0 || toRaw.some(t => typeof t !== 'string'))
+      throw new ToolInputError('to 必须是非空字符串数组（"to" must be a non-empty array of strings）')
+    const to: Address[] = []
+    for (const t of toRaw as string[]) {
+      const a = parseAddress(t)
+      if (!a) throw new ToolInputError(`收件人地址无效：${t}（invalid recipient）`)
+      to.push(a)
+    }
+    const cc: Address[] = []
+    if (args.cc !== undefined) {
+      if (!Array.isArray(args.cc) || (args.cc as unknown[]).some(t => typeof t !== 'string'))
+        throw new ToolInputError('cc 必须是字符串数组（"cc" must be an array of strings）')
+      for (const t of args.cc as string[]) {
+        const a = parseAddress(t)
+        if (!a) throw new ToolInputError(`抄送地址无效：${t}（invalid cc address）`)
+        cc.push(a)
+      }
+    }
+    let subject = typeof args.subject === 'string' ? args.subject : ''
+    if (args.subject !== undefined && typeof args.subject !== 'string') throw new ToolInputError('subject 必须是字符串')
+    const body = args.body
+    if (typeof body !== 'string') throw new ToolInputError('缺少参数 body（missing "body"）')
+    const replyId = str(args, 'reply_to_message_id')
+    const replyRow = replyId ? store.getMessageRow(replyId) : undefined
+    if (replyId && !replyRow) throw new ToolInputError(`找不到邮件 ${replyId}（message not found）`)
+    const email = str(args, 'account_email')
+    const accounts = store.listAccounts()
+    const account = email
+      ? this.accountByEmail(email)
+      : (replyRow && accounts.find(a => a.id === replyRow.account_id)) || accounts.find(a => a.enabled) || accounts[0]
+    if (!account) throw new ToolInputError('尚未添加任何邮件账户（no mail account configured）')
+    if (!subject.trim() && replyRow?.subject) subject = `回复：${replyRow.subject}`
+    const draft: ComposeDraft = {
+      id: randomUUID(),
+      accountId: account.id,
+      to,
+      cc,
+      bcc: [],
+      subject,
+      html: textToHtml(body),
+      relatedMessageId: replyId,
+      attachmentPaths: []
+    }
+    return { draft, account }
   }
 
   private runTool(name: string, args: Record<string, unknown>): unknown {
@@ -606,33 +820,26 @@ export class McpService {
         return { ok: true, id, title, due: due ?? null }
       }
       case 'save_draft': {
-        const toRaw = args.to
-        if (!Array.isArray(toRaw) || toRaw.length === 0 || toRaw.some(t => typeof t !== 'string'))
-          throw new ToolInputError('to 必须是非空字符串数组（"to" must be a non-empty array of strings）')
-        const to: Address[] = []
-        for (const t of toRaw as string[]) {
-          const a = parseAddress(t)
-          if (!a) throw new ToolInputError(`收件人地址无效：${t}（invalid recipient）`)
-          to.push(a)
-        }
-        let subject = typeof args.subject === 'string' ? args.subject : ''
-        if (args.subject !== undefined && typeof args.subject !== 'string') throw new ToolInputError('subject 必须是字符串')
-        const body = typeof args.body === 'string' ? args.body : ''
-        if (args.body === undefined || typeof args.body !== 'string') throw new ToolInputError('缺少参数 body（missing "body"）')
-        const replyId = str(args, 'reply_to_message_id')
-        const replyRow = replyId ? store.getMessageRow(replyId) : undefined
-        if (replyId && !replyRow) throw new ToolInputError(`找不到邮件 ${replyId}（message not found）`)
-        const email = str(args, 'account_email')
-        const accounts = store.listAccounts()
-        const account = email
-          ? this.accountByEmail(email)
-          : (replyRow && accounts.find(a => a.id === replyRow.account_id)) || accounts.find(a => a.enabled) || accounts[0]
-        if (!account) throw new ToolInputError('尚未添加任何邮件账户（no mail account configured）')
-        if (!subject.trim() && replyRow?.subject) subject = `回复：${replyRow.subject}`
-        const id = randomUUID()
-        store.saveDraft({ id, accountId: account.id, to, cc: [], bcc: [], subject, html: textToHtml(body), updatedAt: Date.now() })
+        const { draft, account } = this.draftFromArgs(args)
+        store.saveDraft({ ...draft, updatedAt: Date.now() })
         this.deps.event({ type: 'outbox-changed' })
-        return { ok: true, draft_id: id, account: account.email, note: '已保存为本地草稿，未发送；请在 LinkTo 草稿中检查后手动发送。Saved as a local draft only — not sent.' }
+        return { ok: true, draft_id: draft.id, account: account.email, note: '已保存为本地草稿，未发送；请在 LinkTo 草稿中检查后手动发送。Saved as a local draft only — not sent.' }
+      }
+      case 'send_email': {
+        const { draft, account } = this.draftFromArgs(args)
+        const sendAt = Date.now() + SEND_UNDO_MS
+        this.deps.outbox.schedule(draft, sendAt)
+        return {
+          ok: true,
+          draft_id: draft.id,
+          account: account.email,
+          sends_at: new Date(sendAt).toISOString(),
+          note: `已进入发件队列，${SEND_UNDO_MS / 1000} 秒后自动发出；期间可在 LinkTo 发件队列撤销。Queued — goes out in ${SEND_UNDO_MS / 1000}s unless cancelled in LinkTo's outbox.`
+        }
+      }
+      case 'list_accounts': {
+        const accounts = store.listAccounts().map(a => ({ email: a.email, name: a.name, enabled: a.enabled }))
+        return { count: accounts.length, accounts }
       }
       case 'search_knowledge': {
         const query = str(args, 'query', true)

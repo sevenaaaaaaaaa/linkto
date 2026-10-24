@@ -1,5 +1,5 @@
 import { createWriteStream, existsSync, mkdirSync, statSync, unlinkSync, renameSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
 import type { AppStore } from '../store'
 
@@ -7,6 +7,7 @@ import type { AppStore } from '../store'
  * 内置本地推理引擎：node-llama-cpp（Metal GPU 加速）+ 模型按需下载。
  * 模型 gguf 存 userData/models/，首次启用时从 hf-mirror（失败回退 huggingface）拉取，
  * 支持断点续传与进度广播。与云端 AI 平级，装完即可用、断网可用。
+ * 另支持导入用户自选 GGUF（8B/14B 等大模型），供本机与 OpenFlow 家族工具共用。
  */
 
 export interface LocalModelDef {
@@ -17,6 +18,16 @@ export interface LocalModelDef {
   repo: string
   sizeBytes: number
 }
+
+/** 用户自选 GGUF：不删源文件，只登记路径 */
+export interface CustomLocalModel {
+  id: string
+  name: string
+  path: string
+  sizeBytes: number
+}
+
+const CUSTOM_MODELS_KEY = 'local-custom-models'
 
 /** 内置可选模型（4B 级 q4：邮件摘要/分类/起草的性价比之选） */
 export const LOCAL_MODEL_CATALOG: LocalModelDef[] = [
@@ -70,12 +81,49 @@ export class LocalEngine {
     return join(this.appStore.dataDir, 'models')
   }
 
+  private customModels(): CustomLocalModel[] {
+    return this.appStore.get(CUSTOM_MODELS_KEY, [] as CustomLocalModel[])
+  }
+
+  /** 导入用户自选 GGUF（不复制不移动，登记原路径；8B/14B 等大模型均可） */
+  addCustomModel(filePath: string): { ok: boolean; error?: string } {
+    const p = filePath.trim()
+    if (!/\.gguf$/i.test(p)) return { ok: false, error: '请选择 .gguf 模型文件' }
+    let size = 0
+    try {
+      size = statSync(p).size
+    } catch {
+      return { ok: false, error: '文件不存在或不可读' }
+    }
+    if (size < 10_000_000) return { ok: false, error: '文件过小，不像有效的 GGUF 模型' }
+    const list = this.customModels()
+    if (list.some(m => m.path === p)) return { ok: false, error: '该模型已导入过' }
+    const model: CustomLocalModel = {
+      id: `custom-${Date.now().toString(36)}`,
+      name: basename(p).replace(/\.gguf$/i, ''),
+      path: p,
+      sizeBytes: size
+    }
+    this.appStore.set(CUSTOM_MODELS_KEY, [...list, model])
+    return { ok: true }
+  }
+
   modelPath(id: string): string {
+    const custom = this.customModels().find(m => m.id === id)
+    if (custom) return custom.path
     const def = LOCAL_MODEL_CATALOG.find(m => m.id === id)
     return join(this.modelsDir, def?.file ?? `${id}.gguf`)
   }
 
   isDownloaded(id: string): boolean {
+    const custom = this.customModels().find(m => m.id === id)
+    if (custom) {
+      try {
+        return statSync(custom.path).size > 10_000_000
+      } catch {
+        return false
+      }
+    }
     const path = this.modelPath(id)
     if (!existsSync(path)) return false
     const def = LOCAL_MODEL_CATALOG.find(m => m.id === id)
@@ -85,14 +133,24 @@ export class LocalEngine {
 
   localStatus(): { models: { id: string; label: string; desc: string; downloaded: boolean; sizeBytes: number; sizeText: string }[] } {
     return {
-      models: LOCAL_MODEL_CATALOG.map(m => ({
-        id: m.id,
-        label: m.label,
-        desc: m.desc,
-        downloaded: this.isDownloaded(m.id),
-        sizeBytes: m.sizeBytes,
-        sizeText: `${(m.sizeBytes / 1_000_000_000).toFixed(1)} GB`
-      }))
+      models: [
+        ...LOCAL_MODEL_CATALOG.map(m => ({
+          id: m.id,
+          label: m.label,
+          desc: m.desc,
+          downloaded: this.isDownloaded(m.id),
+          sizeBytes: m.sizeBytes,
+          sizeText: `${(m.sizeBytes / 1_000_000_000).toFixed(1)} GB`
+        })),
+        ...this.customModels().map(m => ({
+          id: m.id,
+          label: m.name,
+          desc: `自选模型 · ${m.path}`,
+          downloaded: this.isDownloaded(m.id),
+          sizeBytes: m.sizeBytes,
+          sizeText: `${(m.sizeBytes / 1_000_000_000).toFixed(1)} GB`
+        }))
+      ]
     }
   }
 
@@ -158,6 +216,16 @@ export class LocalEngine {
   }
 
   removeModel(modelId: string): { ok: boolean; error?: string } {
+    // 自选模型只解除登记，绝不删用户的源文件
+    if (modelId.startsWith('custom-')) {
+      this.appStore.set(CUSTOM_MODELS_KEY, this.customModels().filter(m => m.id !== modelId))
+      if (this.loadedModelId === modelId) {
+        void this.context?.dispose().catch(() => {})
+        this.context = null
+        this.loadedModelId = null
+      }
+      return { ok: true }
+    }
     const path = this.modelPath(modelId)
     if (existsSync(path)) {
       try {
@@ -185,11 +253,12 @@ export class LocalEngine {
     this.loadedModelId = modelId
   }
 
-  /** 流式推理：与 AIService.stream 对齐（system 咒语 + 消息历史 → onDelta 增量） */
+  /** 流式推理：与 AIService.stream 对齐（system 咒语 + 消息历史 → onDelta 增量）；opts 供 OpenAI 端点透传参数 */
   async stream(
     modelId: string,
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
-    onDelta: (delta: string) => void
+    onDelta: (delta: string) => void,
+    opts?: { maxTokens?: number; temperature?: number }
   ): Promise<string> {
     await this.loadModel(modelId)
     if (!this.llama || !this.context) throw new Error('引擎未就绪')
@@ -217,8 +286,9 @@ export class LocalEngine {
       let full = ''
       try {
         await session.prompt(body, {
-          maxTokens: 2048,
-          temperature: 0.7,
+          // 上下文窗口 8192，输出最多留一半给答案，避免长指令被挤掉
+          maxTokens: Math.min(Math.max(opts?.maxTokens ?? 2048, 1), 4096),
+          temperature: Math.min(Math.max(opts?.temperature ?? 0.7, 0), 2),
           onTextChunk: chunk => {
             full += chunk
             onDelta(chunk)

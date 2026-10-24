@@ -149,23 +149,24 @@ export function AiTab() {
           <div className="flex items-center gap-3">
             <span className="w-24 text-sm text-zinc-700 shrink-0">内置引擎</span>
             <span className="text-xs text-zinc-500 flex-1">
-              轻量备用：仅适合摘要 / 翻译等简单任务（Metal GPU 加速 · 断网可用 · 内容不出机）。
-              <b className="text-zinc-700">智能洞察 / 筛选判定 / AI 搜索等结构化功能请用上方 API 预设或本地部署 7B+ 模型</b>
-              ，4B 级端侧模型无法可靠完成。
+              Metal GPU 加速 · 断网可用 · 内容不出机。4B 级内置模型仅适合摘要 / 翻译等轻任务，
+              <b className="text-zinc-700">结构化功能（智能洞察 / 筛选判定 / AI 搜索）请用上方 API 预设，或导入 7B+ 自选模型</b>
+              ；自选模型还可通过「集成」里的 OpenAI 兼容端点供 OpenFlow 家族工具共用。
             </span>
           </div>
           <div className="mt-2 ml-[112px] space-y-2">
             {localModels.map(m => {
               const active = isBuiltinLocal && s.model === m.id
               const downloading = dl?.modelId === m.id && !dl.done
+              const isCustom = m.id.startsWith('custom-')
               return (
                 <div key={m.id} className="flex items-center gap-2.5 rounded-xl bg-zinc-50 px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-zinc-800">{m.label}</span>
-                      <span className="text-xs text-zinc-400">{m.desc} · {m.sizeText}</span>
-                      {active && <span className="text-2xs px-1.5 py-px rounded-sm bg-green-100 text-green-600">使用中</span>}
-                      {m.downloaded && !active && <span className="text-2xs text-zinc-400">已下载</span>}
+                      <span className="text-xs text-zinc-400 truncate max-w-[300px]" title={m.desc}>{m.desc} · {m.sizeText}</span>
+                      {active && <span className="text-2xs px-1.5 py-px rounded-sm bg-green-100 text-green-600 shrink-0">使用中</span>}
+                      {m.downloaded && !active && <span className="text-2xs text-zinc-400 shrink-0">已下载</span>}
                     </div>
                     {downloading && (
                       <div className="mt-1.5 flex items-center gap-2">
@@ -193,7 +194,7 @@ export function AiTab() {
                           }}
                           className="text-xs text-zinc-400 hover:text-red-500"
                         >
-                          删除
+                          {isCustom ? '移除' : '删除'}
                         </button>
                       </>
                     ) : (
@@ -208,6 +209,19 @@ export function AiTab() {
                 </div>
               )
             })}
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={async () => {
+                  const r = await api.aiLocalImportCustom()
+                  if (!r.ok && r.error && r.error !== '已取消') setFetchMsg(r.error)
+                  reloadLocal()
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 hover:bg-zinc-200 shrink-0"
+              >
+                导入自选 GGUF 模型…
+              </button>
+              <span className="text-xs text-zinc-400">选一个 .gguf 文件（Qwen / Llama / GLM 等 7B+ 大模型），只登记路径不复制</span>
+            </div>
           </div>
         </div>
 

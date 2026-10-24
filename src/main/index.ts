@@ -936,7 +936,7 @@ async function bootstrap() {
     }
   )
 
-  mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload) })
+  mcp = new McpService({ store: mailStore, appStore, event: payload => broadcast(payload), local: localEngine, outbox })
   todoSync = new TodoSyncService({ store: mailStore, appStore, engine, event: payload => broadcast(payload) })
   finance = new FinanceService({
     store: mailStore,
@@ -1005,8 +1005,8 @@ async function bootstrap() {
       mainWindow?.webContents.send('event', { type: 'open-followups' })
     }
   })
-  // 主动建议规则：从反复的手动操作里挖掘可自动化的习惯（IPC ruleSuggestion*；挖掘由自动任务「规则建议」每天驱动）
-  initRuleSuggest({ db, store: mailStore, call: internal.call, runRuleActions: internal.runRuleActions, event: payload => broadcast(payload) })
+  // 主动建议规则：从反复的手动操作里挖掘可自动化的习惯（IPC ruleSuggestion*；挖掘由自动任务「规则建议」每天驱动，AI 挖掘由「规则 AI 挖掘」驱动）
+  initRuleSuggest({ db, store: mailStore, call: internal.call, runRuleActions: internal.runRuleActions, event: payload => broadcast(payload), ai: aiService })
   // 生活档案：到期 / 续期类事务（IPC life* · 到期提醒；每日补扫由自动任务「生活档案整理」驱动）
   initLife({
     store: mailStore,

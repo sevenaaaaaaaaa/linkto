@@ -561,9 +561,11 @@ function McpSection(props: { onToast(t: string): void }) {
 
   const token = status?.token ?? ''
   const url = status?.url ?? ''
+  const openaiUrl = status?.openaiUrl ?? ''
   const masked = token ? `${token.slice(0, 4)}${'•'.repeat(16)}${token.slice(-4)}` : '—'
   const cliSnippet = `claude mcp add --transport http linkto ${url} --header "Authorization: Bearer ${token}"`
   const jsonSnippet = JSON.stringify({ mcpServers: { linkto: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)
+  const openaiSnippet = `Base URL: ${openaiUrl}\nAPI Key: ${token}\nModel: 填任意值即可，留空/未知时自动用 LinkTo 当前启用的本地模型（可在 设置 → AI 下载内置模型或导入 7B+ GGUF）`
   const statusText = !status?.enabled
     ? '未开启'
     : status.running
@@ -574,7 +576,7 @@ function McpSection(props: { onToast(t: string): void }) {
     <>
       <SectionTitle>MCP 服务（让外部 AI Agent 使用你的邮件）</SectionTitle>
       <div className="text-xs text-zinc-500 mb-2">
-        开启后，Claude Code、Claude Desktop、Cursor 等支持 MCP 的 Agent 可以搜索和阅读邮件、查看与新建待办、检索知识库，并保存本地草稿。
+        开启后，Claude Code、Claude Desktop、Cursor 等支持 MCP 的 Agent 可以搜索和阅读邮件、查看与新建待办、检索知识库、保存本地草稿，并能发信（进入发件队列，30 秒撤销窗口）。
       </div>
       <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-5 py-4">
         <div className="flex items-center gap-4">
@@ -613,12 +615,17 @@ function McpSection(props: { onToast(t: string): void }) {
             </div>
 
             <McpSnippet label="Claude Code" text={cliSnippet.replace(token, masked)} onCopy={() => copy(cliSnippet, ' Claude Code 命令')} />
-            <McpSnippet label="JSON 配置（Claude Desktop / Cursor 等）" text={jsonSnippet.replace(token, masked)} onCopy={() => copy(jsonSnippet, ' JSON 配置')} />
+            <McpSnippet label="JSON 配置（Claude Desktop / Cursor / Cline 等）" text={jsonSnippet.replace(token, masked)} onCopy={() => copy(jsonSnippet, ' JSON 配置')} />
+            <McpSnippet
+              label="OpenAI 兼容端点（liana / litmus / LobeChat / Open WebUI 等填这三行）"
+              text={openaiSnippet.replace(token, masked)}
+              onCopy={() => copy(openaiSnippet, ' OpenAI 兼容端点配置')}
+            />
           </div>
         )}
       </div>
       <div className="text-xs leading-relaxed text-zinc-500 bg-zinc-100/70 rounded-xl px-4 py-3 mt-2">
-        仅监听本机，外部 Agent 能读取邮件内容；只能存草稿、不能发信。Token 等同于邮件访问权限，请勿外传；怀疑泄露时点「重新生成」。
+        仅监听本机。Agent 能读取邮件内容、经发件队列发信（30 秒内可撤销）。同一端口也提供 OpenAI 兼容端点，OpenFlow 家族工具填入上方三行即可共用本地大模型，无需各自再跑一份。Token 等同于邮件访问权限，请勿外传；怀疑泄露时点「重新生成」。
       </div>
     </>
   )

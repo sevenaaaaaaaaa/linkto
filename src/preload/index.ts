@@ -19,7 +19,7 @@ const METHOD_NAMES = [
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
   'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
   'suggestRecipients', 'aiComposeAssist',
-  'getGeneralSettings', 'setGeneralSettings', 'setNativeAppearance', 'systemSymbols', 'macShellSetTitle', 'macShellSetSearch', 'macShellFocusSearch', 'macShellCustomize', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'notifyTestResult', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove',
+  'getGeneralSettings', 'setGeneralSettings', 'setNativeAppearance', 'systemSymbols', 'macShellSetTitle', 'macShellSetSearch', 'macShellFocusSearch', 'macShellCustomize', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'notifyTestResult', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove', 'aiLocalImportCustom',
   'listSignatures', 'saveSignature', 'deleteSignature',
   'listTemplates', 'saveTemplate', 'deleteTemplate',
   'listRules', 'saveRule', 'deleteRule', 'reorderRules',
@@ -66,7 +66,7 @@ const METHOD_NAMES = [
   'sharePreview', 'shareSend', 'shareExport', 'shareCopy', 'shareLinks', 'shareOpenLink',
   // 订阅 / AI 搜索订阅
   'feedSources', 'feedDiscover', 'feedAddSource', 'feedUpdateSource', 'feedDeleteSource', 'feedRenameGroup', 'feedRefresh', 'feedItems', 'feedItem',
-  'feedMarkRead', 'feedMarkAllRead', 'feedStar', 'feedFullText', 'feedSummarize', 'feedToReading', 'feedUnreadTotal', 'feedAddTopic', 'feedRunTopic',
+  'feedMarkRead', 'feedMarkAllRead', 'feedStar', 'feedFullText', 'feedSummarize', 'feedToReading', 'feedUnreadTotal', 'feedAddTopic', 'feedRunTopic', 'feedSuggestTopics',
   'feedGetSettings', 'feedSetSettings', 'feedSearchKeys', 'feedSetSearchKey', 'feedImportOpml', 'feedImportOpmlText', 'feedExportOpml', 'feedDigest', 'feedGenerateDigest',
   // 留痕
   'traceList', 'traceCreate', 'traceUpdate', 'traceDelete', 'traceOrganize', 'traceOcrImage', 'traceConfirmDraft', 'traceCheckReplies',
