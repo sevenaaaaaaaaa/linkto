@@ -91,12 +91,13 @@ static LinkToToolbarHost *gSettingsHost = nil; // 设置窗口
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
   if ([self isSettingsToolbar]) return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kThemeItem, kCloseItem ];
-  return @[ kTitleItem, kSearchItem, kAISearchItem, NSToolbarFlexibleSpaceItemIdentifier, kComposeItem, kGhostItem, kSettingsItem ];
+  // Mail.app 惯例：标题居左，搜索 + 动作按钮成组靠右，不再让搜索悬浮在中间
+  return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kSearchItem, kAISearchItem, kComposeItem, kGhostItem, kSettingsItem ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
   if ([self isSettingsToolbar]) return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kThemeItem, kCloseItem ];
-  return @[ kTitleItem, kSearchItem, kAISearchItem, NSToolbarFlexibleSpaceItemIdentifier, kComposeItem, kGhostItem, kSettingsItem ];
+  return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kSearchItem, kAISearchItem, kComposeItem, kGhostItem, kSettingsItem ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag {
@@ -236,8 +237,8 @@ static napi_value Attach(napi_env env, napi_callback_info info) {
   if (napi_create_reference(env, argv[1], 1, &callbackRef) != napi_ok) return result;
   host.callback = callbackRef;
 
-  // v2：重置一次 NSToolbar 自动保存配置（旧版本可能保存了空配置，导致顶部只剩空白标题栏）
-  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar.v2", kind];
+  // v3：默认布局改为「标题居左、搜索靠右」（v2 的用户保存配置不含 flexible 开头，会覆盖新默认，故升版本重置）
+  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar.v3", kind];
   NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:identifier];
   toolbar.delegate = host;
   toolbar.displayMode = NSToolbarDisplayModeIconOnly;

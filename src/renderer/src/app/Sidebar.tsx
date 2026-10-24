@@ -305,7 +305,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="px-2 pb-2 shrink-0">
+      {/* pt：原生壳下与账户轨道首行（pt-3）同节奏，避免 ⌘K 顶到工具栏分隔线；Web 壳下也在标题栏下留呼吸 */}
+      <div className="px-2 pt-2.5 pb-2 shrink-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('ms:toggle-palette'))}
           title="命令面板：执行命令、跳转视图，或把文字交给邮件搜索 / Agent（⌘K）；只搜邮件用列表上方的搜索框（⌘F）"

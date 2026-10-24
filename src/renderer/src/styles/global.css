@@ -222,6 +222,24 @@ html[data-native-material='1'] body {
 html[data-native-material='1'] body::before {
   display: none;
 }
+/* 原生壳的 52px 标题带按列位补色：左段与账户轨道 / 侧栏同用磨砂染色，右段与内容底色一致——
+   否则这条带露出原生振动材质，比两侧都「生」一截，形成割裂的标题栏。
+   只画 52px 高的带（body 其余区域保持透明），避免和下方列自身的一层染色叠成双层出现接缝 */
+html[data-native-material='1'][data-native-shell='1'] body {
+  background: linear-gradient(
+    90deg,
+    var(--native-sidebar-bg, var(--bg)) 0,
+    var(--native-sidebar-bg, var(--bg)) calc(var(--rail-w) + var(--sidebar-w)),
+    var(--bg) calc(var(--rail-w) + var(--sidebar-w))
+  );
+  background-size: 100% 52px;
+  background-repeat: no-repeat;
+  background-position: top;
+}
+/* 全屏时原生工具栏隐藏、内容回到顶部，补色带不再存在 */
+html[data-native-material='1'][data-native-shell='1'][data-native-shell-full='1'] body {
+  background: none;
+}
 
 /* ---------- 原生 NSToolbar 混合壳：Web 内容让出 52px 顶部 ---------- */
 html[data-native-shell='1'] body {
@@ -568,13 +586,13 @@ body::before {
 @layer components {
 .glass {
   background: var(--surface);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 .glass-strong {
   background: var(--glass-bright);
-  backdrop-filter: blur(28px) saturate(170%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(170%);
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(170%);
 }
 .surface {
   background: var(--surface-strong);
@@ -583,8 +601,8 @@ body::before {
 .liquid-glass {
   position: relative;
   background: var(--glass-bright);
-  backdrop-filter: blur(32px) saturate(170%) brightness(1.04);
-  -webkit-backdrop-filter: blur(32px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(calc(32px * var(--glass-blur-scale, 1))) saturate(170%) brightness(1.04);
+  -webkit-backdrop-filter: blur(calc(32px * var(--glass-blur-scale, 1))) saturate(170%) brightness(1.04);
   border: 1px solid var(--edge-hi);
   box-shadow:
     inset 0 1px 0 var(--spec-hi),
@@ -606,8 +624,8 @@ body::before {
 }
 .liquid-glass-clear {
   background: oklch(100% 0 0 / 0.16);
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
   border: 1px solid oklch(100% 0 0 / 0.4);
   box-shadow:
     inset 0 1px 0 oklch(100% 0 0 / 0.45),
@@ -959,4 +977,16 @@ input[data-search-input]:focus-visible {
   --proj-l: 74%;
   --proj-c: 0.105;
   --proj-soft-a: 0.17;
+}
+
+/* ---------- 主题调校（lib/theme.ts 的 tweak 层） ---------- */
+/* 减弱动效：全局过渡与动画压缩到不可感知，环境光斑停漂 */
+:root.tweak-motion-off *,
+:root.tweak-motion-off *::before,
+:root.tweak-motion-off *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+}
+:root.tweak-motion-off body::before {
+  animation: none !important;
 }
