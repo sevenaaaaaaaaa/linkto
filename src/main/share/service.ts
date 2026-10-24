@@ -47,6 +47,7 @@ import {
   flomoPayload,
   notionPage,
   notionSchemaOf,
+  readwiseBody,
   slackPayload,
   teamsPayload,
   telegramCaption,
@@ -839,6 +840,7 @@ export class ShareService {
       }
       if (cfg?.kind === 'notion') return { ...base, ok: true, title, body: list.map(m => `# ${subj(m.full.subject)}\n${this.fromText(m)} · ${fmtDate(m.full.date)}\n\n${excerpt(req.format === 'md' && m.full.html ? htmlToMarkdown(m.full.html) : this.plain(m), 1200)}`).join('\n\n'), files: [], warnings: [`将在 Notion 新建 ${list.length} 个页面`, ...warn] }
       if (cfg?.kind === 'flomo') return { ...base, ok: true, title, body: list.map(m => flomoPayload(this.digest([m], req), cfg.tags).content).join('\n\n— — —\n\n'), files: [], warnings: [`将新建 ${list.length} 条 memo`, ...warn] }
+      if (cfg?.kind === 'readwise') return { ...base, ok: true, title, body: list.map(m => `# ${subj(m.full.subject)}\n${this.fromText(m)}\n\n${this.plain(m).slice(0, 600)}`).join('\n\n— — —\n\n'), files: [], warnings: [`将存入 Readwise Reader 稍后读（${list.length} 条）`, ...warn] }
       if (cfg?.kind === 'apple-notes') return { ...base, ok: true, title, body: this.textOf(list).slice(0, 4000), files: [], warnings: [`将在备忘录「${cfg.notesFolder || '默认文件夹'}」新建 ${list.length} 条备忘录`, ...warn] }
       if (cfg?.kind === 'md-folder') {
         const rel = list.map(m => `${renderNameTemplate(cfg.pathTemplate || '{year}/{month}/{subject}', { subject: m.full.subject, from: m.full.from?.name ?? '', fromAddr: m.full.from?.address ?? '', date: m.full.date, account: m.accountName }, { allowDirs: true })}.md`)
@@ -917,6 +919,8 @@ export class ShareService {
           return await this.toNotion(cfg, list, req, silent)
         case 'flomo':
           return await this.toFlomo(cfg, list, req, silent)
+        case 'readwise':
+          return await this.toReadwise(cfg, list, req, silent)
         case 'apple-notes':
           return await this.toNotes(cfg, list, req, silent)
         case 'md-folder':
@@ -1116,6 +1120,25 @@ export class ShareService {
     return this.done(list, `已记到 flomo（${list.length} 条）`, [], cfg.id, {}, silent)
   }
 
+  /** Readwise Reader：带链接的收藏 URL，邮件按正文存稍后读 */
+  private async toReadwise(cfg: ShareTarget, list: Loaded[], req: ShareRequest, silent: boolean): Promise<ShareResult> {
+    const token = this.secrets(cfg.id).token
+    if (!token) return { ok: false, error: 'Readwise Token 缺失' }
+    for (const m of list) {
+      const url = m.content?.url ?? null
+      const body = readwiseBody({
+        url,
+        title: m.full.subject,
+        author: fmtAddr(m.full.from),
+        html: url ? null : m.full.html ?? null,
+        summary: this.plain(m).slice(0, 400)
+      })
+      const r = await postJson('https://readwise.io/reader/api/v3/save/', body, { Authorization: `Token ${token}` })
+      if (r.status >= 300) throw new Error(`Readwise ${r.status}：${String(r.text ?? '').slice(0, 140)}`)
+    }
+    return this.done(list, `已存入 Readwise Reader（${list.length} 条）`, [], cfg.id, {}, silent)
+  }
+
   runJxa(script: string, timeoutMs = 20000): Promise<string> {
     return new Promise((resolve, reject) => {
       if (process.platform !== 'darwin') return reject(new Error('Apple 备忘录只在 macOS 上可用'))
@@ -1249,6 +1272,11 @@ export class ShareService {
           const r = await postJson(sec.url, flomoPayload(sample, t.tags))
           const err = checkWebhookResponse('flomo', r.status, r.text)
           return err ? { ok: false, error: err } : { ok: true, message: '已记一条测试 memo 到 flomo' }
+        }
+        case 'readwise': {
+          if (!sec.token) return { ok: false, error: 'Readwise Token 缺失' }
+          const r = await postJson('https://readwise.io/reader/api/v3/save/', readwiseBody({ title: 'LinkTo 连接测试', summary: '这是一条来自 LinkTo 的测试保存，可在 Reader 里直接删除。' }), { Authorization: `Token ${sec.token}` })
+          return r.status >= 300 ? { ok: false, error: `Readwise ${r.status}：${String(r.text ?? '').slice(0, 140)}` } : { ok: true, message: '已连上 Readwise（存了一条测试文档，可在 Reader 删除）' }
         }
         case 'apple-notes': {
           const name = await this.runJxa(`Application('Notes').defaultAccount().name()`)

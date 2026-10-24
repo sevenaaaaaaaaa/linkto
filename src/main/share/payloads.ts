@@ -427,3 +427,16 @@ export function checkWebhookResponse(kind: string, status: number, body: string)
   if (kind === 'flomo' && j && typeof j.code === 'number' && j.code !== 0) return `flomo 返回错误：${j.message ?? j.code}`
   return null
 }
+
+/** Readwise Reader 存档请求体：带链接的直接收藏（article），正文类转 HTML 文档（email） */
+export function readwiseBody(d: { url?: string | null; title: string; html?: string | null; summary?: string | null; author?: string | null }) {
+  return {
+    ...(d.url ? { url: d.url } : {}),
+    title: d.title || '（无主题）',
+    ...(d.author ? { author: d.author } : {}),
+    ...(d.html ? { html: d.html, should_clean_html: true } : {}),
+    ...(d.summary ? { summary: d.summary } : {}),
+    category: d.url ? 'article' : 'email',
+    saved_using: 'LinkTo'
+  }
+}

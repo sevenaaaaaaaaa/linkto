@@ -30,6 +30,7 @@ export type ShareTargetKind =
   | 'telegram'
   | 'notion'
   | 'flomo'
+  | 'readwise'
   | 'apple-notes'
   | 'md-folder'
   | 'local-folder'
@@ -170,6 +171,14 @@ export const SHARE_KINDS: ShareKindMeta[] = [
       { key: 'tags', label: '标签', placeholder: '#邮件 #待读', optional: true }
     ],
     help: 'flomo 设置 → 扩展中心 → API，复制专属记录 API。内容为纯文本 + 标签。'
+  },
+  {
+    kind: 'readwise',
+    label: 'Readwise Reader',
+    group: 'notes',
+    formats: ['link', 'text', 'rich'],
+    fields: [{ key: 'token', label: 'Reader API Token', placeholder: 'readwise.io/integrations → Reader API', secret: true }],
+    help: 'Readwise Reader → Integrations → 复制 Reader API Token。带链接的内容直接收藏，邮件按正文存入稍后读。'
   },
   {
     kind: 'apple-notes',
