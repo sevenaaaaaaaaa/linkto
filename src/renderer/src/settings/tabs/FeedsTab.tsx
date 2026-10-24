@@ -66,6 +66,7 @@ export function FeedsTab() {
         订阅一个主题，按每天 / 每周用新闻搜索找新结果，和历史去重后生成简报（要点 · 为什么重要 · 逐条来源链接）。只把主题词发给搜索服务，不会带上你的邮件内容；AI 简报走后台用量上限，AI 不可用时输出结果列表。
       </p>
       <AddTopic settings={s} keys={keys} onAdded={load} />
+      <TopicSuggest onAdded={load} />
       <TopicList topics={topics} settings={s} keys={keys} onChanged={load} />
 
       <SectionTitle>搜索来源</SectionTitle>
@@ -313,6 +314,71 @@ function SourcePicker(props: { value: string[]; settings: FeedSettings; keys: Re
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/** AI 从邮件统计推荐订阅主题：采样高频发件人与订阅类邮件，一键添加 */
+function TopicSuggest(props: { onAdded(): void }) {
+  const [busy, setBusy] = useState(false)
+  const [items, setItems] = useState<{ query: string; reason: string; cadence: 'daily' | 'weekly'; added?: boolean }[]>([])
+  const [msg, setMsg] = useState<{ text: string; error?: boolean }>({ text: '' })
+
+  const ask = async () => {
+    if (busy) return
+    setBusy(true)
+    setMsg({ text: '' })
+    try {
+      const r = await api.feedSuggestTopics()
+      if (!r.ok) setMsg({ text: r.error ?? 'AI 暂时不可用', error: true })
+      else if (!r.topics.length) setMsg({ text: 'AI 没找到足够明确的主题，先多攒一些订阅类邮件再来' })
+      else setItems(r.topics.map(t => ({ ...t })))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const add = async (i: number) => {
+    const it = items[i]
+    if (!it || it.added) return
+    try {
+      await api.feedAddTopic({ query: it.query, cadence: it.cadence })
+      setItems(items.map((x, j) => (j === i ? { ...x, added: true } : x)))
+      props.onAdded()
+    } catch (err) {
+      setMsg({ text: err instanceof Error ? err.message : String(err), error: true })
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button onClick={() => void ask()} disabled={busy} className={btnCls} style={ghost}>
+        <IconSearch width={13} height={13} />
+        {busy ? 'AI 正在读你的邮件…' : '✨ AI 从我的邮件推荐主题'}
+      </button>
+      {items.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {items.map((it, i) => (
+            <div key={it.query} className="flex items-center gap-3 rounded-lg border border-[var(--border-soft)] px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm truncate" style={{ color: 'var(--fg)' }}>
+                  {it.query}
+                  <span className="ml-2 text-xs" style={{ color: 'var(--faint)' }}>
+                    {it.cadence === 'daily' ? '每天' : '每周'}
+                  </span>
+                </div>
+                <div className="text-xs truncate" style={{ color: 'var(--faint)' }}>
+                  {it.reason}
+                </div>
+              </div>
+              <button onClick={() => void add(i)} disabled={it.added} className={`${btnCls} shrink-0`} style={it.added ? ghost : primary}>
+                {it.added ? '已订阅' : '订阅'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Note text={msg.text} error={msg.error} />
     </div>
   )
 }

@@ -3,7 +3,7 @@ import type { AISettings, CompanyInsight, DailyDigest } from '@shared/types'
 import {
   EXTRACT_MESSAGE, DAILY_DIGEST, COMPANY_PROFILE, COMPANY_PLAYBOOK, RANK_MESSAGES, ASK_BULK,
   SCREEN_SUGGEST, SCREEN_BATCH, COMPOSE_QUERY, SNOOZE_SUGGEST,
-  JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE
+  JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE, FEED_SUGGEST_TOPICS
 } from './prompts'
 import type { MailStore } from '../db'
 import { aiReady, type AIService } from './service'
@@ -11,7 +11,7 @@ import { aiReady, type AIService } from './service'
 const BILL_RE = /(账单|还款|信用卡|扣款|发票|收据|对账单|invoice|statement|payment due|billing)/i
 const MEETING_RE = /(会议|日程|日历邀请|议程|邀请你参加|meeting invitation|calendar invite|zoom|teams meet|腾讯会议|飞书会议)/i
 
-function jsonFromText(text: string): unknown {
+export function jsonFromText(text: string): unknown {
   const cleaned = text.replace(/```(?:json)?/gi, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
@@ -396,6 +396,48 @@ export class InsightsService {
       return { ok: true, verdict, reason: String(result.reason ?? '').slice(0, 60) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err), ...empty }
+    }
+  }
+
+  /** 订阅主题建议：从邮件统计（高频发件人 + 订阅类邮件）学习值得追踪的主题 */
+  async feedSuggestTopics(): Promise<{ ok: boolean; error?: string; topics: { query: string; reason: string; cadence: 'daily' | 'weekly' }[] }> {
+    const empty = { ok: false, topics: [] as { query: string; reason: string; cadence: 'daily' | 'weekly' }[] }
+    if (!this.ready()) return { ...empty, error: 'AI 未启用（设置 → AI 配置后可用）' }
+    try {
+      const senders = this.deps.store.listNewsletterSenders().slice(0, 15) as { sender: string; count: number }[]
+      const recent = this.deps.store.db
+        .prepare(
+          `SELECT from_name, from_addr, subject FROM messages
+           WHERE (is_newsletter = 1 OR category = 'newsletter') ORDER BY date DESC LIMIT 40`
+        )
+        .all() as { from_name: string; from_addr: string; subject: string }[]
+      const keywords = this.deps.store.db
+        .prepare(`SELECT subject FROM messages WHERE date >= ? ORDER BY date DESC LIMIT 200`)
+        .all(Date.now() - 30 * 86_400_000) as { subject: string }[]
+      if (!senders.length && !recent.length) return { ...empty, error: '邮箱里还没有足够的订阅类邮件可以学习' }
+      const user = [
+        '高频订阅发件人：',
+        ...senders.map(s => `- ${s.sender}（累计 ${s.count} 封）`),
+        '',
+        '最近的订阅类邮件：',
+        ...recent.slice(0, 40).map(r => `- ${r.from_name || r.from_addr}：${r.subject}`),
+        '',
+        '近期主题关键词参考：',
+        [...new Set(keywords.map(k => k.subject).filter(Boolean))].slice(0, 40).join(' / ')
+      ].join('\n')
+      const result = await this.json<{ topics?: { query?: unknown; reason?: unknown; cadence?: unknown }[] }>(FEED_SUGGEST_TOPICS, user)
+      const seen = new Set<string>()
+      const topics = (result.topics ?? [])
+        .map(t => ({
+          query: String(t.query ?? '').trim().slice(0, 60),
+          reason: String(t.reason ?? '').trim().slice(0, 40),
+          cadence: t.cadence === 'weekly' ? ('weekly' as const) : ('daily' as const)
+        }))
+        .filter(t => t.query && !seen.has(t.query) && seen.add(t.query))
+        .slice(0, 4)
+      return { ok: true, topics }
+    } catch (err) {
+      return { ...empty, error: err instanceof Error ? err.message : String(err) }
     }
   }
 

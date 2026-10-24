@@ -66,6 +66,16 @@ export const JSON_RETRY_NUDGE = `重要：你的上一次回复不是JSON。现�
 
 export const RULE_AI_JUDGE = `You decide whether an email satisfies a user-written condition. Read the email and the condition, then output ONLY one JSON object: {"match":true|false}. Be strict: answer true only when the email clearly satisfies the condition.`
 
+/** 规则 AI 挖掘：把操作统计交给模型，归纳启发式发现不了的规则候选 */
+export const RULE_MINE = `你是收件箱自动化顾问。下面是用户近 30 天的手动操作统计（对哪类发件人 / 主题反复做了什么动作）和收件箱样本。提出最多 3 条「值得自动化成规则」的建议。只输出 JSON：
+{"suggestions":[{"title":"规则名（≤16 字，如「账单自动归档」）","reason":"依据（≤30 字，引用统计事实）","conditions":[{"field":"from|subject|listId|hasAttachment|isNewsletter","op":"contains|equals|startsWith|endsWith|is","value":"匹配值"}],"actions":[{"type":"archive|markRead|markNewsletter|setCategory|flag|notify","value":"仅 setCategory 需要值：personal|notification|newsletter|noise"}],"support":命中邮件数,"confidence":0到1}]}
+规则：
+1. 只输出 JSON，不要解释。宁缺毋滥：没有足够明显的模式就输出 {"suggestions":[]}。
+2. conditions 至少 1 条；field=from 时 value 用域名（如 @example.com）；不要用 regex、不要用 to 字段。
+3. 只依据统计里反复出现的模式（同一来源 ≥4 次同动作），不要凭单封邮件下结论；明显的通用规则不要重复提。
+4. actions 里不要用 moveFolder / snooze / createTodo / runConnector / saveToKb / unflag（需要你不知道的参数）。
+5. 中文输出，专有名词保留原文。`
+
 // ================= Agent 可执行动作 =================
 
 /** 追加到 Agent 对话系统提示：用户要求「去做」时，在回答末尾给出待确认的动作 */
@@ -330,6 +340,16 @@ export const FEED_DIGEST = `你是用户的资讯编辑。下面是用户的订�
 2. 不要输出任何网址或链接。
 3. 2-5 个主题，每个主题 1-4 个要点；广告、招聘、重复转载、无信息量的条目忽略。
 4. 中文输出，专有名词保留原文。只输出 JSON，不要解释。`
+
+/** 订阅主题建议：从用户的邮件统计里学习值得追踪的主题 */
+export const FEED_SUGGEST_TOPICS = `你是用户的资讯订阅顾问。下面是从用户邮箱统计出的高频发件人、最近的订阅类邮件和主题关键词。找出值得长期追踪的资讯主题，只输出 JSON：
+{"topics":[{"query":"搜索主题（适合新闻搜索的关键词组合，8-20 字）","reason":"为什么值得订（≤24 字，结合用户邮件里的具体业务或兴趣）","cadence":"daily|weekly"}]}
+规则：
+1. 只输出 JSON，不要解释。没有足够依据时输出 {"topics":[]}。
+2. 2-4 个主题；优先与用户工作业务强相关的（产品、公司、行业、技术栈），其次是有明确迹象的兴趣方向。
+3. query 是给新闻搜索引擎用的关键词；不要包含私密信息（内部项目代号、客户名单、完整邮箱地址）。
+4. 时效性强的行业动态用 daily，知识 / 论文型用 weekly。
+5. 中文输出，专有名词保留原文。`
 
 // ================= 留痕（电话 / 微信 / 会议里口头说定的事 → 可追溯的书面记录） =================
 
