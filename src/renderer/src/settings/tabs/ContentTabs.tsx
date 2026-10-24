@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { IconPlus, IconMinus, IconLink, IconClose, IconList, IconListOrdered } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
+import { SIGNATURE_TEMPLATES } from './signature-templates'
 import type { Signature } from '@shared/types'
 
 /** 富文本简易编辑器（contentEditable + 执行命令） */
@@ -121,6 +122,7 @@ export function SignaturesTab() {
   const [sigs, setSigs] = useState<Signature[]>([])
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([])
   const [current, setCurrent] = useState<Signature | null>(null)
+  const [tplOpen, setTplOpen] = useState(false)
 
   const reload = async () => {
     const [s, as] = await Promise.all([api.listSignatures(), api.listAccounts()])
@@ -136,6 +138,14 @@ export function SignaturesTab() {
 
   const add = async () => {
     const s: Signature = { id: `sig-${Date.now()}`, name: '新签名', html: '<p>此致敬礼</p>', defaults: [], updatedAt: Date.now() }
+    await api.saveSignature(s)
+    await reload()
+    setCurrent(s)
+  }
+
+  const addFromTemplate = async (tpl: (typeof SIGNATURE_TEMPLATES)[number]) => {
+    setTplOpen(false)
+    const s: Signature = { id: `sig-${Date.now()}`, name: tpl.name, html: tpl.html, defaults: [], updatedAt: Date.now() }
     await api.saveSignature(s)
     await reload()
     setCurrent(s)
@@ -157,8 +167,29 @@ export function SignaturesTab() {
             </button>
           ))}
         </div>
-        <div className="mt-2.5 flex gap-1">
-          <button onClick={add} className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5"><IconPlus width={16} height={16} /></button>
+        <div className="mt-2.5 flex gap-1 relative">
+          <button onClick={add} className="p-2 rounded-lg text-zinc-500 hover:bg-ink/5" title="新建空白签名"><IconPlus width={16} height={16} /></button>
+          <button
+            onClick={() => setTplOpen(v => !v)}
+            title="从模板新建"
+            className={`px-2 h-[32px] rounded-lg text-xs font-medium inline-flex items-center gap-1 ${tplOpen ? 'bg-selected text-accent-ink' : 'text-zinc-500 hover:bg-ink/5'}`}
+          >
+            模板
+          </button>
+          {tplOpen && (
+            <div className="absolute bottom-full mb-1 left-0 w-[264px] max-h-[340px] overflow-y-auto rounded-xl bg-white border border-ink/[0.08] shadow-[var(--shadow-lg)] z-20 py-1">
+              {SIGNATURE_TEMPLATES.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => addFromTemplate(t)}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-ink/[0.04] border-b border-ink/[0.04] last:border-0"
+                >
+                  <div className="text-sm font-medium">{t.name}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{t.desc}</div>
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={async () => {
               if (current) {
