@@ -4,9 +4,11 @@ import type { Rule, RuleAction, RuleActionType, RuleCondition, RuleField, RuleOp
 import type { MailStore } from '../db'
 import { ruleMatches, type RuleEvalContext } from '../rules/engine'
 import { logActivity } from '../agent/hooks'
+import { RULE_MINE } from '../ai/prompts'
+import { jsonFromText } from '../ai/insights'
 import { ensureRuleSuggestTables, loadEvents, logReadSignal, pruneLog, type ReadSignal } from './log'
 import { mineOpenNoRead } from './dwell'
-import { blockedByHistory, coveredByRules, DAY_MS, messageCtx, mineSuggestions, WINDOW_DAYS, type Candidate, type MineMessage, type SuggestionHistory } from './mine'
+import { blockedByHistory, coveredByRules, DAY_MS, fingerprint, messageCtx, mineSuggestions, WINDOW_DAYS, type Candidate, type MineMessage, type SuggestionHistory } from './mine'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -17,6 +19,9 @@ const APPLY_LIMIT = 300
 /** 忽略（非永久）的冷却期 */
 const COOLDOWN_MS = 30 * DAY_MS
 
+/** AI 挖掘一次最多提几条（比启发式更克制，毕竟没有统计门槛兜底） */
+const AI_MAX = 3
+
 export interface RuleSuggestDeps {
   db: DatabaseSync
   store: MailStore
@@ -25,6 +30,8 @@ export interface RuleSuggestDeps {
   /** 规则动作执行（与新邮件命中规则同一实现） */
   runRuleActions(messageId: string, actions: RuleAction[]): Promise<void>
   event(payload: unknown): void
+  /** 可选：AI 服务（结构化 complete），规则 AI 挖掘任务用；与 AIService 结构兼容即可 */
+  ai?: { complete(messages: { role: 'system' | 'user' | 'assistant'; content: string }[], maxTokens: number): Promise<string> }
 }
 
 interface StoredData extends Omit<RuleSuggestion, 'id' | 'status' | 'fingerprint' | 'createdAt' | 'matchCount' | 'sampleMessageIds'> {
@@ -33,7 +40,15 @@ interface StoredData extends Omit<RuleSuggestion, 'id' | 'status' | 'fingerprint
   eventMessageIds?: string[]
   days?: number
   total?: number
+  /** 建议来源；旧数据（启发式时代）缺省按 heuristic 处理 */
+  source?: 'heuristic' | 'ai'
 }
+
+/** 挖掘候选落库所需的最小字段（启发式 Candidate 与 AI 候选共用） */
+type PersistCandidate = Pick<
+  Candidate,
+  'fingerprint' | 'name' | 'title' | 'evidence' | 'conditions' | 'actions' | 'support' | 'confidence' | 'contexts' | 'eventMessageIds' | 'days' | 'total' | 'domain'
+> & { score: number }
 
 interface MsgMeta extends MineMessage {
   hasAttachment: boolean
@@ -106,7 +121,8 @@ export class RuleSuggestService {
       sampleMessageIds: [],
       createdAt: r.created_at,
       status: r.status,
-      fingerprint: r.fingerprint
+      fingerprint: r.fingerprint,
+      source: d.source ?? 'heuristic'
     }
     if (!msgs) return base
     const hits = msgs.filter(m => ruleMatches(d.rule, messageCtx(m))).sort((a, b) => b.date - a.date)
@@ -156,11 +172,22 @@ export class RuleSuggestService {
     const rules = store.listRules()
     const history = this.history()
     const fresh = cands.filter(c => !coveredByRules(c, rules) && !blockedByHistory(c, history, now)).slice(0, MAX_OPEN)
+    const created = this.persist(fresh, now, 'heuristic')
+    this.deps.event({ type: 'rule-suggestions' })
+    const createdList = created.map(id => this.toSuggestion(this.rows('WHERE id = ?', id)[0], null))
+    return { created: createdList, open: this.openCount(), candidates: cands.length }
+  }
 
+  /**
+   * 落库：按指纹 upsert，撤下「本来源」里不再成立的旧建议。
+   * 两个来源（heuristic / ai）各自管理各自的 'new' 行，互不清除对方。
+   */
+  private persist(fresh: PersistCandidate[], now: number, source: 'heuristic' | 'ai'): string[] {
+    const { db } = this.deps
     const created: string[] = []
     const keep = new Set<string>()
     for (const c of fresh) {
-      const data = JSON.stringify(this.dataOf(c))
+      const data = JSON.stringify(this.dataOf(c, source))
       const existing = this.rows('WHERE fingerprint = ? ORDER BY updated_at DESC LIMIT 1', c.fingerprint)[0]
       if (existing && (existing.status === 'new' || existing.status === 'snoozed')) {
         // 同一条建议：刷新证据；冷却期已过的忽略重新冒出来算新的
@@ -176,15 +203,18 @@ export class RuleSuggestService {
       created.push(id)
       keep.add(id)
     }
-    // 不再成立的旧建议（习惯变了 / 已被规则覆盖）撤下
-    for (const r of this.rows("WHERE status = 'new'")) if (!keep.has(r.id)) db.prepare('DELETE FROM rule_suggestions WHERE id = ?').run(r.id)
-
-    this.deps.event({ type: 'rule-suggestions' })
-    const createdList = created.map(id => this.toSuggestion(this.rows('WHERE id = ?', id)[0], null))
-    return { created: createdList, open: keep.size, candidates: cands.length }
+    // 不再成立的旧建议（习惯变了 / 已被规则覆盖）撤下——只清本来源的
+    for (const r of this.rows("WHERE status = 'new' AND COALESCE(json_extract(data, '$.source'), 'heuristic') = ?", source)) {
+      if (!keep.has(r.id)) db.prepare('DELETE FROM rule_suggestions WHERE id = ?').run(r.id)
+    }
+    return created
   }
 
-  private dataOf(c: Candidate): StoredData & { score: number } {
+  private openCount(): number {
+    return this.rows("WHERE status = 'new'").length
+  }
+
+  private dataOf(c: PersistCandidate, source: 'heuristic' | 'ai'): StoredData & { score: number } {
     return {
       title: c.title,
       evidence: c.evidence,
@@ -195,8 +225,99 @@ export class RuleSuggestService {
       eventMessageIds: c.eventMessageIds.slice(0, 60),
       days: c.days,
       total: c.total,
+      source,
       score: c.score
     }
+  }
+
+  // ---------------------------------------------------------------- AI 挖掘
+
+  /**
+   * AI 挖掘（自动任务「规则 AI 挖掘」调用）：把近 30 天的操作统计交给模型归纳，
+   * 产出启发式门槛（次数/天数/一致率）之外「讲得出道理」的规则候选；落库走同一套
+   * 指纹去重 / 已覆盖 / 被拒绝过滤，与启发式建议同列表呈现。
+   */
+  async runAi(now = Date.now()): Promise<{ created: RuleSuggestion[]; open: number; candidates: number; error?: string }> {
+    const ai = this.deps.ai
+    if (!ai) return { created: [], open: this.openCount(), candidates: 0, error: 'AI 未接入' }
+    const { db, store } = this.deps
+    pruneLog(db, now)
+    const events = loadEvents(db, now - WINDOW_DAYS * DAY_MS)
+    if (events.length < 8) return { created: [], open: this.openCount(), candidates: 0, error: '操作记录还太少' }
+
+    // 统计文本：按 发件人域名 + 动作 聚合，附主题模式样本
+    const groups = new Map<string, { n: number; actions: Set<string>; subjects: string[]; category?: string; listId?: string }>()
+    for (const e of events) {
+      const key = `${e.fromDomain || e.fromAddr}||${e.action}`
+      const g = groups.get(key) ?? { n: 0, actions: new Set([e.action]), subjects: [], category: e.category ?? undefined, listId: e.listId ?? undefined }
+      g.n++
+      g.subjects.push(e.subjectPattern || e.subject || '')
+      groups.set(key, g)
+    }
+    const statLines = [...groups.entries()]
+      .filter(([, g]) => g.n >= 3)
+      .sort((a, b) => b[1].n - a[1].n)
+      .slice(0, 30)
+      .map(([key, g]) => {
+        const [domain, action] = key.split('||')
+        return `- ${domain} × ${action}：${g.n} 次；主题样本：${[...new Set(g.subjects)].slice(0, 4).join(' | ')}${g.listId ? `；List-Id: ${g.listId}` : ''}`
+      })
+    if (!statLines.length) return { created: [], open: this.openCount(), candidates: 0, error: '没有重复 3 次以上的模式' }
+
+    const rules = store.listRules()
+    const existingNote = rules.slice(0, 20).map(r => `- ${r.name}：${r.conditions.map(c => `${c.field} ${c.op} ${c.value ?? ''}`).join(' 且 ')}`).join('\n')
+    const user = [
+      '近 30 天手动操作统计（≥3 次的组）：',
+      ...statLines,
+      existingNote ? `\n已有规则（不要重复提）：\n${existingNote}` : ''
+    ].join('\n')
+
+    let parsed: { suggestions?: any[] }
+    try {
+      parsed = jsonFromText(await ai.complete([{ role: 'system', content: RULE_MINE }, { role: 'user', content: user }], 3000)) as { suggestions?: any[] }
+    } catch (err) {
+      return { created: [], open: this.openCount(), candidates: 0, error: err instanceof Error ? err.message : String(err) }
+    }
+
+    const msgs = this.messages(now - 365 * DAY_MS)
+    const history = this.history()
+    const folderIds = new Set(store.listFolders().map(f => f.id))
+    const cands: PersistCandidate[] = []
+    for (const s of (parsed.suggestions ?? []).slice(0, AI_MAX)) {
+      const clean = sanitizeRule(
+        { name: String(s?.title ?? ''), conditions: Array.isArray(s?.conditions) ? s.conditions : [], actions: Array.isArray(s?.actions) ? s.actions : [] },
+        folderIds
+      )
+      if ('error' in clean) continue
+      // 只认白名单内的字段 / 动作（sanitize 已过滤）；再用指纹走同一套去重与历史过滤
+      const fingerprintId = fingerprint(clean.conditions, clean.actions)
+      const evidence = String(s?.reason ?? '').slice(0, 60)
+      const support = Math.max(1, Math.min(Number(s?.support) || 0, 9999))
+      const confidence = Math.min(Math.max(Number(s?.confidence) || 0.5, 0), 1)
+      const contexts = msgs.filter(m => ruleMatches({ conditions: clean.conditions }, messageCtx(m))).map(m => messageCtx(m)).slice(0, 60)
+      cands.push({
+        fingerprint: fingerprintId,
+        name: clean.name,
+        title: clean.name,
+        evidence,
+        conditions: clean.conditions,
+        actions: clean.actions,
+        support,
+        confidence,
+        contexts,
+        eventMessageIds: [],
+        days: 0,
+        total: 0,
+        domain: String(clean.conditions[0]?.value ?? '').split('@').pop() ?? '',
+        score: support * 2 + confidence * 40
+      })
+    }
+    const rulesNow = store.listRules()
+    const fresh = cands.filter(c => !coveredByRules(c, rulesNow) && !blockedByHistory(c, history, now))
+    const created = this.persist(fresh, now, 'ai')
+    this.deps.event({ type: 'rule-suggestions' })
+    const createdList = created.map(id => this.toSuggestion(this.rows('WHERE id = ?', id)[0], null))
+    return { created: createdList, open: this.openCount(), candidates: cands.length }
   }
 
   // ---------------------------------------------------------------- 写

@@ -17,7 +17,7 @@ import {
   type WorkDeps
 } from './tasks'
 import { followupJob } from '../followups/job'
-import { ruleSuggestJob } from '../rule-suggest'
+import { ruleSuggestJob, ruleSuggestAiJob } from '../rule-suggest'
 import { lifeJob } from '../life/job'
 import { feedJobs } from '../feeds/job'
 import { backupX } from '../devsync/backupx'
@@ -75,6 +75,7 @@ export function initJobs(input: JobsDeps) {
   const events = initEventTriggers({ ...deps, log })
   scheduler.register(followupJob())
   scheduler.register(ruleSuggestJob())
+  scheduler.register(ruleSuggestAiJob())
   scheduler.register(lifeJob())
   for (const j of feedJobs()) scheduler.register(j)
   // 定期自动备份（设置 → 同步与备份；开关跟随自动备份设置）

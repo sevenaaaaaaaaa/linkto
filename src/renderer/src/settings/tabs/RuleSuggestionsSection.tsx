@@ -71,6 +71,11 @@ function SuggestionItem(props: { s: RuleSuggestion; open: boolean; onToggle(): v
     <div className="rounded-[var(--r-md)] border border-[var(--border)]" style={{ background: 'var(--surface-strong)' }}>
       <div className="px-3.5 py-3">
         <div className="text-sm leading-snug" style={{ color: 'var(--fg)' }}>
+          {s.source === 'ai' && (
+            <span className="text-2xs px-1.5 py-px rounded-sm mr-1.5 align-middle" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)' }}>
+              AI
+            </span>
+          )}
           {s.title} —— <span className="font-semibold">{suggestionQuestion(s)}</span>
         </div>
         <div className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>

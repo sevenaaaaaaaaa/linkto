@@ -68,3 +68,36 @@ export function ruleSuggestJob(): JobDef {
     }
   }
 }
+
+/** 自动任务「规则 AI 挖掘」：需要 AI，把操作统计交给模型归纳启发式发现不了的规则候选 */
+export function ruleSuggestAiJob(): JobDef {
+  return {
+    id: 'rule-suggest-ai',
+    name: '规则 AI 挖掘',
+    description: '把你近 30 天的手动操作统计交给 AI 归纳，提出统计门槛之外讲得出道理的规则建议；接受前不会建规则、不会动邮件',
+    category: 'learn',
+    ai: 'required',
+    cadence: { kind: 'daily', at: '11:20' },
+    defaultEnabled: true,
+    preferIdle: { minIdleSec: 60, maxDelayMs: 3 * 3_600_000 },
+    run: async ctx => {
+      const svc = ruleSuggestService()
+      if (!svc) return { summary: '规则建议模块尚未就绪' }
+      const r = await svc.runAi(ctx.now)
+      if (r.error && !r.created.length) return { summary: `AI 挖掘没有新发现（${r.error}）` }
+      const n = r.created.length
+      return {
+        summary: n ? `AI 提出了 ${n} 条新的规则建议` : r.open ? `${r.open} 条建议等你处理，没有新的` : '没有发现值得自动化的模式',
+        activity: n
+          ? {
+              source: 'job',
+              title: `AI 提出了 ${n} 条新的规则建议`,
+              detail: `${r.created.map(s => `· ${s.title}`).join('\n')}\n在「设置 → 自动化 → 建议的规则」里查看并一键创建。`,
+              refs: [],
+              stats: { ruleSuggestions: n }
+            }
+          : null
+      }
+    }
+  }
+}

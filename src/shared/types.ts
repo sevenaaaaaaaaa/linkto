@@ -1537,6 +1537,8 @@ export interface RuleSuggestion {
   /** 跨越天数 / 分母（同组邮件总数） */
   days?: number
   total?: number
+  /** 建议来源：heuristic=本地统计挖掘（默认）；ai=AI 归纳（rule-suggest-ai 任务） */
+  source?: 'heuristic' | 'ai'
 }
 
 // ---------- 附件内容读取授权 ----------
