@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { THEME_PRESETS } from '../../lib/theme-presets'
+import { TuneSection } from './AppearanceTune'
 import {
   activePresetId, setPreset, getThemePref, setThemePref, onThemeChange, type ThemePref
 } from '../../lib/theme'
@@ -184,6 +185,7 @@ function AppearancePanel() {
           )
         })}
       </div>
+      <TuneSection />
       <div className="mt-3 text-xs text-zinc-400 leading-relaxed">
         阅读风格（信纸皮肤）在阅读窗右上角「风格」菜单切换，24 款设计风格独立于应用主题。
       </div>
