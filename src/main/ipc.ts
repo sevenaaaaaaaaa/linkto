@@ -723,6 +723,9 @@ export function registerIpc(ctx: AppContext) {
             }
           }
           full = store.getMessageFull(id)
+          // 拉全了也确实没有正文（纯附件 / 空 body）：落「已取」终态，
+          // 否则每次点开都走一遍镜像 / IMAP 下载并反复广播下载失败
+          if (full && !full.text && !full.html) store.markBodyFetched(id)
         }
       }
       return full
@@ -810,9 +813,13 @@ export function registerIpc(ctx: AppContext) {
       }
     },
 
-    getInlineImage: ([id]: [string]) => {
+    getInlineImage: async ([id]: [string]) => {
       const a = store.getAttachment(id)
       if (!a) return null
+      // 缓存文件被清理时与 getAttachment 一致地自愈重下，否则内联图静默永久缺图
+      try {
+        if (!existsSync(a.path)) await attachmentService()?.ensureLocal(id)
+      } catch { /* 重下失败按缺图处理 */ }
       try {
         const data = readFileSync(a.path)
         return { data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) }
@@ -934,6 +941,8 @@ export function registerIpc(ctx: AppContext) {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效
       applyLoginItem(s.launchAtLogin)
+      // 关闭 Screener：历史待审 / 已拒记录全部放行，否则过滤查询继续吞邮件（held 判定已同步看开关）
+      if (!s.screenerEnabled) store.clearSenderScreening()
     },
     getNotificationSettings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     setNotificationSettings: ([s]: [NotificationSettings]) => appStore.set('notifications', s),

@@ -130,9 +130,9 @@ export interface SyncEvents {
   status(accountId: string, status: 'connected' | 'syncing' | 'error' | 'disabled', text: string): void
   progress(accountId: string, text: string): void
   changed(accountId?: string): void
-  newMail(accountId: string, messageId: string, subject: string, from: string, category: string): void
+  newMail(accountId: string, messageId: string, subject: string, from: string, category: string, ruleSetCategory?: boolean): void
   /** 新到达的收件箱邮件（不含首次同步/历史回填）：执行规则动作、AI 条件规则 */
-  arrived(accountId: string, messageId: string, ruleActions: RuleAction[]): void
+  arrived(accountId: string, messageId: string, ruleActions: RuleAction[], held?: boolean): void
   /** 待办同步文件夹（LinkTo-Sync）在选中期间收到 EXISTS：其他设备写入了新版本 */
   todoSyncExists?(accountId: string): void
   /** 新入库邮件的附件元数据（BODYSTRUCTURE）：附件中心据此为尚未下载的附件建索引 */
@@ -247,8 +247,19 @@ export class AccountWorker {
           continue
         }
         const msg = err instanceof Error ? err.message : String(err)
-        // OAuth 认证失败 → 下次强制刷新 token 重试；密码错误则原样提示
-        if (this.getToken && /auth|login|credentials|invalid|AUTHENTICATE/i.test(msg)) forceRefresh = true
+        // 服务器 NO/BAD 的原话（responseText）与执行过的命令落日志，否则 UI 只剩 "Command failed" 无从排查；
+        // 认证类命令可能带凭据（base64 SASL），绝不落日志
+        const resp = err as { responseText?: unknown; responseStatus?: unknown; executedCommand?: unknown }
+        const cmd = typeof resp?.executedCommand === 'string' ? resp.executedCommand.slice(0, 160).replace(/\s+/g, ' ') : ''
+        console.error(
+          `[sync] ${this.account.email} 同步失败: ${msg}` +
+            (typeof resp?.responseText === 'string' && resp.responseText.trim() ? ` | 服务器: ${resp.responseText.trim().slice(0, 120)}` : '') +
+            (cmd && !/AUTHENTICATE|LOGIN /i.test(cmd) ? ` | 命令: ${cmd}` : '')
+        )
+        // OAuth 认证失败 → 下次强制刷新 token 重试；密码错误则原样提示。
+        // XOAUTH2 被拒时 imapflow 抛的是通用 "Command failed"，服务器的 Invalid credentials 在 responseText 里——只看 message 永远匹配不上
+        const all = `${msg} ${typeof resp?.responseText === 'string' ? resp.responseText : ''}`
+        if (this.getToken && /auth|login|credentials|invalid|AUTHENTICATE/i.test(all)) forceRefresh = true
         this.events.status(this.account.id, 'error', this.describeError(err))
         // 服务器限流（Gmail 常见）：退避拉长，避免越重试越被限
         if (/THROTTLED|bandwidth|too many|rate limit|OVERQUOTA/i.test(msg)) backoff = Math.max(backoff, 5 * 60_000)
@@ -283,6 +294,10 @@ export class AccountWorker {
     const local = /^(127\.0\.0\.1|localhost|::1)$/i.test(this.imap.host)
     if (local && /ECONNREFUSED|ECONNRESET|closed/i.test(msg))
       return '本地 IMAP 桥未运行（如 Proton Mail Bridge）：请先启动 Bridge，林可兔会自动重连'
+    // OAuth 账户被服务器拒认证（强刷 token 后仍无效 = 授权已失效），归因为重新授权而非「检查密码」
+    const respText = typeof (err as { responseText?: unknown })?.responseText === 'string' ? String((err as { responseText?: string }).responseText) : ''
+    if (this.getToken && /AUTHENTICATIONFAILED|Invalid credentials/i.test(`${msg} ${respText}`))
+      return '授权已失效：请在 设置 → 账户 里重新授权该账户'
     return friendlyError(err)
   }
 
@@ -606,7 +621,11 @@ export class AccountWorker {
           uid: msg.uid,
           flags: [...(msg.flags ?? [])].map(String),
           size: Number(msg.size ?? 0),
-          date: msg.internalDate ? new Date(msg.internalDate).getTime() : msg.envelope?.date ? new Date(msg.envelope.date).getTime() : Date.now(),
+          // 畸形 Date 头会解析出 Invalid Date → NaN 入库后破坏排序 / 分区，兜底当前时间
+          date: (() => {
+            const t = msg.internalDate ? new Date(msg.internalDate).getTime() : msg.envelope?.date ? new Date(msg.envelope.date).getTime() : Date.now()
+            return Number.isFinite(t) ? t : Date.now()
+          })(),
           subject: msg.envelope?.subject ?? '',
           messageId: msg.envelope?.messageId ?? headers['message-id'] ?? null,
           inReplyTo: msg.envelope?.inReplyTo ?? null,
@@ -706,14 +725,17 @@ export class AccountWorker {
       this.store.upsertNewsletterSender(this.account.id, env.from.address)
     }
     // Screener：新发件人登记（存量往来自动放行，新面孔进待审队列）。
-    // 已登记为待审 / 已拒的发件人，后续来信同样视为被拦（之前只拦第一封）
+    // 已登记为待审 / 已拒的发件人，后续来信同样视为被拦（之前只拦第一封）。
+    // 开关关闭时不拦：关闭意味着放行所有人，表里的历史 pending/deny 不得继续吞邮件（开关处会同步清表）
     let held = false
     if (inserted && special === 'inbox' && env.from?.address) {
       const screenerEnabled = this.appStore.get('general', DEFAULT_GENERAL).screenerEnabled
-      held = this.store.ensureSenderScreened(env.from.address, screenerEnabled) === 'pending'
-      if (!held) {
-        const st = this.store.senderScreeningStatus(env.from.address)
-        held = st === 'pending' || st === 'deny'
+      if (screenerEnabled) {
+        held = this.store.ensureSenderScreened(env.from.address, screenerEnabled) === 'pending'
+        if (!held) {
+          const st = this.store.senderScreeningStatus(env.from.address)
+          held = st === 'pending' || st === 'deny'
+        }
       }
     }
     // 新邮件通知由「真正到达」驱动（增量抓取、未读、24h 内），不再要求 internalDate 在 2 分钟内——
@@ -729,10 +751,11 @@ export class AccountWorker {
         now: Date.now()
       })
     ) {
-      this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name || env.from.address) : '', category)
+      this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name || env.from.address) : '', category, actions.some(a => a.type === 'setCategory'))
     }
     if (inserted && special === 'inbox' && arrival) {
-      this.events.arrived(this.account.id, id, actions.filter(a => a.type !== 'setCategory' && a.type !== 'markNewsletter'))
+      // held 随事件上交：规则「通知我」在 Screener 拦截中的邮件上不得 force 弹窗（否则拦截形同虚设）
+      this.events.arrived(this.account.id, id, actions.filter(a => a.type !== 'setCategory' && a.type !== 'markNewsletter'), held)
     }
     // 性能：近期收件箱邮件限量预取正文，其余在打开时按需拉取（getMessage 触发），
     // 避免初始同步串行下载全量正文拖慢列表可见时间
@@ -837,7 +860,7 @@ export class AccountWorker {
       return
     }
     const text = (parsed.text && parsed.text.trim() ? parsed.text : stripHtml(parsed.html ?? '')).slice(0, 200_000)
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 180)
+    const snippet = snippetOf(text.replace(/\s+/g, ' ').trim())
     for (const [i, att] of (parsed.attachments ?? []).entries()) {
       const attId = createHash('sha1')
         .update(`${id}#${i}#${att.filename ?? ''}#${att.size ?? 0}`)
@@ -1214,14 +1237,28 @@ export function extractAttachmentParts(node: any): AttachmentPart[] {
   return out
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“'
+}
+
 function stripHtml(html: string): string {
-  return html
+  const text = html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d{1,5});/g, (_, n) => {
+      const code = Number(n)
+      return code > 0 && code < 0x10ffff ? String.fromCodePoint(code) : ' '
+    })
+    .replace(/&([a-z]+);/gi, (_, name) => HTML_ENTITIES[name.toLowerCase()] ?? ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  return text
+}
+
+/** 列表摘要截断：按码点切，emoji/生僻字不会切成孤立代理项出现乱码 */
+function snippetOf(text: string, max = 180): string {
+  return Array.from(text).slice(0, max).join('')
 }
 
 export function friendlyError(err: unknown): string {
@@ -1239,6 +1276,16 @@ export function friendlyError(err: unknown): string {
   // 网络层中断（断网 / 切换 Wi-Fi / 代理掉线）：与服务器配置无关，联网后自动重连
   if (/ENETUNREACH|EHOSTUNREACH|ECONNRESET|EPIPE|socket hang up|Connection not available|Connection closed|Unexpected close|network/i.test(msg))
     return '网络连接中断：联网后会自动重连'
+  // IMAP 服务器对命令返回 NO/BAD：服务器的原话在 responseText 里，比 "Command failed" 有用得多
+  const resp = err as { responseText?: unknown; responseStatus?: unknown }
+  if (typeof resp?.responseText === 'string' && resp.responseText.trim()) {
+    const t = resp.responseText.trim()
+    if (/AUTHENTICATIONFAILED|Invalid credentials|password|password/i.test(t)) return '登录失败：请检查用户名与授权码/应用专用密码'
+    if (/quota|OVERQUOTA|LIMIT|throttl|Try again/i.test(t)) return '服务器限流或超出配额：稍后自动重试'
+    if (/does not exist|Nonexistent|Unknown Mailbox/i.test(t)) return `文件夹在服务器上不存在：${t.slice(0, 80)}`
+    if (/SELECT|MOVE|COPY|STORE|EXPUNGE/i.test(t)) return `服务器拒绝该操作：${t.slice(0, 80)}`
+    return `服务器返回错误：${t.slice(0, 80)}`
+  }
   return msg.slice(0, 120)
 }
 

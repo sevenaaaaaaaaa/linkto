@@ -72,9 +72,9 @@ let engine: SyncEngine
 let classifyMessages: ((ids: string[]) => Promise<void>) | null = null
 let runRuleActions: ((messageId: string, actions: RuleAction[]) => Promise<void>) | null = null
 
-/** 新邮件到达：执行普通规则的副作用动作，再按需让 AI 判断含自然语言条件的规则 */
-async function handleArrival(accountId: string, messageId: string, ruleActions: RuleAction[]) {
-  await applyArrivalActions(messageId, ruleActions)
+/** 新邮件到达：执行普通规则的副作用动作，再按需让 AI 判断含自然语言条件的规则；held=Screener 拦截中 */
+async function handleArrival(accountId: string, messageId: string, ruleActions: RuleAction[], held = false) {
+  await applyArrivalActions(messageId, ruleActions, held)
   const rules = mailStore.listRules().filter(r => r.enabled && hasAiCondition(r))
   const ai = appStore.getAI()
   if (!rules.length || !aiReady(ai)) return
@@ -108,10 +108,11 @@ async function handleArrival(accountId: string, messageId: string, ruleActions: 
   await applyArrivalActions(messageId, actions)
 }
 
-async function applyArrivalActions(messageId: string, actions: RuleAction[]) {
+async function applyArrivalActions(messageId: string, actions: RuleAction[], held = false) {
   if (!actions.length) return
   if (actions.some(a => a.type === 'notify')) {
-    const row = mailStore.getMessageRow(messageId)
+    // Screener 拦截中的邮件不弹「通知我」——否则被拦的陌生发件人照样弹窗，拦截形同虚设
+    const row = held ? null : mailStore.getMessageRow(messageId)
     if (row) {
       notifier.notify(
         { accountId: row.account_id, messageId, subject: row.subject ?? '', from: row.from_name || row.from_addr || '', category: row.category ?? 'personal' },
@@ -816,7 +817,7 @@ async function bootstrap() {
       changed: accountId => {
         broadcast({ type: 'messages-changed', accountId })
       },
-      newMail: (accountId, messageId, subject, from, category) => {
+      newMail: (accountId, messageId, subject, from, category, ruleSetCategory) => {
         broadcast({ type: 'new-mail', accountId, subject, from })
         notifier.notify({ accountId, messageId, subject, from, category })
         // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
@@ -825,11 +826,12 @@ async function bootstrap() {
         if (ai.enabled && ai.autoInsights && row && InsightsService.worthExtracting(row.subject, row.snippet ?? '', !!row.is_newsletter)) {
           void insights.extractFromMessage(messageId).catch(() => {})
         }
-        // 「自动分类新邮件」：攒 3 秒成一批，一次 AI 调用分完（启发式结果先生效，AI 结果覆盖）
-        if (ai.autoClassify && aiReady(ai)) queueAutoClassify(messageId)
+        // 「自动分类新邮件」：攒 3 秒成一批，一次 AI 调用分完。
+        // 命中过 setCategory 规则的不入队——否则 AI 会在几秒后无条件覆盖规则分类，归类规则全部失效
+        if (ai.autoClassify && aiReady(ai) && !ruleSetCategory) queueAutoClassify(messageId)
       },
-      arrived: (accountId, messageId, ruleActions) => {
-        void handleArrival(accountId, messageId, ruleActions).catch(err => console.error('[rules]', err))
+      arrived: (accountId, messageId, ruleActions, held) => {
+        void handleArrival(accountId, messageId, ruleActions, held).catch(err => console.error('[rules]', err))
         // 事件触发技能：登记「实时到达」（回填 / 初始同步不走这里，不会触发）；须在 understand.onArrival 之前
         jobs?.events.markArrival(messageId)
         // 跟进闭环：对方回信 → 结束对应的跟进
