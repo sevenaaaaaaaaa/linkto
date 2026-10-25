@@ -388,7 +388,7 @@ export class UnderstandService {
     if (!current) return null
     if (current.source === 'ai' && !force) return current
     // 用户主动打开：不受 autoUnderstand 开关限制，只要 AI 可用
-    if (!aiReady(this.deps.getAISettings())) return current
+    if (!aiReady(this.deps.getAISettings(), false)) return current
     const running = this.inflight.get(id)
     if (running) return (await running) ?? current
     const p = this.runAi(id).finally(() => this.inflight.delete(id))

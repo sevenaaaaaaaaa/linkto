@@ -724,7 +724,7 @@ export class ProjectService {
   // ================= AI：摘要 / 发现 =================
 
   private ready() {
-    return aiReady(this.deps.getAISettings())
+    return aiReady(this.deps.getAISettings(), false)
   }
 
   private async askJson(system: string, user: string): Promise<any> {

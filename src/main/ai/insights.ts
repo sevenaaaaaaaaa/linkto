@@ -6,7 +6,7 @@ import {
   JUDGE_FOLLOWUPS, FOLLOWUP_DRAFT, JSON_RETRY_NUDGE, FEED_SUGGEST_TOPICS
 } from './prompts'
 import type { MailStore } from '../db'
-import { aiReady, type AIService } from './service'
+import { aiReady, AIError, type AIService } from './service'
 
 const BILL_RE = /(账单|还款|信用卡|扣款|发票|收据|对账单|invoice|statement|payment due|billing)/i
 const MEETING_RE = /(会议|日程|日历邀请|议程|邀请你参加|meeting invitation|calendar invite|zoom|teams meet|腾讯会议|飞书会议)/i
@@ -55,7 +55,8 @@ export class InsightsService {
   ) {}
 
   private ready(): boolean {
-    return aiReady(this.deps.getAISettings())
+    // 结构化 JSON 功能不放开内置 4B 模型（无法可靠输出 JSON，只会白烧两轮调用后报错）
+    return aiReady(this.deps.getAISettings(), false)
   }
 
   private async json<T>(system: string, user: string): Promise<T> {
@@ -69,9 +70,21 @@ export class InsightsService {
         3000
       )
     }
-    // 端侧小模型首轮可能跑题：首轮失败则带着「只输出JSON」强化重试一次
+    // 端侧小模型首轮可能跑题：仅「返回了内容但不是 JSON」时带强化提示重试一次；
+    // 网络 / 额度 / 超时 / 预算类失败重试必然再失败，直接抛首因（此前被吞、还白烧一次调用）
+    let first: string
     try {
-      const first = await ask('')
+      first = await ask('')
+    } catch (err) {
+      if (err instanceof AIError) throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/JSON/i.test(msg)) {
+        const retry = await ask(JSON_RETRY_NUDGE)
+        return jsonFromText(retry) as T
+      }
+      throw err
+    }
+    try {
       return jsonFromText(first) as T
     } catch {
       const retry = await ask(JSON_RETRY_NUDGE)
@@ -213,8 +226,8 @@ export class InsightsService {
   async maybeAutoDaily() {
     const s = this.deps.getAISettings()
     if (!s.enabled || !s.autoDigest) return
-    const apiKeyOk = s.baseURL === 'builtin-local' || !!s.apiKey
-    if (!apiKeyOk) return
+    // 与 aiReady 同一标准：Ollama / LM Studio 本地端点无需 apiKey 也算就绪（此前被判未配置永不触发）
+    if (!aiReady(s)) return
     const hour = new Date().getHours()
     if (hour < 8) return
     if (this.deps.store.latestInsight('daily', todayPeriod())) return
@@ -449,9 +462,11 @@ export class InsightsService {
     if (!this.ready()) return { ok: false, error: 'AI 未启用（设置 → AI 配置后可用）', query: empty }
     if (!question.trim()) return { ok: false, error: '请输入问题', query: empty }
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      // 本地日期（toISOString 是 UTC，UTC+8 早上 8 点前「今天」会变成昨天，AI 换算 after/before 偏一天）
+      const today = todayPeriod()
+      // 用 prompts.ts 的 COMPOSE_QUERY 做唯一来源（此前这里是手抄内联副本，两份必然漂移）
       const q = await this.json<Record<string, unknown>>(
-        '把用户问题编译成邮件查询 JSON。输出格式：{"text":"","sender":"","subject":"","category":null,"isNewsletter":null,"hasAttachment":null,"unreadOnly":null,"withinDays":null,"after":null,"before":null,"fallbackText":""}。字段含义：sender=发件人关键词，subject=主题关键词，category=personal/notification/newsletter/noise，withinDays=最近N天。只填问题里明确提到的字段，其余保持 null/空串。只输出 JSON。\n\n示例1：问"上周王小明发的邮件"→{"sender":"王小明","withinDays":7}\n示例2：问"最近三天带附件的账单"→{"subject":"账单","hasAttachment":true,"withinDays":3}\n示例3：问"未读的订阅邮件"→{"isNewsletter":true,"unreadOnly":true}\n示例4：问"上个月的会议邀请"→{"subject":"会议","withinDays":30}',
+        COMPOSE_QUERY(today),
         `今天 ${today}。用户的问题：${question}`
       )
       const query = {
@@ -462,7 +477,8 @@ export class InsightsService {
         isNewsletter: typeof q.isNewsletter === 'boolean' ? q.isNewsletter : null,
         hasAttachment: typeof q.hasAttachment === 'boolean' ? q.hasAttachment : null,
         unreadOnly: typeof q.unreadOnly === 'boolean' ? q.unreadOnly : null,
-        withinDays: typeof q.withinDays === 'number' ? q.withinDays : null,
+        // 小模型常把数字带成字符串："7"——静默丢掉时间限定会变成超宽查询
+        withinDays: (() => { const n = Number(q.withinDays); return Number.isFinite(n) && n > 0 ? Math.min(n, 3650) : null })(),
         after: typeof q.after === 'string' ? q.after : null,
         before: typeof q.before === 'string' ? q.before : null,
         fallbackText: typeof q.fallbackText === 'string' ? q.fallbackText : ''

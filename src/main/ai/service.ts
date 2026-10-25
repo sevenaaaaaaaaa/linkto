@@ -110,7 +110,7 @@ export function checkAiRequestGuard() {
 /** OpenAI 兼容接口客户端（GLM / OpenAI / DeepSeek / 其他均可）；baseURL=builtin-local 时走内置本地引擎 */
 export class AIService {
   private aborts = new Map<string, AbortController>()
-  private local: { stream(modelId: string, messages: AIChatMessage[], onDelta: (d: string) => void): Promise<string> } | null = null
+  private local: { stream(modelId: string, messages: AIChatMessage[], onDelta: (d: string) => void, opts?: { maxTokens?: number }): Promise<string> } | null = null
 
   constructor(private getSettings: () => AISettings) {}
 
@@ -119,14 +119,14 @@ export class AIService {
     this.local = engine
   }
 
-  async stream(requestId: string, messages: AIChatMessage[], onDelta: (delta: string) => void): Promise<string> {
+  async stream(requestId: string, messages: AIChatMessage[], onDelta: (delta: string) => void, opts?: { maxTokens?: number }): Promise<string> {
     requestGuard?.()
     const s = this.getSettings()
     // 内置本地引擎：模型推理完全在本机，无需 Key、断网可用
     if (s.baseURL === 'builtin-local') {
       if (!s.enabled) throw new AIError('unconfigured', '在 设置 → AI 中开启')
       if (!this.local) throw new Error('本地引擎初始化失败')
-      return this.local.stream(s.model, messages, onDelta)
+      return this.local.stream(s.model, messages, onDelta, { maxTokens: opts?.maxTokens })
     }
     // 本地推理端点（Ollama / LM Studio / llama.cpp）无需 API Key
     const isLocal = isLocalEndpoint(s.baseURL)
@@ -160,6 +160,7 @@ export class AIService {
       return err instanceof Error ? err : new Error(String(err))
     }
     let full = ''
+    let finishReason: string | null = null
     try {
       arm()
       const res = await fetch(`${s.baseURL.replace(/\/+$/, '')}/chat/completions`, {
@@ -169,7 +170,8 @@ export class AIService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${s.apiKey}`
         },
-        body: JSON.stringify({ model: s.model, messages: msgs, stream: true })
+        // 调用方给了 maxTokens 就透传（此前该参数被静默丢弃，长输出被服务商默认上限腰斩）
+        body: JSON.stringify({ model: s.model, messages: msgs, stream: true, ...(opts?.maxTokens ? { max_tokens: Math.floor(opts.maxTokens) } : {}) })
       })
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
@@ -202,11 +204,16 @@ export class AIService {
               full += delta
               onDelta(delta)
             }
+            const fr = part.choices?.[0]?.finish_reason
+            if (fr) finishReason = fr
           } catch (e) {
             if (e instanceof Error && !/JSON/i.test(e.message)) throw e
           }
         }
       }
+      // 显式给了预算却在截断处结束：结构化 JSON 必然腰斩，抛真实原因而不是让 json() 报「AI 未返回 JSON」
+      if (opts?.maxTokens && finishReason === 'length')
+        throw new Error(`输出被截断（max_tokens=${opts.maxTokens} 不够，已输出 ${full.length} 字）`)
       return full
     } catch (err) {
       throw convert(err)
@@ -234,6 +241,8 @@ export class AIService {
     onDelta: (delta: string) => void,
     opts: { toolChoice?: 'auto' | 'none' } = {}
   ): Promise<{ content: string; toolCalls: AIToolCall[]; finishReason: string | null }> {
+    // 后台技能（runAsBackground）经这里调用，必须同样过用量闸门——否则后台 Agent 调用不计数不受限
+    requestGuard?.()
     const s = this.getSettings()
     if (s.baseURL === 'builtin-local') {
       if (!s.enabled) throw new AIError('unconfigured', '在 设置 → AI 中开启')
@@ -269,6 +278,7 @@ export class AIService {
     let content = ''
     let finishReason: string | null = null
     const calls = new Map<number, { id: string; name: string; arguments: string }>()
+    let lastIdx = 0
     try {
       arm()
       const body: Record<string, unknown> = { model: s.model, messages: msgs, stream: true }
@@ -341,7 +351,9 @@ export class AIService {
             onDelta(delta)
           }
           for (const tc of choice.delta?.tool_calls ?? []) {
-            const idx = typeof tc.index === 'number' ? tc.index : calls.size
+            // index 缺失（规范允许）时沿用上一分片的槽位：用 calls.size 会把同一调用的参数分片拆成两条
+            if (typeof tc.index === 'number') lastIdx = tc.index
+            const idx = lastIdx
             const cur = calls.get(idx) ?? { id: '', name: '', arguments: '' }
             if (tc.id) cur.id = tc.id
             if (tc.function?.name) cur.name += tc.function.name
@@ -365,6 +377,6 @@ export class AIService {
 
 
   async complete(messages: AIChatMessage[], maxTokens = 2000): Promise<string> {
-    return this.stream(`c-${randomUUID()}`, messages, () => {})
+    return this.stream(`c-${randomUUID()}`, messages, () => {}, { maxTokens })
   }
 }

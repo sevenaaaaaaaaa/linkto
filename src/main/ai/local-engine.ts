@@ -128,7 +128,7 @@ export class LocalEngine {
     if (!existsSync(path)) return false
     const def = LOCAL_MODEL_CATALOG.find(m => m.id === id)
     // 下载中会有 .part 临时文件，正式文件存在且 >10MB 视为完成
-    return statSync(path).size > (def ? Math.min(def.sizeBytes * 0.9, 10_000_000) : 10_000_000)
+    return statSync(path).size > (def ? Math.max(def.sizeBytes * 0.9, 10_000_000) : 10_000_000)
   }
 
   localStatus(): { models: { id: string; label: string; desc: string; downloaded: boolean; sizeBytes: number; sizeText: string }[] } {
@@ -173,7 +173,7 @@ export class LocalEngine {
 
     for (const url of sources) {
       try {
-        const existing = existsSync(partPath) ? statSync(partPath).size : 0
+        let existing = existsSync(partPath) ? statSync(partPath).size : 0
         this.downloadAbort = new AbortController()
         const res = await fetch(url, {
           redirect: 'follow',
@@ -181,6 +181,8 @@ export class LocalEngine {
           headers: existing > 0 ? { Range: `bytes=${existing}-` } : {}
         })
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+        // 断点续传要求 206；部分 CDN 忽略 Range 回 200 全量——按重头写处理，否则全量被 append 成双倍损坏文件
+        if (existing > 0 && res.status !== 206) existing = 0
         const total = Number(res.headers.get('content-length') ?? 0) + existing
         let received = existing
         const stream = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream)
@@ -260,12 +262,13 @@ export class LocalEngine {
     onDelta: (delta: string) => void,
     opts?: { maxTokens?: number; temperature?: number }
   ): Promise<string> {
-    await this.loadModel(modelId)
-    if (!this.llama || !this.context) throw new Error('引擎未就绪')
-    // 单 sequence 串行处理，避免并发互踩
+    // 单 sequence 串行处理，避免并发互踩；loadModel 必须在拿锁之后——
+    // 并发时 A 可能正持有旧 context，B 在锁外 dispose/重建会直接把 A 炸掉
     while (this.generating) await new Promise(r => setTimeout(r, 100))
     this.generating = true
     try {
+      await this.loadModel(modelId)
+      if (!this.llama || !this.context) throw new Error('引擎未就绪')
       const { LlamaChatSession } = await import('node-llama-cpp')
       const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
       // sequence 池有限：本轮用完必须 dispose，否则下一次 getSequence 报 No sequences left
@@ -273,9 +276,11 @@ export class LocalEngine {
       try {
         seq = this.context.getSequence()
       } catch {
-        // 兜底：重建上下文（上一轮异常未释放时）
+        // 兜底：强制重建上下文再取（上一轮异常未释放时；不清 loadedModelId 的话 loadModel 会早退，重试原样再抛）
+        this.loadedModelId = null
+        this.context = null
         await this.loadModel(modelId)
-        seq = this.context.getSequence()
+        seq = this.context!.getSequence()
       }
       const session = new LlamaChatSession({ contextSequence: seq, systemPrompt: system || undefined })
       // 非系统消息整体拼接为一段 prompt（邮件场景指令自包含，无需回放多轮历史）

@@ -440,7 +440,7 @@ export class FeedService {
     const it = this.db.item(id)
     if (!it) return { ok: false, error: '条目不存在' }
     if (it.aiSummary && !force) return { ok: true, text: it.aiSummary }
-    if (!aiReady(this.deps.getAISettings())) return { ok: false, error: 'AI 未配置' }
+    if (!aiReady(this.deps.getAISettings(), false)) return { ok: false, error: 'AI 未配置' }
     const body = htmlToText(it.fullHtml || it.contentHtml || '') || it.summary
     if (!body.trim()) return { ok: false, error: '这条没有正文可以摘要，先抓取全文' }
     try {
@@ -599,7 +599,7 @@ export class FeedService {
         return { ok: true, found, fresh: 0, itemId: null, source: null, sources: status }
       }
       let ai: any = null
-      if (opts.ai && aiReady(this.deps.getAISettings())) {
+      if (opts.ai && aiReady(this.deps.getAISettings(), false)) {
         try {
           const text = await this.deps.ai.complete(
             [
@@ -652,7 +652,7 @@ export class FeedService {
     if (!items.length) return { ok: false, error: '最近 24 小时订阅没有新文章' }
     const entries = items.map(i => ({ id: i.id, title: i.title, url: i.url, source: i.sourceTitle || '订阅', summary: (i.aiSummary || i.summary || '').slice(0, 200) }))
     let ai: any = null
-    if (opts.ai && aiReady(this.deps.getAISettings())) {
+    if (opts.ai && aiReady(this.deps.getAISettings(), false)) {
       try {
         const list = entries.map((e, k) => `[${k + 1}] 来源：${e.source}\n标题：${e.title}${e.summary ? `\n摘要：${e.summary}` : ''}`).join('\n\n')
         ai = jsonFromText(await this.deps.ai.complete([{ role: 'system', content: FEED_DIGEST }, { role: 'user', content: `今天：${ymd(now)}\n\n${list}` }], 1600))
