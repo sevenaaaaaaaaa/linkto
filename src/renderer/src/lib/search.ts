@@ -113,6 +113,9 @@ export function parseSearch(input: string, ctx: Ctx): ParsedSearch {
           tokens.push({ raw, label: `${key === 'before' ? '早于' : '晚于'} ${d}` })
           continue
         }
+        // 日期无法识别：明确提示，而不是整段静默变成全文关键词让用户以为过滤生效
+        tokens.push({ raw, label: `${key === 'before' ? '早于' : '晚于'}（日期无法识别）` })
+        continue
       }
       if (key === 'in') {
         const acc = ctx.accounts.find(a => a.name.toLowerCase() === v || a.email.toLowerCase() === v)
@@ -164,9 +167,9 @@ export function parseSearch(input: string, ctx: Ctx): ParsedSearch {
   return { terms, tokens, query }
 }
 
-/** 从输入里移除某条语法原文（胶囊的 ×） */
+/** 从输入里移除某条语法原文（胶囊的 ×）；归一化须与 parseSearch 一致（全角冒号 / 全角引号），否则 indexOf 落空点 × 无效 */
 export function removeToken(input: string, raw: string): string {
-  const src = input.replace(/：/g, ':')
+  const src = input.replace(/：/g, ':').replace(/[“”]/g, '"')
   const i = src.indexOf(raw)
   if (i < 0) return input
   return (src.slice(0, i) + src.slice(i + raw.length)).replace(/\s{2,}/g, ' ').trim()

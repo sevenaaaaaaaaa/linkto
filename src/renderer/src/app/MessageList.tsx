@@ -251,7 +251,8 @@ function ThreadRow(props: {
 }) {
   const { msgs, expanded } = props
   const [hover, setHover] = useState(false)
-  const latest = msgs[0]
+  // 线程代表固定取最新一封（msgs[0] 在「最早在前」排序下是最旧的，会话头会显示成旧日期）
+  const latest = useMemo(() => msgs.reduce((a, b) => (b.date > a.date ? b : a), msgs[0]), [msgs])
   const others = msgs.length - 1
   const participants = [...new Set(msgs.map(m => displayName(m.from)))]
   const threadMulti = useMultiMode()

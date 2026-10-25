@@ -26,7 +26,11 @@ export function heuristicClassify(msg: ClassifyInput): { category: MessageCatego
   const subject = msg.subject ?? ''
   const bulkHeaders = !!msg.listUnsubscribe || !!msg.listId || /bulk/i.test(msg.precedence ?? '')
 
-  if (bulkHeaders || NEWSLETTER_FROM.test(from)) {
+  // 事务性发件人 / 自动提交的邮件不算 newsletter：GitHub、银行、电商的通知常带 List-Unsubscribe，
+  // 不豁免会把验证码 / 账单 / 物流判进订阅打包（配合静音规则还会被自动标已读）
+  const transactional = NOTIFICATION_FROM.test(msg.fromAddress) || !!msg.autoSubmitted
+
+  if (!transactional && (bulkHeaders || NEWSLETTER_FROM.test(from))) {
     return { category: 'newsletter', isNewsletter: true }
   }
 
@@ -34,8 +38,7 @@ export function heuristicClassify(msg: ClassifyInput): { category: MessageCatego
     return { category: 'noise', isNewsletter: /unsubscribe|退订/i.test(`${subject} ${msg.text?.slice(0, 2000) ?? ''}`) }
   }
 
-  const transactional = NOTIFICATION_FROM.test(from) || NOTIFICATION_SUBJECT.test(subject) || !!msg.autoSubmitted
-  if (transactional) {
+  if (transactional || NOTIFICATION_SUBJECT.test(subject)) {
     return { category: 'notification', isNewsletter: false }
   }
 

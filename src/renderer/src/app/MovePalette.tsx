@@ -59,11 +59,13 @@ export function MovePalette() {
   const move = async (f: Folder, withRule: boolean) => {
     const res = await api.moveToFolder(ids, f.id)
     if (withRule && sender) {
+      // order 排在最后（同动作后者覆盖）：用户「以后自动归此」的承诺不能被旧规则覆盖
+      const rules = await api.listRules()
       await api.saveRule({
         id: `rule-move-${Date.now()}`,
         name: `${displayName(first?.from ?? null) || sender} → ${folderLabel(f)}`,
         enabled: true,
-        order: 0,
+        order: rules.reduce((m, r) => Math.max(m, r.order), -1) + 1,
         conditions: [{ field: 'from', op: 'equals', value: sender }],
         actions: [{ type: 'moveFolder', value: f.id }]
       })

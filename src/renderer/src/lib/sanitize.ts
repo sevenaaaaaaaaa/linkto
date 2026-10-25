@@ -22,8 +22,11 @@ export function sanitizeEmailHtml(
     for (const attr of [...el.attributes]) {
       const name = attr.name.toLowerCase()
       if (name.startsWith('on')) el.removeAttribute(attr.name)
-      else if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(attr.value)) {
-        el.removeAttribute(attr.name)
+      else if (name === 'href' || name === 'src' || name === 'xlink:href') {
+        // 先剥离空白控制字符再判协议：DOMParser 已解码实体，`jav&#x09;ascript:` 会变成 `jav\tascript:` 绕过前缀检查；
+        // data: 只拦 href（导航向量），img src 的 data:image 内联图是合法形态
+        const probe = attr.value.replace(/[\s\u0000-\u001f]+/g, '')
+        if (/^(javascript|vbscript):/i.test(probe) || (name === 'href' && /^data:/i.test(probe))) el.removeAttribute(attr.name)
       }
     }
   }
@@ -118,6 +121,10 @@ export function sanitizeEmailHtml(
     if (!opts.allowRemote) styleEl.textContent = css.replace(remoteUrlRe, 'none')
   }
 
+  // 完整文档形态的邮件（mailparser 常见）样式在 <head> 里：搬进 body，否则整份排版丢失
+  if (doc.head && doc.body) {
+    for (const style of [...doc.head.querySelectorAll('style')]) doc.body.prepend(style)
+  }
   return { html: doc.body?.innerHTML ?? '', remoteImages }
 }
 

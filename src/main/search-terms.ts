@@ -13,15 +13,19 @@ const STOP_CHARS = new Set([...'的了是在有和与及或也都就还又我你
 export function searchTerms(question: string, max = 12): string[] {
   let text = question.toLowerCase()
   for (const p of STOP_PHRASES) text = text.split(p).join(' ')
-  const terms = new Set<string>()
+  const latin: string[] = []
   for (const word of text.match(/[a-z0-9][a-z0-9@._+-]*/g) ?? []) {
-    if (word.length > 1) terms.add(word)
+    if (word.length > 1 && !latin.includes(word)) latin.push(word)
   }
+  const cjk: string[] = []
   for (const run of text.match(/[㐀-鿿]+/g) ?? []) {
     // 在虚词处断开再切二元组，避免跨虚词拼出无意义的词
     let seg: string[] = []
     const flush = () => {
-      for (let i = 0; i + 1 < seg.length; i++) terms.add(seg[i] + seg[i + 1])
+      for (let i = 0; i + 1 < seg.length; i++) {
+        const t = seg[i] + seg[i + 1]
+        if (!cjk.includes(t)) cjk.push(t)
+      }
       seg = []
     }
     for (const c of run) {
@@ -30,7 +34,15 @@ export function searchTerms(question: string, max = 12): string[] {
     }
     flush()
   }
-  return [...terms].slice(0, max)
+  // 分组限量再交错合并：英文/型号多的问句不会把中文检索词挤出去
+  const latinCap = Math.min(latin.length, Math.ceil(max / 2))
+  const cjkCap = Math.min(cjk.length, max - latinCap)
+  const out: string[] = []
+  for (let i = 0; i < Math.max(latinCap, cjkCap); i++) {
+    if (i < latinCap) out.push(latin[i])
+    if (i < cjkCap) out.push(cjk[i])
+  }
+  return out.slice(0, max)
 }
 
 /** 按命中检索词个数打分（标题命中加权），返回 score>0 的条目 */

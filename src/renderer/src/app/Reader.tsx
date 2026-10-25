@@ -190,7 +190,10 @@ export function Reader() {
     })
     return () => {
       alive = false
-      created.forEach(url => URL.revokeObjectURL(url))
+      // 延迟到下一个宏任务再回收：同一次 flush 里正文 effect 还拿着旧 URL 渲染，
+      // 立即 revoke 会让切信瞬间内联图全破（新 blob 到位才恢复）
+      const stale = [...created]
+      if (stale.length) setTimeout(() => stale.forEach(url => URL.revokeObjectURL(url)), 0)
     }
   }, [msg])
 
@@ -304,9 +307,11 @@ export function Reader() {
         void api.openExternal(target.href)
       }
     })
-    // AI 划重点：把理解结果里的原句片段在正文中用荧光标出（只包裹文本节点，不改动邮件结构）
-    if (insight?.highlights.length && getPrefs().highlights) highlightPhrases(root, insight.highlights)
-  }, [msg, settings, showRemote, inlineUrls, skin, insight?.highlights.join('\u0001')])
+    // AI 划重点：把理解结果里的原句片段在正文中用荧光标出（只包裹文本节点，不改动邮件结构）。
+    // highlights 可能为 undefined（旧版本写入的 insight JSON 没有该字段），?? 兜底避免渲染期 TypeError 白屏
+    const highlights = insight?.highlights ?? []
+    if (highlights.length && getPrefs().highlights) highlightPhrases(root, highlights)
+  }, [msg, settings, showRemote, inlineUrls, skin, (insight?.highlights ?? []).join('\u0001')])
 
   const showBlocked = () => setShowRemote(true)
 
