@@ -110,6 +110,14 @@ function likeClauses(spec: SearchSpec): { sql: string; params: string[] } {
   return { sql: parts.length ? `(${parts.join(' AND ')})` : '1', params }
 }
 
+/** 列表页专用列白名单：text/html 单封可达上百 KB，SELECT * 会把它们全部读出并跨 IPC 序列化，
+ *  列表滚动 / 刷新是这个路径的最大流量来源（rowToSummary 不读正文列） */
+const SUMMARY_COLS_M =
+  'm.id, m.account_id, m.folder_id, m.folder_path, m.uid, m.thread_id, m.message_id, m.in_reply_to, m.from_name, m.from_addr, m.to_json, m.cc_json, m.reply_to_json, m.subject, m.norm_subject, m.snippet, m.date, m.size, m.flags, m.has_attachments, m.category, m.is_newsletter, m.list_unsubscribe, m.saved_kb, m.ai_summarized, m.pinned, m.snoozed_until'
+/** 同上，无表别名（rowid IN (...) 直取场景） */
+const SUMMARY_COLS =
+  'id, account_id, folder_id, folder_path, uid, thread_id, message_id, in_reply_to, from_name, from_addr, to_json, cc_json, reply_to_json, subject, norm_subject, snippet, date, size, flags, has_attachments, category, is_newsletter, list_unsubscribe, saved_kb, ai_summarized, pinned, snoozed_until'
+
 /** SQLite 数据层：账户 / 文件夹 / 邮件（含 FTS5）/ 规则 / 签名 / 模板 / 知识库 */
 export class MailStore {
   /** 中文友好检索索引（CJK 二元组 + unicode61）；初始化失败时 enabled = false，搜索退回 LIKE */
@@ -358,13 +366,15 @@ export class MailStore {
     const norm = addr.toLowerCase()
     const existing = this.db.prepare('SELECT status FROM sender_screening WHERE addr = ?').get(norm) as any
     if (existing) return 'skip'
-    // 自动放行：我发过信的地址（sent 文件夹的 to / cc）
+    // 自动放行：我发过信的地址（sent 文件夹的 to / cc）；地址含 %/_ 时必须转义，
+    // 否则 LIKE 通配符会误放行形似地址（发过 a_b@x.com 放行 axb@x.com）
+    const esc = norm.replace(/[\\%_]/g, c => `\\${c}`)
     const mailed = this.db
       .prepare(
         `SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
-         WHERE f.special = 'sent' AND (lower(m.to_json) LIKE ? OR lower(m.cc_json) LIKE ?) LIMIT 1`
+         WHERE f.special = 'sent' AND (lower(m.to_json) LIKE ? ESCAPE '\\' OR lower(m.cc_json) LIKE ? ESCAPE '\\') LIMIT 1`
       )
-      .get(`%"${norm}"%`, `%"${norm}"%`)
+      .get(`%"${esc}"%`, `%"${esc}"%`)
     // 自动放行：本机账户自己的地址
     const self = this.db.prepare("SELECT 1 FROM accounts WHERE lower(email) = ? OR (user LIKE '%@%' AND lower(user) = ?)").get(norm, norm)
     const status = mailed || self ? 'allow' : 'pending'
@@ -383,6 +393,11 @@ export class MailStore {
       | { status: 'allow' | 'pending' | 'deny' }
       | undefined
     return row?.status ?? null
+  }
+
+  /** 关闭 Screener 时调用：历史待审 / 已拒记录全部放行——否则开关关了，过滤查询仍吞邮件 */
+  clearSenderScreening(): void {
+    this.db.prepare("UPDATE sender_screening SET status = 'allow', reason = '开关关闭时批量放行' WHERE status IN ('pending','deny')").run()
   }
 
   listSenderScreening(status: string): any[] {
@@ -501,10 +516,14 @@ export class MailStore {
     }
   }
 
-  /** 魔法排序：按给定顺序重写 pin 顺序 */
+  /** 魔法排序：按给定顺序重写 pin 顺序（接在既有置顶之后，避免撞号打乱已有置顶） */
   setPinnedOrder(ids: string[]) {
+    let next = (this.db.prepare('SELECT COALESCE(MAX(pinned_order), 0) AS m FROM messages WHERE pinned = 1').get() as any).m as number
     const stmt = this.db.prepare('UPDATE messages SET pinned = 1, pinned_order = ? WHERE id = ?')
-    ids.forEach((id, i) => stmt.run(i + 1, id))
+    for (const id of ids) {
+      next += 1
+      stmt.run(next, id)
+    }
   }
 
   getMessageRow(id: string): any | undefined {
@@ -604,7 +623,7 @@ export class MailStore {
           ? 'ORDER BY m.snoozed_until ASC'
           : 'ORDER BY m.date DESC'
     const rows = this.db
-      .prepare(`SELECT * FROM messages m ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
+      .prepare(`SELECT ${SUMMARY_COLS_M} FROM messages m ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
       .all(...baseParams, query.limit, query.offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
@@ -651,7 +670,8 @@ export class MailStore {
       params.push(now - q.withinDays * 86400_000)
     }
     if (q.after) {
-      const t = Date.parse(q.after)
+      // 纯日期按本地零点解析：Date.parse('YYYY-MM-DD') 是 UTC，在 UTC+8 会漏掉当天 0-8 点的邮件
+      const t = Date.parse(q.after + 'T00:00:00')
       if (Number.isFinite(t)) { where.push('m.date >= ?'); params.push(t) }
     }
     if (q.before) {
@@ -674,14 +694,15 @@ export class MailStore {
     if (expr === null) {
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
       const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...params) as any).c as number
-      const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...params, lim, off) as any[]
+      const rows = this.db.prepare(`SELECT ${SUMMARY_COLS_M} FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...params, lim, off) as any[]
       return { items: rows.map(r => this.rowToSummary(r)), total }
     }
     if (this.search.enabled) {
       try {
         const page = this.searchByIndex(where, params, spec, expr, lim, off)
-        // 二元组索引按「词前缀」匹配拉丁 / 数字；词中间的子串（订单号尾号等）零命中时再用 LIKE 兜底
-        if (page.total > 0 || !latinSubstrings(spec).length) return page
+        if (page.total > 0) return page
+        // 零命中一律用 LIKE 兜底再试一次：拉丁词中间子串（订单尾号）、中文被空格/标点隔断
+        // （「项目 进度」索引成两段，短语 MATCH 不中）都会在这里找回
       } catch (err) {
         console.error('[search] index query failed, falling back to LIKE:', err)
       }
@@ -709,7 +730,7 @@ export class MailStore {
       hits.sort((a, b) => a.s - b.s || (b.d || 0) - (a.d || 0))
       const page = hits.slice(offset, offset + limit).map(h => h.r)
       const byRowid = new Map<number, any>()
-      for (const row of this.db.prepare(`SELECT rowid AS _r, * FROM messages WHERE rowid IN (${page.map(() => '?').join(',')})`).all(...page) as any[]) {
+      for (const row of this.db.prepare(`SELECT rowid AS _r, ${SUMMARY_COLS} FROM messages WHERE rowid IN (${page.map(() => '?').join(',')})`).all(...page) as any[]) {
         byRowid.set(row._r, row)
       }
       return { items: page.map(r => byRowid.get(r)).filter(Boolean).map(r => this.rowToSummary(r)), total }
@@ -721,7 +742,7 @@ export class MailStore {
     const p = [expr, ...like.params, ...params]
     const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...p) as any).c as number
     if (!total) return { items: [], total: 0 }
-    const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
+    const rows = this.db.prepare(`SELECT ${SUMMARY_COLS_M} FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
 
@@ -732,7 +753,7 @@ export class MailStore {
     const p = [...like.params, ...params]
     const total = (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${whereSql}`).get(...p) as any).c as number
     if (!total) return { items: [], total: 0 }
-    const rows = this.db.prepare(`SELECT * FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
+    const rows = this.db.prepare(`SELECT ${SUMMARY_COLS_M} FROM messages m ${whereSql} ORDER BY m.date DESC LIMIT ? OFFSET ?`).all(...p, limit, offset) as any[]
     return { items: rows.map(r => this.rowToSummary(r)), total }
   }
 
@@ -816,17 +837,27 @@ export class MailStore {
   getRecentForClassify(limit: number): MessageSummary[] {
     const rows = this.db
       .prepare(
-        `SELECT * FROM messages WHERE folder_path = 'INBOX' ORDER BY date DESC LIMIT ?`
+        `SELECT ${SUMMARY_COLS} FROM messages WHERE folder_path = 'INBOX' ORDER BY date DESC LIMIT ?`
       )
       .all(limit) as any[]
     return rows.map(r => this.rowToSummary(r))
   }
 
+  /** 空 body_fetched → 已取终态（正文确实为空的邮件不再每次打开重拉 IMAP） */
+  markBodyFetched(id: string) {
+    this.db.prepare('UPDATE messages SET body_fetched = 1 WHERE id = ?').run(id)
+  }
+
   unreadCounts(): { accountId: string; unread: number }[] {
+    // 与列表视图同一套收件箱纪律：被 Screener 拦截 / snooze 中的不计入（否则角标与可见未读永久不一致）
+    const now = Date.now()
     const rows = this.db
       .prepare(
         `SELECT account_id, COUNT(*) AS unread FROM messages
-         WHERE folder_path = 'INBOX' AND flags NOT LIKE '%\\Seen%' GROUP BY account_id`
+         WHERE folder_path = 'INBOX' AND flags NOT LIKE '%\\Seen%'
+           AND (snoozed_until IS NULL OR snoozed_until <= ${now})
+           AND NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = from_addr AND ss.status IN ('pending','deny'))
+         GROUP BY account_id`
       )
       .all() as any[]
     return rows.map(r => ({ accountId: r.account_id, unread: r.unread }))
