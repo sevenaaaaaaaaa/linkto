@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, dialog, shell, app, net, nativeTheme } from 'electron'
+import { BrowserWindow, clipboard, ipcMain, dialog, shell, app, net, nativeTheme } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +7,7 @@ import { systemSymbols } from './system-symbols'
 import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
 import { checkForUpdates, openUpdateUrl } from './updates'
 import type { GhostService } from './ghost/service'
+import type { FlyService } from './fly/service'
 import type {
   AccountConfig,
   AccountDraft,
@@ -14,6 +15,7 @@ import type {
   Attachment,
   CloudDriveConfig,
   ComposeDraft,
+  FlyComposeDraft,
   GhostSendDraft,
   KbItem,
   MessageQuery,
@@ -94,12 +96,15 @@ export interface AppContext {
   oauth: OAuthService
   backup: BackupService
   ghost: GhostService
+  fly: FlyService
   mcp: McpService
   todoSync: TodoSyncService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openGhost(): void
   openGhostReader(id: string): void
+  openFly(): void
+  openFlyReader(token: string): void
   openSettings(tab?: string): void
   statuses: Map<string, { status: 'connected' | 'syncing' | 'error' | 'disabled'; text: string }>
   getPassword(accountId: string): string
@@ -109,7 +114,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost, fly } = ctx
 
   // 待办与日历同步（Apple 提醒事项 / 日历、Google、Microsoft）：启动定时同步
   const todoIntegrations = initTodoIntegrations({
@@ -694,6 +699,45 @@ export function registerIpc(ctx: AppContext) {
     openGhost: () => ctx.openGhost(),
 
     openGhostReader: ([id]: [string]) => ctx.openGhostReader(id),
+
+    // ================= 萤火密信 v2（一次性 · 无身份 · 无设备绑定） =================
+
+    flyCompose: ([draft]: [FlyComposeDraft]) => fly.compose(draft),
+
+    flyOpen: ([input, code]: [string, string?]) => fly.open(input, code),
+
+    flyTake: ([token]: [string]) => {
+      const text = fly.take(token)
+      return text === null ? { ok: false } : { ok: true, text }
+    },
+
+    flyDrop: ([token]: [string]) => {
+      fly.drop(token)
+    },
+
+    flyRelayUrl: () => fly.relayUrl(),
+
+    flyRelaySetUrl: ([url]: [string]) => {
+      fly.setRelayUrl(url)
+    },
+
+    /** 复制敏感内容后 45 秒自动清空剪贴板（若其间未被其他内容替换） */
+    flyCopy: async ([text]: [string]) => {
+      await clipboard.writeText(text)
+      setTimeout(() => {
+        void (async () => {
+          try {
+            if ((await clipboard.readText()) === text) await clipboard.writeText('')
+          } catch {
+            /* 剪贴板不可用时忽略 */
+          }
+        })()
+      }, 45_000)
+    },
+
+    openFly: () => ctx.openFly(),
+
+    openFlyReader: ([token]: [string]) => ctx.openFlyReader(token),
 
     // ================= 文件夹 / 邮件 =================
 

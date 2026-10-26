@@ -40,6 +40,7 @@ const METHOD_NAMES = [
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus', 'createTodo', 'updateTodo', 'aiPlanTodos', 'todoFromMessage',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'ghostRelayUrl', 'ghostRelaySetUrl', 'openGhost', 'openGhostReader',
+  'flyCompose', 'flyOpen', 'flyTake', 'flyDrop', 'flyRelayUrl', 'flyRelaySetUrl', 'flyCopy', 'openFly', 'openFlyReader',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',

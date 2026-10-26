@@ -970,6 +970,43 @@ export interface GhostSendDraft {
   via?: 'mail' | 'relay'
 }
 
+// ---------- 萤火密信 v2（一次性 · 无身份 · 无设备绑定） ----------
+
+/** 打开方式：link=链接自带 256bit 密钥 / link-code=链接 + 6 词口令 / code=纯 6 词口令 */
+export type FlyMode = 'link' | 'link-code' | 'code'
+
+export interface FlyComposeDraft {
+  text: string
+  mode: FlyMode
+  ttlSeconds: number
+}
+
+export interface FlyComposeResult {
+  ok: boolean
+  error?: string
+  mode?: FlyMode
+  /** 链接 / 链接+口令 模式的分享链接（密钥只在 # 之后） */
+  link?: string
+  /** 口令模式的 6 个词（现场 CSPRNG 生成，不是用户自选密码） */
+  code?: string
+  /** 纯口令模式给收件人的入口网址（打开后输入 6 个词） */
+  portal?: string
+  mbox?: string
+  expiresAt?: number
+  sealedBytes?: number
+}
+
+export interface FlyOpenResult {
+  ok: boolean
+  error?: string
+  /** 主进程内存中的一次性取件号，阅读窗取走即删 */
+  token?: string
+  mode?: FlyMode
+  expiresAt?: number
+  /** 中继是否确认删除了密文 */
+  burned?: boolean
+}
+
 // ---------- 邮件理解（每封一次 AI/启发式理解，列表 / 阅读页 / 今日简报 / Agent 共用） ----------
 
 export type MailSection = 'act' | 'wait' | 'fyi' | 'bundle'

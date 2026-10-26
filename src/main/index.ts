@@ -22,6 +22,7 @@ import { readFolderPrefs } from './mail/folder-prefs'
 import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
+import { FlyService } from './fly/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
 import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
@@ -153,6 +154,7 @@ let understand: UnderstandService
 let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
+let fly: FlyService
 let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
 let devSync: DevSyncService | null = null
@@ -567,6 +569,92 @@ function createGhostReaderWindow(id: string) {
   })
 }
 
+let flyWindow: BrowserWindow | null = null
+
+/** 萤火密信窗口：写 / 读一次性密信（无身份、无账号、无设备绑定） */
+function createFlyWindow() {
+  if (flyWindow && !flyWindow.isDestroyed()) {
+    flyWindow.show()
+    flyWindow.focus()
+    return
+  }
+  flyWindow = new BrowserWindow({
+    width: 920,
+    height: 720,
+    minWidth: 720,
+    minHeight: 560,
+    title: '萤火密信',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#F4F5F7',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // 非持久化分区：写信窗里的链接 / 口令不写 cookie、cache、storage
+      partition: 'fly-writer'
+    }
+  })
+  const writerSession = flyWindow.webContents.session
+  attachNativeContextMenu(flyWindow)
+  flyWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/fly' })
+  flyWindow.webContents.once('did-finish-load', () => flyWindow?.setTitle('萤火密信'))
+  flyWindow.once('ready-to-show', () => {
+    flyWindow?.show()
+    flyWindow?.focus()
+  })
+  flyWindow.on('closed', () => {
+    void writerSession.clearStorageData().catch(() => undefined)
+    flyWindow = null
+  })
+}
+
+let flyReaderWindow: BrowserWindow | null = null
+
+/**
+ * 一次性阅读窗：
+ *  - 正文只存在于主进程内存，进窗后立即取走（token 随即失效）
+ *  - 独立非持久化 session，关闭时清空缓存 / storage
+ *  - contentProtection：系统级截屏 / 录屏得到黑块
+ */
+function createFlyReaderWindow(token: string) {
+  if (flyReaderWindow && !flyReaderWindow.isDestroyed()) flyReaderWindow.close()
+  flyReaderWindow = new BrowserWindow({
+    width: 660,
+    height: 640,
+    minWidth: 480,
+    minHeight: 420,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#0c1110',
+    show: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // 非持久化分区：页面缓存只在本窗生命周期内存在
+      partition: 'fly-reader'
+    }
+  })
+  const win = flyReaderWindow
+  // 关闭后 webContents 已销毁，session 引用要提前取出
+  const readerSession = win.webContents.session
+  win.setContentProtection(true)
+  win.loadFile(join(__dirname, '../renderer/index.html'), {
+    hash: '/flyread?token=' + encodeURIComponent(token)
+  })
+  win.once('ready-to-show', () => win.show())
+  win.webContents.once('did-finish-load', () => win.showInactive())
+  win.on('closed', () => {
+    fly?.drop(token)
+    void readerSession.clearStorageData().catch(() => undefined)
+    if (flyReaderWindow === win) flyReaderWindow = null
+  })
+}
+
 function updateDockBadge() {
   const unread = mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
   if (!appStore.get('general', DEFAULT_GENERAL).dockBadge) {
@@ -613,7 +701,8 @@ function buildAppMenu() {
           accelerator: 'Cmd+N',
           click: () => createComposeWindow()
         },
-        { label: '加密沟通（幽灵信）…', accelerator: 'Cmd+Shift+G', click: () => createGhostWindow() },
+        { label: '萤火密信（一次性）…', accelerator: 'Cmd+Shift+F', click: () => createFlyWindow() },
+        { label: '加密沟通（旧版幽灵信）…', accelerator: 'Cmd+Shift+G', click: () => createGhostWindow() },
         { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => focusSearchNative() },
         { label: '刷新邮件', accelerator: 'Cmd+R', click: () => sendToMainWindow('native-refresh') },
         { type: 'separator' },
@@ -753,6 +842,12 @@ async function bootstrap() {
         ? { accessToken: await oauth.validToken(account.id, account.provider) }
         : { pass: appStore.loadSecret(`acct:${account.id}`) },
     event: payload => broadcast(payload)
+  })
+
+  fly = new FlyService({
+    // getRaw：settings 里的单值（字符串）不能用 get()——它会按对象展开
+    getSetting: key => appStore.getRaw<string>(key, ''),
+    setSetting: (key, value) => appStore.set(key, value)
   })
 
   insights = new InsightsService({
@@ -966,6 +1061,7 @@ async function bootstrap() {
     oauth,
     backup: backupService,
     ghost,
+    fly,
     mcp,
     todoSync,
     statuses,
@@ -973,6 +1069,8 @@ async function bootstrap() {
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
     openGhost: () => createGhostWindow(),
     openGhostReader: id => createGhostReaderWindow(id),
+    openFly: () => createFlyWindow(),
+    openFlyReader: token => createFlyReaderWindow(token),
     openSettings: tab => createSettingsWindow(tab),
     getPassword: accountId => appStore.loadSecret(`acct:${accountId}`)
   }

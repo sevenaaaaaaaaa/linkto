@@ -137,10 +137,22 @@ assets=("$dmg")
 [ -f "dist/${APP_NAME}-${VERSION}.AppImage" ] && assets+=("dist/${APP_NAME}-${VERSION}.AppImage")
 [ -f "dist/${APP_NAME} Setup ${VERSION}.exe" ] && assets+=("dist/${APP_NAME} Setup ${VERSION}.exe")
 
+
+# ---------- 4b. SHA-256: installers + browser reader page ----------
+# shellcheck source=lib/release-hashes.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/release-hashes.sh"
+sums="dist/SHA256SUMS.txt"
+write_sha256sums "$sums" "${assets[@]}" || die "checksum generation failed"
+assets+=("$sums")
+reader_line="$(reader_hash_line)" || die "reader hash generation failed"
+append_checksum_notes "$notes_file" "$reader_line"
+log "checksums: $(wc -l < "$sums" | tr -d ' ') assets; $reader_line"
+
 # ---------- 5. Push + GitHub Release ----------
 git push origin "$BRANCH" || die "git push failed"
 git push origin "$TAG" || die "git push tag failed"
 if gh release view "$TAG" -R "$GH_REPO" >/dev/null 2>&1; then
+  gh release edit "$TAG" -R "$GH_REPO" --title "$title" --notes-file "$notes_file" || die "gh release edit failed"
   existing="$(gh release view "$TAG" -R "$GH_REPO" --json assets -q '.assets[].name')"
   for a in "${assets[@]}"; do
     name="$(basename "$a" | tr ' ' '.')"

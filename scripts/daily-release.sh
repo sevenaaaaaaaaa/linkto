@@ -203,6 +203,15 @@ assets=("$dmg")
 [ -f "dist/${APP_NAME}-${version}.AppImage" ] && assets+=("dist/${APP_NAME}-${version}.AppImage")
 [ -f "dist/${APP_NAME} Setup ${version}.exe" ] && assets+=("dist/${APP_NAME} Setup ${version}.exe")
 
+# ---------- 4b. SHA-256: installers + browser reader page ----------
+# shellcheck source=lib/release-hashes.sh
+source "$REPO_ROOT/scripts/lib/release-hashes.sh"
+sums="dist/SHA256SUMS.txt"
+write_sha256sums "$sums" "${assets[@]}" || die "checksum generation failed"
+assets+=("$sums")
+reader_line="$(reader_hash_line)" || die "reader hash generation failed"
+log "reader: $reader_line"
+
 if [ "$DRY_RUN" -eq 1 ]; then
   log "dry-run artifacts:"; for a in "${assets[@]}"; do log "  $a"; done
   log "==== dry-run done (nothing tagged, pushed, released or installed)"
@@ -235,6 +244,7 @@ notes_file="$(mktemp /tmp/linkto-nightly-notes.XXXXXX)"
   echo
   echo "<!-- nightly-sha: ${head_sha} -->"
 } > "$notes_file"
+append_checksum_notes "$notes_file" "$reader_line"
 
 title="Nightly · ${display_date}"
 if gh release view "$NIGHTLY_TAG" -R "$GH_REPO" >/dev/null 2>&1; then

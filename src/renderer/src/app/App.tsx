@@ -9,9 +9,18 @@ const MailShell = lazy(() => import('./MailShell').then(m => ({ default: m.MailS
 const ComposeWindow = lazy(() => import('./Compose').then(m => ({ default: m.ComposeWindow })))
 const GhostWindow = lazy(() => import('./Ghost').then(m => ({ default: m.GhostWindow })))
 const GhostRead = lazy(() => import('./GhostRead').then(m => ({ default: m.GhostRead })))
+const FlyWindow = lazy(() => import('./Fly').then(m => ({ default: m.FlyWindow })))
+const FlyRead = lazy(() => import('./FlyRead').then(m => ({ default: m.FlyRead })))
 
-function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread'; prefill?: Partial<ComposeDraft>; ghostId?: string } {
+function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread' | 'fly' | 'flyread'; prefill?: Partial<ComposeDraft>; ghostId?: string; flyToken?: string } {
   const hash = location.hash
+  if (hash.startsWith('#/flyread')) {
+    const m = hash.match(/[?&]token=([^&]+)/)
+    return { name: 'flyread', flyToken: m ? decodeURIComponent(m[1]) : undefined }
+  }
+  if (hash.startsWith('#/fly')) {
+    return { name: 'fly' }
+  }
   if (hash.startsWith('#/compose')) {
     return { name: 'compose', prefill: parseComposePrefill() }
   }
@@ -86,6 +95,10 @@ export default function App() {
         <ComposeWindow prefill={r.prefill} />
       ) : r.name === 'ghost' ? (
         <GhostWindow />
+      ) : r.name === 'fly' ? (
+        <FlyWindow />
+      ) : r.name === 'flyread' ? (
+        <FlyRead token={r.flyToken ?? ''} />
       ) : r.name === 'ghostread' ? (
         r.ghostId ? <GhostRead id={r.ghostId} /> : null
       ) : (

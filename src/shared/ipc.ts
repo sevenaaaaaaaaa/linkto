@@ -14,6 +14,9 @@ import type {
   GeneralSettings,
   GhostItem,
   GhostSendDraft,
+  FlyComposeDraft,
+  FlyComposeResult,
+  FlyOpenResult,
   InsightKind,
   InsightRecord,
   KbItem,
@@ -351,6 +354,25 @@ export interface LinkToApi {
   openGhost(): Promise<void>
   /** 在防截屏焚毁阅读窗中打开一封信（口令在阅读窗内输入） */
   openGhostReader(id: string): Promise<void>
+
+  // ---------- 萤火密信 v2（一次性 · 无身份 · 无设备绑定） ----------
+  /** 封装一封一次性密信并投递到盲中继；返回链接/6 词口令（密钥不经过服务端） */
+  flyCompose(draft: FlyComposeDraft): Promise<FlyComposeResult>
+  /** 打开：完整链接 / 32 位信箱号 / 6 词口令。成功即请求中继焚毁，正文暂存在主进程内存 */
+  flyOpen(input: string, code?: string): Promise<FlyOpenResult>
+  /** 阅读窗一次性取走正文（取走即删，失败说明已取过或已过期） */
+  flyTake(token: string): Promise<{ ok: boolean; text?: string }>
+  /** 丢弃尚未取走的正文（关闭阅读窗时兜底） */
+  flyDrop(token: string): Promise<void>
+  /** 中继地址（未配置时回落到幽灵信的中继配置） */
+  flyRelayUrl(): Promise<string>
+  flyRelaySetUrl(url: string): Promise<void>
+  /** 复制到剪贴板，并在 45 秒后自动清空（仅当内容未被替换） */
+  flyCopy(text: string): Promise<void>
+  /** 打开萤火密信窗口 */
+  openFly(): Promise<void>
+  /** 打开防截屏焚毁阅读窗（正文用一次性 token 取，不走 URL） */
+  openFlyReader(token: string): Promise<void>
 
   // ---------- 邮件理解（每封一次理解，列表 / 阅读页 / 简报 / Agent 共用） ----------
   /** 批量取邮件理解结果（缺失的立即用启发式补齐并返回；AI 结果异步到达后发 'mail-insights' 事件） */

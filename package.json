@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder -mwl"
+    "dist": "electron-vite build && electron-builder -mwl",
+    "test:fly": "node --no-warnings --experimental-strip-types scripts/fly-selftest.mts && node --no-warnings --experimental-strip-types scripts/fly-relay-selftest.mts && npx esbuild scripts/fly-service-selftest.mts --bundle --platform=node --format=esm --outfile=out/fly-svc-test.mjs --log-level=warning && node out/fly-svc-test.mjs",
+    "fly:reader-hash": "node --no-warnings --experimental-strip-types scripts/fly-reader-hash.mts"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.31.4",
