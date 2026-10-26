@@ -17,10 +17,15 @@ write_sha256sums() {
   local out="$1"
   shift
   : > "$out"
-  local a base
+  local a local_name remote_name hash
   for a in "$@"; do
-    base="$(basename "$a")"
-    ( cd "$(dirname "$a")" && sha256_of "$base" ) >> "$out" || return 1
+    local_name="$(basename "$a")"
+    # GitHub 把资产名里的空格转成点；清单必须写发布后的文件名，用户才能直接 -c
+    remote_name="$(printf '%s' "$local_name" | tr ' ' '.')"
+    if ! hash="$( cd "$(dirname "$a")" && sha256_of "$local_name" | awk '{print $1}' )"; then
+      return 1
+    fi
+    printf '%s  %s\n' "$hash" "$remote_name" >> "$out"
   done
 }
 
