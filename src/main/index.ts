@@ -23,10 +23,11 @@ import { OAuthService } from './oauth'
 import { BackupService } from './backup'
 import { GhostService } from './ghost/service'
 import { FlyService } from './fly/service'
+import { VaultService } from './vault/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
 import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
-import { checkForUpdates, compareVersions } from './updates'
+import { checkForUpdates, compareVersions, startUpdateDownload, getUpdateStatus, installUpdate, hasReadyUpdate, isUpdateInstalling, cleanupOldUpdateBundle } from './updates'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -155,6 +156,7 @@ let oauth: OAuthService
 let backupService: BackupService
 let ghost: GhostService
 let fly: FlyService
+let vault: VaultService
 let mcp: McpService | null = null
 let todoSync: TodoSyncService | null = null
 let devSync: DevSyncService | null = null
@@ -329,12 +331,71 @@ async function checkUpdatesFromMenu() {
       cancelId: buttons.length - 1
     })
     if (result.asset && response.response === 0) {
-      await shell.openExternal(result.asset.url)
+      if (!result.checksumsUrl) {
+        await show({
+          type: 'warning',
+          title: '无法自动安装',
+          message: '这个版本没有 SHA256SUMS.txt',
+          detail: '为了不安装来路不明的包，已停止自动下载；可以打开发布页手动安装。',
+          buttons: ['知道了']
+        })
+        if (result.releaseUrl) await shell.openExternal(result.releaseUrl)
+        return
+      }
+      void show({
+        type: 'info',
+        title: '开始下载',
+        message: '正在后台下载更新',
+        detail: '下载完成后会提示重启安装；也可以到 设置 → 通用 查看进度。',
+        buttons: ['好']
+      })
+      void (async () => {
+        const dl = await startUpdateDownload()
+        if (!dl.ok) {
+          await show({ type: 'warning', title: '下载失败', message: dl.error ?? '下载失败', buttons: ['知道了'] })
+          return
+        }
+        await promptInstallUpdate()
+      })()
     } else if (result.releaseUrl && response.response <= 1) {
       await shell.openExternal(result.releaseUrl)
     }
   } catch {
     /* 对话框被关闭 / 窗口已销毁：不处理 */
+  }
+}
+
+/** 下载完成后提示重启；选「稍后」则下次退出时自动安装 */
+async function promptInstallUpdate(): Promise<void> {
+  const status = getUpdateStatus()
+  if (status.phase !== 'ready') return
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const show = (opts: Electron.MessageBoxOptions) => (parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts))
+  const { response } = await show({
+    type: 'info',
+    title: '更新已下载',
+    message: 'LinkTo ' + (status.version ?? '新版本') + ' 已准备好',
+    detail: '重启并安装；选「稍后」则下次退出应用时自动安装。',
+    buttons: ['重启并安装', '稍后'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (response === 0) await installUpdate()
+}
+
+/** 启动后静默检查并在后台下载；只在打包后的安装版里运行 */
+async function autoCheckUpdates(): Promise<void> {
+  try {
+    const result = await checkForUpdates(false)
+    if (!result.hasUpdate || !result.asset || !result.checksumsUrl) return
+    const dl = await startUpdateDownload()
+    if (!dl.ok) {
+      console.warn('[update] background download failed:', dl.error)
+      return
+    }
+    await promptInstallUpdate()
+  } catch (err) {
+    console.warn('[update] background check failed:', err)
   }
 }
 
@@ -655,6 +716,49 @@ function createFlyReaderWindow(token: string) {
   })
 }
 
+
+let vaultWindow: BrowserWindow | null = null
+
+/** 暂存箱 / 保险箱窗口：正文按需从主进程解密，不写页面存储 */
+function createVaultWindow() {
+  if (vaultWindow && !vaultWindow.isDestroyed()) {
+    vaultWindow.show()
+    vaultWindow.focus()
+    return
+  }
+  vaultWindow = new BrowserWindow({
+    width: 920,
+    height: 700,
+    minWidth: 720,
+    minHeight: 560,
+    title: '暂存箱与保险箱',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#F4F5F7',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: 'vault-window'
+    }
+  })
+  const win = vaultWindow
+  const session = win.webContents.session
+  attachNativeContextMenu(win)
+  win.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/vault' })
+  win.webContents.once('did-finish-load', () => win.setTitle('暂存箱与保险箱'))
+  win.once('ready-to-show', () => {
+    win.show()
+    win.focus()
+  })
+  win.on('closed', () => {
+    void session.clearStorageData().catch(() => undefined)
+    if (vaultWindow === win) vaultWindow = null
+  })
+}
+
 function updateDockBadge() {
   const unread = mailStore.unreadCounts().reduce((s, u) => s + u.unread, 0)
   if (!appStore.get('general', DEFAULT_GENERAL).dockBadge) {
@@ -703,6 +807,7 @@ function buildAppMenu() {
         },
         { label: '萤火密信（一次性）…', accelerator: 'Cmd+Shift+F', click: () => createFlyWindow() },
         { label: '加密沟通（旧版幽灵信）…', accelerator: 'Cmd+Shift+G', click: () => createGhostWindow() },
+        { label: '暂存箱与保险箱…', click: () => createVaultWindow() },
         { label: '搜索邮件…', accelerator: 'Cmd+F', click: () => focusSearchNative() },
         { label: '刷新邮件', accelerator: 'Cmd+R', click: () => sendToMainWindow('native-refresh') },
         { type: 'separator' },
@@ -849,6 +954,8 @@ async function bootstrap() {
     getSetting: key => appStore.getRaw<string>(key, ''),
     setSetting: (key, value) => appStore.set(key, value)
   })
+
+  vault = new VaultService({ appStore })
 
   insights = new InsightsService({
     ai: aiService,
@@ -1062,6 +1169,7 @@ async function bootstrap() {
     backup: backupService,
     ghost,
     fly,
+    vault,
     mcp,
     todoSync,
     statuses,
@@ -1069,6 +1177,7 @@ async function bootstrap() {
     openCompose: prefill => createComposeWindow(prefill as Record<string, unknown>),
     openGhost: () => createGhostWindow(),
     openGhostReader: id => createGhostReaderWindow(id),
+    openVault: () => createVaultWindow(),
     openFly: () => createFlyWindow(),
     openFlyReader: token => createFlyReaderWindow(token),
     openSettings: tab => createSettingsWindow(tab),
@@ -1236,6 +1345,11 @@ async function bootstrap() {
   }
 
   buildAppMenu()
+  if (app.isPackaged) {
+    setTimeout(() => {
+      void autoCheckUpdates()
+    }, 12_000)
+  }
   const showMainWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) createMainWindow()
     else {
@@ -1431,6 +1545,7 @@ async function showKeychainNotice(kind: 'pending' | 'failed', signal?: AbortSign
 app.whenReady().then(() => {
   startupLog('ready')
   setNativeAboutPanel()
+  cleanupOldUpdateBundle()
   // 原生明暗变化（系统或应用内切换）→ 所有窗口同步重跑主题，避免磨砂材质与内容一个深一个浅
   nativeTheme.on('updated', () => broadcast({ type: 'theme-changed' }))
   // 先开窗（界面不依赖钥匙串），再初始化数据层与后台服务
@@ -1449,7 +1564,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', event => {
+  // 已下载好更新：退出时自动安装（安装脚本会等进程退出后再替换 .app）
+  if (hasReadyUpdate() && !isUpdateInstalling()) {
+    event.preventDefault()
+    void installUpdate().then(r => {
+      if (!r.ok) {
+        console.warn('[update] install on quit failed:', r.error)
+        app.exit(0)
+      }
+    })
+    return
+  }
   // 钥匙串授权对话框还开着：读取钥匙串的后台任务会挡住正常退出流程，稍等后直接退出
   if (appStore?.secretsState() === 'pending') setTimeout(() => app.exit(0), 1500)
   mailStore?.search.stop()

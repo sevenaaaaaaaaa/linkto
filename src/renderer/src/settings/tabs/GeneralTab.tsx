@@ -6,7 +6,7 @@ import {
   activePresetId, setPreset, getThemePref, setThemePref, onThemeChange, type ThemePref
 } from '../../lib/theme'
 import type { GeneralSettings } from '@shared/types'
-import type { UpdateCheckResult } from '@shared/updates'
+import type { UpdateCheckResult, UpdateDownloadStatus } from '@shared/updates'
 
 export function SectionTitle(props: { children: React.ReactNode }) {
   return <h2 className="text-xs font-semibold mb-1 mt-7 first:mt-1" style={{ color: 'var(--faint)', letterSpacing: '0.04em' }}>{props.children}</h2>
@@ -210,6 +210,47 @@ function About() {  const [v, setV] = useState<{ app: string; electron: string; 
 function UpdatePanel() {
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
+  const [status, setStatus] = useState<UpdateDownloadStatus | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [installError, setInstallError] = useState('')
+
+  const refreshStatus = async () => {
+    try {
+      setStatus(await api.updateStatus())
+    } catch {
+      /* 主进程还没准备好 */
+    }
+  }
+
+  useEffect(() => {
+    void refreshStatus()
+    const timer = setInterval(() => { void refreshStatus() }, 800)
+    return () => clearInterval(timer)
+  }, [])
+
+  const download = async () => {
+    setStarting(true)
+    setInstallError('')
+    try {
+      const r = await api.updateDownload()
+      if (!r.ok) setInstallError(r.error ?? '下载失败')
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setStarting(false)
+      await refreshStatus()
+    }
+  }
+
+  const install = async () => {
+    setInstallError('')
+    try {
+      const r = await api.updateInstall()
+      if (!r.ok) setInstallError(r.error ?? '安装失败')
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const check = async () => {
     setChecking(true)
@@ -268,14 +309,55 @@ function UpdatePanel() {
               {result.notes}
             </div>
           )}
+          {status && status.phase !== 'idle' && (
+            <div className="mt-2.5 rounded-[var(--r-xs)] border px-2.5 py-2" style={{ borderColor: 'var(--border-soft)', background: 'var(--bg-soft)' }}>
+              {status.phase === 'downloading' && (
+                <>
+                  <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--border)' }}>
+                    <div
+                      className="h-full rounded-full transition-[width] duration-300"
+                      style={{
+                        width: (status.total > 0 ? Math.min(100, Math.round((status.received / status.total) * 100)) : 0) + '%',
+                        background: 'var(--accent)'
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1 text-2xs" style={{ color: 'var(--muted)' }}>
+                    下载中 {status.total > 0 ? Math.min(100, Math.round((status.received / status.total) * 100)) + '%' : ''}
+                    {' · '}
+                    {(status.received / 1024 / 1024).toFixed(1)} / {(status.total / 1024 / 1024).toFixed(1)} MB
+                  </div>
+                </>
+              )}
+              {status.phase === 'verifying' && <div className="text-2xs" style={{ color: 'var(--muted)' }}>校验 SHA-256…</div>}
+              {status.phase === 'ready' && (
+                <div className="flex items-center gap-2">
+                  <div className="text-2xs flex-1" style={{ color: 'var(--ok-ink)' }}>
+                    {status.version} 已下载 · 退出应用也会自动安装
+                  </div>
+                  <button
+                    onClick={() => void install()}
+                    className="h-7 rounded-[var(--r-xs)] px-2.5 text-xs font-medium"
+                    style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+                  >
+                    重启并安装
+                  </button>
+                </div>
+              )}
+              {status.phase === 'installing' && <div className="text-2xs" style={{ color: 'var(--muted)' }}>正在重启安装…</div>}
+              {status.phase === 'error' && <div className="text-2xs" style={{ color: 'var(--danger-ink)' }}>{status.error ?? '下载失败'}</div>}
+            </div>
+          )}
+          {installError && <div className="mt-2 text-2xs" style={{ color: 'var(--danger-ink)' }}>{installError}</div>}
           <div className="mt-2.5 flex flex-wrap gap-2">
-            {result.asset && (
+            {result.asset && status?.phase !== 'downloading' && status?.phase !== 'verifying' && status?.phase !== 'ready' && status?.phase !== 'installing' && (
               <button
-                onClick={() => void api.openUpdateUrl(result.asset!.url)}
-                className="h-7 rounded-[var(--r-xs)] px-2.5 text-xs font-medium"
+                onClick={() => void download()}
+                disabled={starting}
+                className="h-7 rounded-[var(--r-xs)] px-2.5 text-xs font-medium disabled:opacity-40"
                 style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
               >
-                下载更新
+                {starting ? '准备下载…' : status?.phase === 'error' ? '重试下载' : '下载更新'}
               </button>
             )}
             {result.releaseUrl && (

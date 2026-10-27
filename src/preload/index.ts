@@ -40,7 +40,8 @@ const METHOD_NAMES = [
   'listMemories', 'saveMemory', 'updateMemory', 'deleteMemory', 'memoryStats', 'agentLearn', 'agentProfile', 'agentChat', 'agentExecuteActions', 'aiStatus', 'createTodo', 'updateTodo', 'aiPlanTodos', 'todoFromMessage',
   'unsubscribe', 'setNewsletterSender', 'listNewsletterSenders',
   'ghostIdentity', 'ghostList', 'ghostReceiveScan', 'ghostSend', 'ghostOpen', 'ghostBurn', 'ghostRelayUrl', 'ghostRelaySetUrl', 'openGhost', 'openGhostReader',
-  'flyCompose', 'flyOpen', 'flyTake', 'flyDrop', 'flyRelayUrl', 'flyRelaySetUrl', 'flyCopy', 'openFly', 'openFlyReader',
+  'flyCompose', 'flyOpen', 'flyTake', 'flyDrop', 'flyRelayUrl', 'flyRelaySetUrl', 'flyCopy', 'flyOpenLink', 'openFly', 'openFlyReader',
+  'vaultList', 'vaultReveal', 'vaultAdd', 'vaultDelete', 'vaultCopy', 'vaultSendToLitmus', 'litmusSendText', 'litmusVaultPath', 'openVault',
   'getMcpStatus', 'setMcpEnabled', 'regenerateMcpToken',
   'todoSyncStatus', 'todoSyncConfigure', 'todoSyncNow',
   'todoIntegrationsStatus', 'todoIntegrationListTargets', 'todoIntegrationConnect', 'todoIntegrationUpdate',
@@ -58,7 +59,7 @@ const METHOD_NAMES = [
   'financeList', 'financeCreate', 'financeUpdate', 'financeDelete', 'financeMarkPaid', 'financeMakeTodo', 'financeFromMessage',
   'financeMessages', 'financePair', 'financeUnpair', 'financeScan', 'financeExportCsv',
   'getMailInsights', 'understandMessage', 'todayBrief', 'getFolderPrefs', 'setFolderPref', 'suggestMoveTarget', 'senderContext',
-  'openSettings', 'openCompose', 'getVersions', 'checkForUpdates', 'openUpdateUrl', 'quit', 'connectivity',
+  'openSettings', 'openCompose', 'getVersions', 'checkForUpdates', 'openUpdateUrl', 'updateDownload', 'updateStatus', 'updateInstall', 'quit', 'connectivity',
   // 项目 / 时间线
   'listProjects', 'getProject', 'saveProject', 'deleteProject', 'projectFromMessage', 'projectAddMessages', 'projectRemoveMessages',
   'projectResolveSuggestion', 'projectRescan', 'projectTimeline', 'contactTimeline', 'projectSummarize', 'discoverProjects',

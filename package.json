@@ -5,6 +5,9 @@
   "main": "./out/main/index.js",
   "author": "LinKTo · OpenFlow",
   "private": true,
+  "bin": {
+    "linkto": "scripts/linkto.mjs"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
@@ -12,6 +15,10 @@
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder -mwl",
     "test:fly": "node --no-warnings --experimental-strip-types scripts/fly-selftest.mts && node --no-warnings --experimental-strip-types scripts/fly-relay-selftest.mts && npx esbuild scripts/fly-service-selftest.mts --bundle --platform=node --format=esm --outfile=out/fly-svc-test.mjs --log-level=warning && node out/fly-svc-test.mjs",
+    "test:update": "node --no-warnings --experimental-strip-types scripts/update-selftest.mts",
+    "test:vault": "node --no-warnings --experimental-strip-types scripts/vault-selftest.mts",
+    "test:all": "npm run test:fly && npm run test:update && npm run test:vault",
+    "linkto": "node scripts/linkto.mjs",
     "fly:reader-hash": "node --no-warnings --experimental-strip-types scripts/fly-reader-hash.mts"
   },
   "dependencies": {

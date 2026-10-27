@@ -1007,6 +1007,28 @@ export interface FlyOpenResult {
   burned?: boolean
 }
 
+
+// ---------- 暂存箱 / 保险箱（本机 safeStorage 加密） ----------
+
+export type VaultKind = 'note' | 'secret'
+
+/** 列表项不携带正文；正文只在 vaultReveal / vaultCopy 时由主进程取用 */
+export interface VaultItemMeta {
+  id: string
+  kind: VaultKind
+  title: string
+  createdAt: number
+  updatedAt: number
+  /** 普通暂存的短预览；保险箱条目固定为空 */
+  preview: string
+}
+
+export interface VaultAddResult {
+  ok: boolean
+  error?: string
+  item?: VaultItemMeta
+}
+
 // ---------- 邮件理解（每封一次 AI/启发式理解，列表 / 阅读页 / 今日简报 / Agent 共用） ----------
 
 export type MailSection = 'act' | 'wait' | 'fyi' | 'bundle'

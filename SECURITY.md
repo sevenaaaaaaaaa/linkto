@@ -53,7 +53,9 @@ LinkTo 是本地优先的邮件工作台。这份文档说明我们**保护什�
 - 安装包在本机构建，使用 ad-hoc 或本机自签名身份，**未经 Apple 公证**。Windows / Linux 包同样未做平台级身份签名。
 - 因此：只从官方 GitHub Releases 下载，并核对 Release 附带的 **SHA256SUMS.txt**。
 - 注意：`SHA256SUMS.txt` 与安装包在同一个 Release，能防下载损坏 / 第三方镜像替换，**防不了 GitHub Release 本身被完全篡改**；后者取决于 GitHub 账号与发布权限。
-- **没有静默自动更新**。应用只查询 GitHub Latest，并打开 GitHub 域名下的发布页/安装包，不会自行替换正在运行的二进制。
+- 新版本会在后台下载，并先取同一个 Release 的 **SHA256SUMS.txt** 校验 SHA-256；没有清单或校验失败不会安装。
+- 下载完提示「重启并安装」；选「稍后」则退出时安装。安装脚本等主进程退出后替换当前 `.app`，新版启动失败会回滚；只从 GitHub 域名下载，不加 privileged helper。
+- 自动安装目前仅 macOS 安装版；Windows / Linux 仍打开发布页手动安装。第一个带更新器的版本需要手动安装一次。
 - 发布权限就是供应链权限：GitHub 账号应开启 2FA / 硬件密钥，限制谁能创建 Release。
 
 ## 中继与网页阅读页
@@ -68,6 +70,8 @@ LinkTo 是本地优先的邮件工作台。这份文档说明我们**保护什�
 
 - 邮件库、附件、eml 默认明文保存在用户数据目录（例如 macOS 的 `~/Library/Application Support/linkto/mail-studio/`），依赖 FileVault / 登录密码与磁盘权限。萤火密信正文不写入数据库。
 - 账户密码、OAuth 令牌、AI API Key、旧版幽灵身份用 Electron safeStorage（系统钥匙串级）加密。
+- 暂存箱与保险箱整表作为一个 safeStorage 加密项；列表接口不返回正文，保险箱条目不会发送到 Litmus。
+- 「发送到 Litmus」写入的是明文 Markdown（`~/Documents/Litmus/Notes/Inbox`），密码/恢复码请用保险箱。
 - **降级路径**：钥匙串不可用时，应用会退化为 base64 混淆（文件以 `plain:` 开头）。此时这些密钥不再受 OS 级保护；请检查系统钥匙串是否可用。
 - 启用云端 AI 时，相关邮件内容会发送给你选择的模型服务商；使用本地引擎（Ollama / LM Studio / 内置模型）时内容不离开本机。
 - 普通邮件不是端到端加密：邮件服务商仍能看到内容与元数据。

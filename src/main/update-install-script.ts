@@ -1,0 +1,41 @@
+/**
+ * 更新安装脚本（独立模块，便于在 Node 里做 sh 语法/测试模式校验）。
+ * 参数：<app> <dmg> <sha256> <version>；LINKTO_UPDATE_TEST=1 时只做挂载/复制/校验，不替换。
+ */
+export const INSTALL_SCRIPT = [
+  '#!/bin/sh',
+  'set -e',
+  'APP="$1"',
+  'DMG="$2"',
+  'EXPECT="$3"',
+  'NEWVER="$4"',
+  'LOG="$HOME/Library/Logs/linkto-update.log"',
+  'TEST="$LINKTO_UPDATE_TEST"',
+  'exec >>"$LOG" 2>&1',
+  'echo "[$(date)] LinkTo update to $NEWVER"',
+  'if [ "$TEST" != "1" ]; then',
+  '  for i in $(seq 1 120); do pgrep -x LinkTo >/dev/null 2>&1 || break; sleep 1; done',
+  '  if pgrep -x LinkTo >/dev/null 2>&1; then echo "app still running"; exit 1; fi',
+  'fi',
+  'ACTUAL=$(shasum -a 256 "$DMG" | awk "{print \\$1}")',
+  'if [ "$ACTUAL" != "$EXPECT" ]; then echo "checksum mismatch"; exit 1; fi',
+  'MNT=$(mktemp -d /tmp/linkto-update.XXXXXX)',
+  'detach() { hdiutil detach "$MNT" >/dev/null 2>&1 || true; rmdir "$MNT" >/dev/null 2>&1 || true; }',
+  'trap detach EXIT',
+  'hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null',
+  'NEW="$APP.new"',
+  'OLD="$APP.old"',
+  'rm -rf "$NEW" "$OLD"',
+  'ditto "$MNT/LinkTo.app" "$NEW"',
+  'BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$NEW/Contents/Info.plist")',
+  'VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$NEW/Contents/Info.plist")',
+  'if [ "$BID" != "com.openflow.linkto" ] || [ "$VER" != "$NEWVER" ]; then echo "bundle mismatch: $BID $VER"; exit 1; fi',
+  'xattr -dr com.apple.quarantine "$NEW" >/dev/null 2>&1 || true',
+  'if [ "$TEST" = "1" ]; then rm -rf "$NEW"; echo "test ok"; exit 0; fi',
+  'mv "$APP" "$OLD"',
+  'if ! mv "$NEW" "$APP"; then mv "$OLD" "$APP"; open "$APP" || true; exit 1; fi',
+  'open "$APP" || true',
+  'STARTED=0',
+  'for i in $(seq 1 20); do if pgrep -x LinkTo >/dev/null 2>&1; then STARTED=1; break; fi; sleep 1; done',
+  'if [ "$STARTED" = "1" ]; then rm -rf "$OLD"; rm -f "$DMG"; echo "installed"; else echo "new app did not start; restoring"; rm -rf "$APP"; mv "$OLD" "$APP"; open "$APP" || true; exit 1; fi'
+].join('\n')

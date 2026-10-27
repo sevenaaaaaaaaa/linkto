@@ -11,9 +11,13 @@ const GhostWindow = lazy(() => import('./Ghost').then(m => ({ default: m.GhostWi
 const GhostRead = lazy(() => import('./GhostRead').then(m => ({ default: m.GhostRead })))
 const FlyWindow = lazy(() => import('./Fly').then(m => ({ default: m.FlyWindow })))
 const FlyRead = lazy(() => import('./FlyRead').then(m => ({ default: m.FlyRead })))
+const VaultWindow = lazy(() => import('./Vault').then(m => ({ default: m.VaultWindow })))
 
-function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread' | 'fly' | 'flyread'; prefill?: Partial<ComposeDraft>; ghostId?: string; flyToken?: string } {
+function route(): { name: 'mail' | 'compose' | 'ghost' | 'ghostread' | 'fly' | 'flyread' | 'vault'; prefill?: Partial<ComposeDraft>; ghostId?: string; flyToken?: string } {
   const hash = location.hash
+  if (hash.startsWith('#/vault')) {
+    return { name: 'vault' }
+  }
   if (hash.startsWith('#/flyread')) {
     const m = hash.match(/[?&]token=([^&]+)/)
     return { name: 'flyread', flyToken: m ? decodeURIComponent(m[1]) : undefined }
@@ -99,6 +103,8 @@ export default function App() {
         <FlyWindow />
       ) : r.name === 'flyread' ? (
         <FlyRead token={r.flyToken ?? ''} />
+      ) : r.name === 'vault' ? (
+        <VaultWindow />
       ) : r.name === 'ghostread' ? (
         r.ghostId ? <GhostRead id={r.ghostId} /> : null
       ) : (

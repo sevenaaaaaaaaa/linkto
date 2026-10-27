@@ -17,6 +17,9 @@ import type {
   FlyComposeDraft,
   FlyComposeResult,
   FlyOpenResult,
+  VaultAddResult,
+  VaultItemMeta,
+  VaultKind,
   InsightKind,
   InsightRecord,
   KbItem,
@@ -312,6 +315,12 @@ export interface LinkToApi {
   checkForUpdates(force?: boolean): Promise<import('./updates').UpdateCheckResult>
   /** 打开发布页 / 安装包下载（只接受 GitHub 域名） */
   openUpdateUrl(url: string): Promise<void>
+  /** 后台下载最新安装包，并用 SHA256SUMS.txt 校验 */
+  updateDownload(): Promise<{ ok: boolean; error?: string }>
+  /** 下载/安装进度（渲染层轮询） */
+  updateStatus(): Promise<import('./updates').UpdateDownloadStatus>
+  /** 退出并安装已下载的更新（macOS 安装版） */
+  updateInstall(): Promise<{ ok: boolean; error?: string }>
   quit(): Promise<void>
   /** 联网状态（主进程 net.isOnline）+ 断网期间暂存、待联网后同步的操作数 */
   connectivity(): Promise<{ online: boolean; pendingOps: number }>
@@ -369,8 +378,26 @@ export interface LinkToApi {
   flyRelaySetUrl(url: string): Promise<void>
   /** 复制到剪贴板，并在 45 秒后自动清空（仅当内容未被替换） */
   flyCopy(text: string): Promise<void>
+  /** 在系统浏览器打开密信链接（会先确认：读取成功即焚毁） */
+  flyOpenLink(url: string): Promise<{ ok: boolean; error?: string }>
   /** 打开萤火密信窗口 */
   openFly(): Promise<void>
+  // ---------- 暂存箱 / 保险箱 ----------
+  /** 列表不含正文；保险箱条目的正文只在主进程解密后按需返回 */
+  vaultList(): Promise<VaultItemMeta[]>
+  vaultReveal(id: string): Promise<{ ok: boolean; body?: string }>
+  vaultAdd(kind: VaultKind, title: string, body: string): Promise<VaultAddResult>
+  vaultDelete(id: string): Promise<{ ok: boolean }>
+  /** 复制条目正文到剪贴板（45 秒后自动清空） */
+  vaultCopy(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 把暂存条目写成 Markdown 放进 Litmus 库（会先确认明文落盘） */
+  vaultSendToLitmus(id: string): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** 直接把一段文字写成 Markdown 放进 Litmus 库（Fly 阅读窗用） */
+  litmusSendText(title: string, body: string): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** 当前 Litmus 库路径（不存在时返回 null） */
+  litmusVaultPath(): Promise<string | null>
+  openVault(): Promise<void>
+
   /** 打开防截屏焚毁阅读窗（正文用一次性 token 取，不走 URL） */
   openFlyReader(token: string): Promise<void>
 

@@ -89,6 +89,16 @@ export function FlyWindow() {
     setNotice({ kind: 'ok', text: label + '已复制 · 45 秒后自动清空剪贴板' })
   }
 
+  const openLink = async (url: string) => {
+    try {
+      const r = await api.flyOpenLink(url)
+      if (r.ok) setNotice({ kind: 'ok', text: '已在系统浏览器打开；这封信读取成功后会焚毁。' })
+      else if (r.error !== '已取消') setNotice({ kind: 'err', text: r.error ?? '打开失败' })
+    } catch (err) {
+      setNotice({ kind: 'err', text: '打开失败：' + (err instanceof Error ? err.message : String(err)) })
+    }
+  }
+
   const compose = async () => {
     if (busy) return
     if (!text.trim()) {
@@ -346,6 +356,12 @@ export function FlyWindow() {
                       >
                         复制
                       </button>
+                      <button
+                        onClick={() => void openLink(result.link!)}
+                        className="px-3 py-1.5 rounded-[var(--r-sm)] text-xs border border-[var(--border)] hover:bg-[var(--hover)] whitespace-nowrap"
+                      >
+                        打开
+                      </button>
                     </div>
                     {result.mode === 'link-code' && (
                       <div className="text-[11px] text-[var(--faint)] mt-1.5">
@@ -394,6 +410,12 @@ export function FlyWindow() {
                         className="px-3 py-1.5 rounded-[var(--r-sm)] text-xs border border-[var(--border)] hover:bg-[var(--hover)] whitespace-nowrap"
                       >
                         复制
+                      </button>
+                      <button
+                        onClick={() => void api.openExternal(result.portal!)}
+                        className="px-3 py-1.5 rounded-[var(--r-sm)] text-xs border border-[var(--border)] hover:bg-[var(--hover)] whitespace-nowrap"
+                      >
+                        打开
                       </button>
                     </div>
                   </div>

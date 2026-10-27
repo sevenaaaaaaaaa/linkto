@@ -5,9 +5,10 @@ import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
 import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
-import { checkForUpdates, openUpdateUrl } from './updates'
+import { checkForUpdates, getUpdateStatus, installUpdate, openUpdateUrl, startUpdateDownload } from './updates'
 import type { GhostService } from './ghost/service'
 import type { FlyService } from './fly/service'
+import type { VaultService } from './vault/service'
 import type {
   AccountConfig,
   AccountDraft,
@@ -17,6 +18,7 @@ import type {
   ComposeDraft,
   FlyComposeDraft,
   GhostSendDraft,
+  VaultKind,
   KbItem,
   MessageQuery,
   Rule,
@@ -97,12 +99,14 @@ export interface AppContext {
   backup: BackupService
   ghost: GhostService
   fly: FlyService
+  vault: VaultService
   mcp: McpService
   todoSync: TodoSyncService
   event(win: BrowserWindow, payload: unknown): void
   openCompose(prefill?: Partial<ComposeDraft>): void
   openGhost(): void
   openGhostReader(id: string): void
+  openVault(): void
   openFly(): void
   openFlyReader(token: string): void
   openSettings(tab?: string): void
@@ -114,7 +118,7 @@ export interface AppContext {
 type ApiHandler = (args: any, win: BrowserWindow) => Promise<unknown> | unknown
 
 export function registerIpc(ctx: AppContext) {
-  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost, fly } = ctx
+  const { store, appStore, engine, sender, ai, outbox, insights, agent, oauth, backup, notifier, localEngine, ghost, fly, vault } = ctx
 
   // 待办与日历同步（Apple 提醒事项 / 日历、Google、Microsoft）：启动定时同步
   const todoIntegrations = initTodoIntegrations({
@@ -734,6 +738,101 @@ export function registerIpc(ctx: AppContext) {
         })()
       }, 45_000)
     },
+
+    /** 在系统浏览器打开密信链接；一次性内容，先确认再烧 */
+    flyOpenLink: async ([url]: [string], win) => {
+      let parsed: URL
+      try {
+        parsed = new URL(String(url ?? ''))
+      } catch {
+        return { ok: false, error: '链接格式不对' }
+      }
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        return { ok: false, error: '只支持打开 http(s) 链接' }
+      }
+      const options = {
+        type: 'warning' as const,
+        title: '打开密信链接',
+        message: '会在系统浏览器里打开这封一次性密信',
+        detail: '打开后进入阅读页；成功读取即焚毁中继密文，本机不保留副本。确定现在打开？',
+        buttons: ['在浏览器打开', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      }
+      const { response } = win && !win.isDestroyed()
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options)
+      if (response !== 0) return { ok: false, error: '已取消' }
+      await shell.openExternal(parsed.toString())
+      return { ok: true }
+    },
+
+
+    // ================= 暂存箱 / 保险箱 =================
+
+    vaultList: () => vault.list(),
+
+    vaultReveal: ([id]: [string]) => {
+      const body = vault.reveal(id)
+      return body === null ? { ok: false } : { ok: true, body }
+    },
+
+    vaultAdd: ([kind, title, body]: [VaultKind, string, string]) => vault.add(kind, title, body),
+
+    vaultDelete: ([id]: [string]) => ({ ok: vault.remove(id) }),
+
+    vaultCopy: async ([id]: [string]) => {
+      const body = vault.reveal(id)
+      if (body === null) return { ok: false, error: '条目不存在或已删除' }
+      await clipboard.writeText(body)
+      setTimeout(() => {
+        void (async () => {
+          try {
+            if ((await clipboard.readText()) === body) await clipboard.writeText('')
+          } catch {
+            /* 剪贴板不可用时忽略 */
+          }
+        })()
+      }, 45_000)
+      return { ok: true }
+    },
+
+    vaultSendToLitmus: async ([id]: [string], win) => {
+      const item = vault.list().find(i => i.id === id)
+      if (!item) return { ok: false, error: '条目不存在或已删除' }
+      if (item.kind === 'secret') return { ok: false, error: '保险箱内容不会发送到 Litmus（Litmus 是明文 Markdown）' }
+      const opts = {
+        type: 'warning' as const,
+        title: '发送到 Litmus',
+        message: 'Litmus 保存的是明文 Markdown',
+        detail: '这篇暂存会以普通 .md 落进 Litmus 库，任何能读磁盘的人都能看到。密码/密钥请存保险箱。',
+        buttons: ['发送明文', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      }
+      const { response } = win && !win.isDestroyed() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+      if (response !== 0) return { ok: false, error: '已取消' }
+      return vault.sendToLitmus(id)
+    },
+
+    litmusSendText: async ([title, body]: [string, string], win) => {
+      const opts = {
+        type: 'warning' as const,
+        title: '发送到 Litmus',
+        message: 'Litmus 保存的是明文 Markdown',
+        detail: '这段内容会以普通 .md 落进 Litmus 库。密码/密钥请用「存入保险箱」，不要发到 Litmus。',
+        buttons: ['发送明文', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      }
+      const { response } = win && !win.isDestroyed() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+      if (response !== 0) return { ok: false, error: '已取消' }
+      return vault.sendText(title, body)
+    },
+
+    litmusVaultPath: () => vault.litmusRoot(),
+
+    openVault: () => ctx.openVault(),
 
     openFly: () => ctx.openFly(),
 
@@ -1750,6 +1849,9 @@ export function registerIpc(ctx: AppContext) {
     getVersions: () => ({ app: app.getVersion(), electron: process.versions.electron, node: process.versions.node }),
     checkForUpdates: ([force]: [boolean?]) => checkForUpdates(!!force),
     openUpdateUrl: ([url]: [string]) => openUpdateUrl(String(url ?? '')),
+    updateDownload: () => startUpdateDownload(),
+    updateStatus: () => getUpdateStatus(),
+    updateInstall: () => installUpdate(),
     quit: () => app.quit(),
 
     connectivity: () => ({ online: net.isOnline(), pendingOps: store.listPendingOps().length })

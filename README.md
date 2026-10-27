@@ -158,6 +158,9 @@
 - 邮件 HTML 在 Shadow DOM 里经过消毒后渲染（去掉脚本和事件属性），远程图片默认拦截，链接在系统浏览器中打开；渲染进程运行在沙箱里，启用了 contextIsolation 和 CSP。
 - Agent 修改数据前需要你确认，发信和其他对外动作每次都要确认；AI 识别出的金额、日期、链接都会和原文核对，防止编造。
 - 完整的威胁模型、萤火密信的信任边界、发布包 SHA-256 与阅读页哈希的校验方法见 [SECURITY.md](SECURITY.md)。
+- 新版本会后台下载 DMG，并用 Release 的 SHA256SUMS.txt 校验；下载完提示重启，退出时也会自动安装（目前仅 macOS 安装版）。
+- 萤火密信阅读窗可把内容暂存或存入保险箱；两者共用系统钥匙串加密存储。发送到 Litmus 会写成明文 Markdown，密码请用保险箱。
+- 终端启动器：在仓库执行 `npm link`，然后 `linkto` 选择 LinkTo / Litmus / 开发版（`linkto list` 查看）。
 
 ---
 

@@ -95,6 +95,8 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-life', group: '前往', label: '生活档案（证件 / 保险 / 年检 / 域名 / 会员 / 保修到期）', keywords: 'life admin 生活档案 到期 续期 续保 护照 证件 保险 年检 域名 会员 保修 合同 租房 个税 体检 renewal expire passport', run: () => { goView('life'); props.onClose() } },
       { id: 'nav-trace', group: '前往', label: '留痕（口头约定 / 书面确认）', keywords: 'trace 留痕 口头 约定 书面确认 凭据 微信 电话 会议 聊天记录', run: () => { goView('trace'); props.onClose() } },
       { id: 'nav-ghost', group: '前往', label: '加密沟通（幽灵信 · 端到端加密）', keywords: 'ghost 幽灵信 加密沟通 加密聊天 端到端 阅后即焚 私密 secure chat 匿名', icon: <IconGhost width={14} height={14} />, run: () => { props.onClose(); api.openGhost() } },
+      { id: 'nav-fly', group: '前往', label: '萤火密信（一次性 · 无身份）', keywords: 'fly 萤火密信 一次性 加密 链接 六词 6词 口令 暂存', icon: <IconLock width={14} height={14} />, run: () => { props.onClose(); void api.openFly() } },
+      { id: 'nav-vault', group: '前往', label: '暂存箱与保险箱', keywords: 'vault 暂存 保险箱 密码 恢复码 隐私 secret', icon: <IconLock width={14} height={14} />, run: () => { props.onClose(); void api.openVault() } },
       { id: 'act-trace-capture', group: '前往', label: '记一笔留痕…', keywords: 'trace capture 记一笔 留痕 聊天 截图 口头 约定', run: () => { props.onClose(); openTraceCapture() } },
       { id: 'act-life-scan', group: '前往', label: '生活档案：扫描最近 2 年邮件', keywords: 'life scan 到期 续期 回填', run: () => { goView('life'); props.onClose(); void api.lifeScan(730) } },
       { id: 'nav-feeds', group: '前往', label: '订阅（RSS / AI 搜索订阅）', keywords: 'feeds rss atom feed 订阅源 资讯 新闻 博客 AI 搜索 主题 行业动态', run: () => { openFeeds(); props.onClose() } },

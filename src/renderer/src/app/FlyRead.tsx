@@ -10,6 +10,7 @@ import { api } from '../lib/api'
 export function FlyRead({ token }: { token: string }) {
   const [body, setBody] = useState<string | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'empty'>('loading')
+  const [actionNotice, setActionNotice] = useState('')
   const started = useRef(false)
 
   useEffect(() => {
@@ -72,6 +73,29 @@ export function FlyRead({ token }: { token: string }) {
     window.close()
   }
 
+  const titleOf = () => '萤火密信 ' + new Date().toLocaleString('zh-CN', { hour12: false })
+
+  const saveToVault = async (kind: 'note' | 'secret') => {
+    if (body === null) return
+    try {
+      const r = await api.vaultAdd(kind, titleOf(), body)
+      setActionNotice(r.ok ? (kind === 'secret' ? '已存入保险箱' : '已暂存') : (r.error ?? '保存失败'))
+    } catch (err) {
+      setActionNotice('保存失败：' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
+  const sendToLitmus = async () => {
+    if (body === null) return
+    try {
+      const r = await api.litmusSendText(titleOf(), body)
+      if (r.ok) setActionNotice('已写入 Litmus')
+      else if (r.error !== '已取消') setActionNotice(r.error ?? '发送失败')
+    } catch (err) {
+      setActionNotice('发送失败：' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-[var(--rail-bg)] text-[var(--rail-fg)] select-none">
       <header className="drag-region pl-[76px] pr-5 py-3 border-b border-[var(--rail-line)] flex items-center gap-2 shrink-0">
@@ -100,8 +124,32 @@ export function FlyRead({ token }: { token: string }) {
         </div>
       )}
 
+      {state === 'ready' && (
+        <div className="shrink-0 px-5 py-2 border-t border-[var(--rail-line)] flex items-center gap-2 text-[11px]">
+          <button
+            onClick={() => void saveToVault('note')}
+            className="px-2.5 py-1 rounded-[var(--r-sm)] border border-[var(--rail-line)] hover:bg-white/10"
+          >
+            暂存
+          </button>
+          <button
+            onClick={() => void saveToVault('secret')}
+            className="px-2.5 py-1 rounded-[var(--r-sm)] border border-[var(--rail-line)] hover:bg-white/10"
+          >
+            存入保险箱
+          </button>
+          <button
+            onClick={() => void sendToLitmus()}
+            className="px-2.5 py-1 rounded-[var(--r-sm)] border border-[var(--rail-line)] hover:bg-white/10"
+          >
+            发送到 Litmus
+          </button>
+          {actionNotice && <span className="ml-2 text-[10px] text-[var(--rail-muted)]">{actionNotice}</span>}
+        </div>
+      )}
+
       <footer className="shrink-0 px-5 py-2.5 border-t border-[var(--rail-line)] text-[10px] text-[var(--rail-muted)] flex items-center gap-3">
-        <span>正文只在内存中，关闭即销毁</span>
+        <span>正文只在内存中；暂存 / 保险箱 / Litmus 仅在你点击后落盘</span>
         <span>截屏 / 录屏中本窗口显示为黑块</span>
         <button
           onClick={close}
