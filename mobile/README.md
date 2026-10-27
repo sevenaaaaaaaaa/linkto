@@ -85,3 +85,6 @@ npm run android
 - 没有推送通知、离线缓存、后台同步；没有深色模式
 - RFC2047 头覆盖 utf-8/latin1；GBK 头仍可能回退 latin1 显示
 - 鸿蒙接入沿用 harmony/README.md，本轮未做专门验证
+## 真机安装
+
+用 Xcode 打开 ios/LinkToMobile.xcworkspace，在 Signing & Capabilities 选择你的 Team；当前工程未写死 DEVELOPMENT_TEAM。TARGETED_DEVICE_FAMILY 已是 1,2，同一份 app 覆盖 iPhone 与 iPad。本机已验证 arm64 Release 编译通过；生成可安装包需要你的 Apple ID / 描述文件，命令行环境没有账号，无法代签。
