@@ -27,31 +27,39 @@ export class VaultService {
   constructor(private readonly deps: { appStore: AppStore }) {}
 
   private load(): VaultItem[] {
+    const raw = this.deps.appStore.loadSecret(SECRET_KEY)
+    if (!raw) return []
+    let parsed: unknown
     try {
-      const raw = this.deps.appStore.loadSecret(SECRET_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter(
-        (it): it is VaultItem =>
-          !!it && typeof it === 'object' &&
-          typeof (it as VaultItem).id === 'string' &&
-          ((it as VaultItem).kind === 'note' || (it as VaultItem).kind === 'secret') &&
-          typeof (it as VaultItem).title === 'string' &&
-          typeof (it as VaultItem).body === 'string'
-      )
+      parsed = JSON.parse(raw)
     } catch {
-      return []
+      // 损坏时不能静默返回 []：下一次 add 会把整表覆盖掉
+      throw new Error('保险箱数据损坏；已停止写入以保护现有条目')
     }
+    if (!Array.isArray(parsed)) throw new Error('保险箱数据格式异常；已停止写入')
+    return parsed.filter(
+      (it): it is VaultItem =>
+        !!it && typeof it === 'object' &&
+        typeof (it as VaultItem).id === 'string' &&
+        ((it as VaultItem).kind === 'note' || (it as VaultItem).kind === 'secret') &&
+        typeof (it as VaultItem).title === 'string' &&
+        typeof (it as VaultItem).body === 'string'
+    )
   }
 
   private save(items: VaultItem[]): void {
     this.deps.appStore.saveSecret(SECRET_KEY, JSON.stringify(items))
   }
 
-  /** 钥匙串还在解锁时禁止写入，否则会把已有条目覆盖成新列表 */
+  /** 钥匙串未就绪（idle / pending / failed）时禁止写入，否则会把已有条目覆盖成新列表 */
   private locked(): boolean {
-    return this.deps.appStore.secretsState() === 'pending'
+    return this.deps.appStore.secretsState() !== 'ready'
+  }
+
+  private lockError(): string {
+    return this.deps.appStore.secretsState() === 'failed'
+      ? '系统钥匙串不可用，已停止写入以保护已有条目'
+      : '系统钥匙串还在解锁，请稍后再试'
   }
 
   list(): VaultItemMeta[] {
@@ -73,7 +81,7 @@ export class VaultService {
   }
 
   add(kind: VaultKind, title: string, body: string): VaultAddResult {
-    if (this.locked()) return { ok: false, error: '系统钥匙串还在解锁，请稍后再试' }
+    if (this.locked()) return { ok: false, error: this.lockError() }
     const text = String(body ?? '')
     if (!text.trim()) return { ok: false, error: '内容是空的' }
     if (Buffer.byteLength(text, 'utf8') > MAX_BODY) return { ok: false, error: '内容超过 64KB' }
@@ -86,7 +94,10 @@ export class VaultService {
       createdAt: now,
       updatedAt: now
     }
-    const items = this.load()
+    let items: VaultItem[]
+    try { items = this.load() } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
     items.push(item)
     this.save(items)
     return {
@@ -97,7 +108,11 @@ export class VaultService {
 
   remove(id: string): boolean {
     if (this.locked()) return false
-    this.save(this.load().filter(it => it.id !== id))
+    let items: VaultItem[]
+    try { items = this.load() } catch { return false }
+    const next = items.filter(it => it.id !== id)
+    if (next.length === items.length) return false
+    this.save(next)
     return true
   }
 

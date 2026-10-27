@@ -12,7 +12,10 @@
       // 防闪烁：CSS 加载前同步恢复明暗偏好（auto 跟随系统）
       try {
         var p = localStorage.getItem('ms_theme') || 'auto'
-        var d = p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+        var forced = localStorage.getItem('ms_scheme') || (localStorage.getItem('ms_preset') === 'neon' ? 'dark' : '')
+        var d = forced === 'dark' || forced === 'light'
+          ? forced === 'dark'
+          : p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.dataset.theme = d ? 'dark' : 'light'
       } catch (e) {}
     </script>

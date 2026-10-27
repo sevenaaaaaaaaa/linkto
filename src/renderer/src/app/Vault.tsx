@@ -106,14 +106,18 @@ export function VaultWindow() {
 
   const remove = async (item: VaultItemMeta) => {
     if (!window.confirm('删除「' + item.title + '」？删除后不可恢复。')) return
-    const r = await api.vaultDelete(item.id)
-    if (!r.ok) {
-      setNotice('系统钥匙串还在解锁，删除失败；请稍后重试')
-      return
+    try {
+      const r = await api.vaultDelete(item.id)
+      if (!r.ok) {
+        setNotice('删除失败：条目不存在，或系统钥匙串还没准备好')
+        return
+      }
+      if (revealed?.id === item.id) setRevealed(null)
+      setNotice('已删除')
+      await reload()
+    } catch (err) {
+      setNotice('删除失败：' + (err instanceof Error ? err.message : String(err)))
     }
-    if (revealed?.id === item.id) setRevealed(null)
-    setNotice('已删除')
-    await reload()
   }
 
   const sendToLitmus = async (item: VaultItemMeta) => {

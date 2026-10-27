@@ -1,4 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, shell } from 'electron'
+import { readlinkSync, unlinkSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
@@ -170,16 +172,49 @@ const composeWindows = new Set<BrowserWindow>()
 
 const statuses = new Map<string, { status: 'connected' | 'syncing' | 'error' | 'disabled'; text: string }>()
 
+/**
+ * 清理崩溃/强杀留下的 Electron 单例锁。只在锁指向本机且 PID 已死时删，
+ * 避免把另一台机器或仍在运行的实例锁误删（设计交接文档里的已知静默退出问题）。
+ */
+function clearStaleSingletonLock(): void {
+  if (process.platform !== 'darwin') return
+  try {
+    const dir = app.getPath('userData')
+    const target = readlinkSync(join(dir, 'SingletonLock'))
+    const dash = target.lastIndexOf('-')
+    if (dash <= 0) return
+    const host = target.slice(0, dash)
+    const pid = Number(target.slice(dash + 1))
+    if (!Number.isInteger(pid) || pid <= 0 || host !== hostname()) return
+    try {
+      process.kill(pid, 0)
+      return // 进程还活着：交给 Electron 的单例逻辑
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ESRCH') return
+    }
+    for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+      try { unlinkSync(join(dir, f)) } catch { /* 不存在 */ }
+    }
+    console.warn('[single-instance] removed stale lock for dead pid', pid)
+  } catch {
+    /* 没有锁 / 不是符号链接 / 路径不可读：正常启动 */
+  }
+}
+
+clearStaleSingletonLock()
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.show()
       mainWindow.focus()
+      return
     }
+    // 窗口已被关闭（macOS 上 Cmd+W 不退出应用）：再次启动要重新开窗，而不是静默无反应
+    if (app.isReady()) createMainWindow()
   })
   // 导出与分享：linkto:// 内部链接（open-url / 二次启动参数）定位邮件
   listenAppLinks()

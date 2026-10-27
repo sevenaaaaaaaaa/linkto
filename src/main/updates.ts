@@ -76,10 +76,13 @@ function pickAsset(assets: { name?: string; browser_download_url?: string; size?
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
   let candidates: UpdateAsset[] = []
   if (mac) {
-    candidates = named.filter(a => /\.(dmg|zip)$/i.test(a.name) && (a.name.includes(arch) || !/x64/i.test(a.name)))
-    const dmg = candidates.find(a => /\.dmg$/i.test(a.name))
-    const zip = candidates.find(a => /\.zip$/i.test(a.name))
-    return dmg ?? zip ?? candidates[0] ?? null
+    // 自动安装脚本只认 DMG；zip 即使存在也不能选，否则下载完会在 hdiutil 处失败
+    const dmgs = named.filter(a => /\.dmg$/i.test(a.name))
+    if (arch === 'arm64') {
+      return dmgs.find(a => /arm64|aarch64/i.test(a.name)) ?? dmgs.find(a => !/x64|intel/i.test(a.name)) ?? null
+    }
+    // Intel：只装 x64 / 通用包；只有 arm64 时宁可返回 null，绝不把 arm64 包装进 Intel
+    return dmgs.find(a => /x64|intel/i.test(a.name)) ?? dmgs.find(a => !/arm64|aarch64/i.test(a.name)) ?? null
   }
   if (win) candidates = named.filter(a => /\.exe$/i.test(a.name))
   else if (linux) candidates = named.filter(a => /\.AppImage$/i.test(a.name))
@@ -228,10 +231,14 @@ async function downloadTo(url: string, tmp: string, totalHint: number): Promise<
   const total = Number(res.headers.get('content-length') ?? 0) || totalHint
   const hash = createHash('sha256')
   const out = createWriteStream(tmp)
+  let writeError: Error | null = null
+  // 常驻 error 监听：磁盘满 / 权限失败可能发生在任意一次 write，不能只靠 drain 时的临时监听
+  out.on('error', err => { writeError = err })
   let received = 0
   let lastTick = 0
   try {
     for await (const chunk of Readable.fromWeb(res.body as never)) {
+      if (writeError) throw writeError
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
       hash.update(buf)
       received += buf.length
@@ -249,16 +256,19 @@ async function downloadTo(url: string, tmp: string, totalHint: number): Promise<
           out.once('error', onError)
         })
       }
+      if (writeError) throw writeError
       const now = Date.now()
       if (now - lastTick > 250) {
         lastTick = now
         downloadState = { ...downloadState, received, total: total || downloadState.total }
       }
     }
+    if (writeError) throw writeError
     await new Promise<void>((resolveEnd, rejectEnd) => {
       out.once('error', rejectEnd)
-      out.end(resolveEnd)
+      out.end(() => (writeError ? rejectEnd(writeError) : resolveEnd()))
     })
+    if (writeError) throw writeError
   } catch (err) {
     out.destroy()
     throw err
@@ -288,7 +298,8 @@ export function startUpdateDownload(): Promise<{ ok: boolean; error?: string }> 
       if (!result.hasUpdate || !result.asset) return { ok: false, error: '当前没有可用更新' }
       const asset = result.asset
       const expected = await fetchChecksum(result, asset)
-      const version = result.latestVersion ?? 'unknown'
+      // 版本号来自 GitHub tag；路径分隔符等字符不能带进 userData 子目录
+      const version = (result.latestVersion ?? 'unknown').replace(/[^0-9A-Za-z._-]+/g, '_')
       const dir = join(app.getPath('userData'), 'updates', version)
       mkdirSync(dir, { recursive: true })
       const safeName = asset.name.replace(/[^A-Za-z0-9._-]+/g, '_')
@@ -341,6 +352,9 @@ export async function installUpdate(): Promise<{ ok: boolean; error?: string }> 
   try {
     const appPath = resolve(app.getPath('exe'), '../../..')
     if (!appPath.endsWith('.app')) return { ok: false, error: '无法定位当前应用包' }
+    if (appPath.includes('/AppTranslocation/')) {
+      return { ok: false, error: '当前是从下载目录临时运行，请先把 LinkTo 拖进「应用程序」再自动更新' }
+    }
     const expected = readyHash ?? (await sha256File(downloadState.file))
     const actual = await sha256File(downloadState.file)
     if (actual !== expected) return { ok: false, error: '安装包校验失败，请重新下载' }

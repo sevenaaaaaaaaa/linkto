@@ -748,8 +748,12 @@ export function registerIpc(ctx: AppContext) {
       } catch {
         return { ok: false, error: '链接格式不对' }
       }
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-        return { ok: false, error: '只支持打开 http(s) 链接' }
+      const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]'
+      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local)) {
+        return { ok: false, error: '只支持打开 https 密信链接' }
+      }
+      if (!/\/r\/[0-9a-f]{32}\/?$/i.test(parsed.pathname)) {
+        return { ok: false, error: '这不是有效的密信链接' }
       }
       const options = {
         type: 'warning' as const,

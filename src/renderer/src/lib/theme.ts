@@ -19,6 +19,8 @@ export type ThemePref = 'auto' | 'light' | 'dark'
 
 const THEME_KEY = 'ms_theme'
 const PRESET_KEY = 'ms_preset'
+/** 预设强制明暗（如霓虹暗夜）的启动缓存：首帧脚本只读 localStorage，无法 import 预设表 */
+const SCHEME_KEY = 'ms_scheme'
 const TWEAK_KEY = 'ms_tweak'
 const TWEAK_PRESETS_KEY = 'ms_tweak_presets'
 const MATCH_DARK = '(prefers-color-scheme: dark)'
@@ -51,7 +53,13 @@ function syncNativeAppearance(): void {
 
 /** 应用明暗（auto 跟随系统）；预设激活时需重跑 applyThemePreset 使其跟随新明暗 */
 export function applyTheme(): void {
-  document.documentElement.dataset.theme = resolvedTheme()
+  const theme = resolvedTheme()
+  document.documentElement.dataset.theme = theme
+  try {
+    // 只有预设强制明暗时才缓存；auto 仍由首帧脚本读 ms_theme + 系统偏好，避免系统变化后用到过期值
+    if (findPreset(activePresetId())?.scheme) localStorage.setItem(SCHEME_KEY, theme)
+    else localStorage.removeItem(SCHEME_KEY)
+  } catch { /* localStorage 不可用时忽略 */ }
   applyThemePreset()
   applyTweaks()
   syncNativeAppearance()
@@ -118,10 +126,8 @@ export function applyThemePreset(): void {
 
 export function setPreset(id: string | null): void {
   localStorage.setItem(PRESET_KEY, id ?? '')
-  // 预设可能强制明暗（scheme），切换预设时重算 data-theme
-  document.documentElement.dataset.theme = resolvedTheme()
-  applyThemePreset()
-  listeners.forEach(fn => fn())
+  // 预设可能强制明暗（scheme）；统一走 applyTheme，顺带写 ms_scheme、重跑 tweak 与订阅
+  applyTheme()
 }
 
 /** 预设 / 主题变化订阅（换肤面板刷新高亮用） */
