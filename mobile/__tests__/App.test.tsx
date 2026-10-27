@@ -12,6 +12,13 @@ jest.mock('react-native-tcp-socket', () => ({
   default: { createConnection: jest.fn() }
 }));
 
+jest.mock('react-native-webview', () => ({ WebView: () => null }));
+
+jest.mock('@react-native-clipboard/clipboard', () => ({
+  __esModule: true,
+  default: { setString: jest.fn(), getString: jest.fn(async () => '') }
+}));
+
 test('renders correctly', async () => {
   await ReactTestRenderer.act(() => {
     ReactTestRenderer.create(<App />);

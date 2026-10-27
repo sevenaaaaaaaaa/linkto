@@ -1,173 +1,322 @@
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import {
+  ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { T } from '../theme'
-import { useMail } from '../store/mail'
-import type { MailEnvelope } from '../imap/ImapLite'
+import { T, accountInitial, fmtListDate, prettyFrom } from '../theme'
+import { useMail, type MobileMessage } from '../store/mail'
+import { LIST_PANE_WIDTH, useTablet } from '../hooks/useTablet'
 import { SwipeRow } from '../ui/SwipeRow'
 import { LensPeek } from '../ui/LensPeek'
-import { LIST_PANE_WIDTH, useTablet } from '../hooks/useTablet'
 import { ReadScreen } from './ReadScreen'
-import { useState } from 'react'
+import { linkToCore } from '../native/LinkToCore'
 
-const fmtDate = (t: number) => {
-  if (!t) return ''
-  const d = new Date(t)
-  const today = new Date()
-  const sameDay = d.toDateString() === today.toDateString()
-  return sameDay
-    ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : `${d.getMonth() + 1}/${d.getDate()}`
+function MessageRow({ m, unified, selected }: { m: MobileMessage; unified: boolean; selected: boolean }) {
+  const unread = !m.flags.includes('\\Seen')
+  return (
+    <View style={[s.row, selected && s.rowSelected]}>
+      <View style={[s.avatar, { backgroundColor: m.accountColor }]}>
+        <Text style={s.avatarText}>{accountInitial(m.accountEmail)}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={s.rowTop}>
+          <Text style={[s.from, unread && s.fromUnread]} numberOfLines={1}>{prettyFrom(m.from)}</Text>
+          <Text style={s.date}>{fmtListDate(m.date)}</Text>
+        </View>
+        <View style={s.rowBottom}>
+          <Text style={[s.subject, unread && s.subjectUnread]} numberOfLines={1}>{m.subject || '（无主题）'}</Text>
+          {unread && <View style={s.unreadDot} />}
+        </View>
+        {unified && <Text style={s.accountTag} numberOfLines={1}>{m.accountEmail}</Text>}
+      </View>
+    </View>
+  )
+}
+
+function Skeleton() {
+  return (
+    <View style={{ opacity: 0.5 }}>
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <View key={i} style={s.skRow}>
+          <View style={s.skAvatar} />
+          <View style={{ flex: 1, gap: 7 }}>
+            <View style={[s.skBar, { width: '42%' }]} />
+            <View style={[s.skBar, { width: '76%' }]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  )
 }
 
 export function InboxScreen() {
   const isTablet = useTablet()
-  const [peek, setPeek] = useState<MailEnvelope | null>(null)
-  const { active, messages, status, statusText, reading, openMessage, openInbox, go, backToInbox, closeReading, toggleSeen } = useMail()
+  const {
+    accounts, messages, scope, status, statusText, reading, folders,
+    openUnified, openAccount, openFolder, openMessage, toggleSeen, refresh, search,
+    searchQuery, composeNew, setTab
+  } = useMail()
+  const [drawer, setDrawer] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState(searchQuery)
+  const [peek, setPeek] = useState<MobileMessage | null>(null)
 
-  if (!active) {
-    return (
-      <SafeAreaView style={s.root}>
-        <Text style={s.empty}>未选择账户</Text>
-        <TouchableOpacity style={[s.btn, s.btnPrimary]} onPress={() => go('accounts')}>
-          <Text style={s.btnPrimaryText}>返回账户页</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    )
+  const unread = useMemo(() => messages.filter(m => !m.flags.includes('\\Seen')).length, [messages])
+  const unified = scope.kind === 'unified'
+  const subtitle = unified ? accounts.length + ' 个账户' : scope.title
+
+  const open = (m: MobileMessage) => {
+    void linkToCore.haptic('light')
+    void openMessage(m, isTablet ? { stay: true } : undefined)
+  }
+
+  const submitSearch = () => {
+    void search(query.trim())
+    setSearchOpen(true)
+  }
+
+  const cancelSearch = () => {
+    setQuery('')
+    setSearchOpen(false)
+    void search('')
   }
 
   const list = (
     <FlatList
-      style={isTablet ? { flex: 1 } : undefined}
       data={messages}
-      keyExtractor={m => String(m.uid)}
-      contentContainerStyle={s.list}
-      refreshControl={<RefreshControl refreshing={status === 'syncing'} onRefresh={() => void openInbox(active)} tintColor={T.accent} />}
+      keyExtractor={m => m.accountId + ':' + m.uid}
+      contentContainerStyle={messages.length ? { paddingBottom: 24 } : { flexGrow: 1 }}
+      refreshControl={<RefreshControl refreshing={status === 'syncing'} onRefresh={() => void refresh()} tintColor={T.accent} />}
       ListEmptyComponent={
-        status === 'ready' ? <Text style={s.empty}>收件箱是空的</Text> : undefined
-      }
-      renderItem={({ item }) => {
-        const selected = isTablet && reading?.uid === item.uid
-        return (
-          <SwipeRow
-            seen={item.flags.includes('\\Seen')}
-            onPress={() => void openMessage(item, isTablet ? { stay: true } : undefined)}
-            onLongPress={() => setPeek(item)}
-            onToggle={() => void toggleSeen(item)}
-          >
-            <View style={[s.row, selected && s.rowSelected]}>
-              <View style={s.dotCol}>
-                {!item.flags.includes('\\Seen') && <View style={s.unreadDot} />}
-              </View>
-              <View style={s.mid}>
-                <Text style={[s.from, !item.flags.includes('\\Seen') && s.fromUnread]} numberOfLines={1}>{item.from || '(未知发件人)'}</Text>
-                <Text style={[s.subject, !item.flags.includes('\\Seen') && s.subjectUnread]} numberOfLines={2}>{item.subject || '（无主题）'}</Text>
-              </View>
-              <Text style={s.date}>{fmtDate(item.date)}</Text>
-            </View>
-          </SwipeRow>
+        status === 'syncing' ? (
+          <Skeleton />
+        ) : (
+          <View style={s.empty}>
+            <Text style={s.emptyGlyph}>{searchQuery ? '⌕' : '✉'}</Text>
+            <Text style={s.emptyTitle}>{searchQuery ? '没有匹配的邮件' : '收件箱是空的'}</Text>
+            <Text style={s.emptyText}>{searchQuery ? '换个关键词，或清空搜索' : '下拉刷新，或去设置里添加另一个账户'}</Text>
+          </View>
         )
-      }}
+      }
+      renderItem={({ item }) => (
+        <SwipeRow
+          seen={item.flags.includes('\\Seen')}
+          onPress={() => open(item)}
+          onLongPress={() => setPeek(item)}
+          onToggle={() => void toggleSeen(item)}
+        >
+          <MessageRow m={item} unified={unified} selected={isTablet && reading?.uid === item.uid && reading?.accountId === item.accountId} />
+        </SwipeRow>
+      )}
     />
   )
 
-  // 平板：左列表 + 右阅读双栏（iPad / Android 平板 / 鸿蒙 MatePad 同一布局）
+  const header = (
+    <View style={s.header}>
+      <Pressable onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Text style={s.headerGlyph}>☰</Text></Pressable>
+      <View style={{ flex: 1 }}>
+        <Text style={s.title} numberOfLines={1}>{unified ? '收件箱' : scope.title === 'INBOX' ? '收件箱' : scope.title}</Text>
+        <Text style={s.sub} numberOfLines={1}>{subtitle}{unread ? ' · ' + unread + ' 封未读' : ''}</Text>
+      </View>
+      <Pressable onPress={() => { setSearchOpen(v => !v); if (searchOpen) cancelSearch() }} hitSlop={10} style={s.headerIcon}>
+        <Text style={s.headerGlyph}>⌕</Text>
+      </Pressable>
+      {isTablet && (
+        <Pressable onPress={() => composeNew()} hitSlop={10} style={[s.headerIcon, s.composeIcon]}>
+          <Text style={s.composeGlyph}>✎</Text>
+        </Pressable>
+      )}
+    </View>
+  )
+
+  const searchBar = searchOpen ? (
+    <View style={s.searchWrap}>
+      <TextInput
+        style={s.searchInput}
+        value={query}
+        onChangeText={setQuery}
+        placeholder="搜索发件人 / 主题 / 正文"
+        placeholderTextColor={T.faint}
+        autoFocus
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        onSubmitEditing={submitSearch}
+      />
+      <Pressable onPress={cancelSearch} hitSlop={8}><Text style={s.searchCancel}>取消</Text></Pressable>
+    </View>
+  ) : null
+
+  const statusBar = status === 'syncing' ? (
+    <View style={s.statusBar}><ActivityIndicator size="small" color={T.accent} /><Text style={s.statusText}>{statusText || '同步中…'}</Text></View>
+  ) : status === 'error' ? (
+    <View style={[s.statusBar, { backgroundColor: T.dangerSoft }]}><Text style={[s.statusText, { color: T.danger }]}>{statusText || '同步失败，下拉重试'}</Text></View>
+  ) : null
+
+  const drawerView = (
+    <Modal visible={drawer} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDrawer(false)}>
+      <SafeAreaView style={s.drawerRoot}>
+        <View style={s.drawerHeader}>
+          <Text style={s.drawerTitle}>账户与文件夹</Text>
+          <Pressable onPress={() => setDrawer(false)} hitSlop={12}><Text style={s.drawerClose}>完成</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+          <Pressable
+            onPress={() => { setDrawer(false); void openUnified() }}
+            style={[s.folderRow, unified && s.folderOn]}
+          >
+            <Text style={s.folderGlyph}>▤</Text>
+            <Text style={[s.folderText, unified && s.folderTextOn]}>统一收件箱</Text>
+            <Text style={s.folderCount}>{messages.length}</Text>
+          </Pressable>
+          {accounts.map(a => (
+            <View key={a.id} style={{ marginTop: 10 }}>
+              <Pressable
+                onPress={() => { setDrawer(false); void openAccount(a) }}
+                style={s.accountHead}
+              >
+                <View style={[s.drawerAvatar, { backgroundColor: a.color }]}><Text style={s.drawerAvatarText}>{accountInitial(a.email)}</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.drawerEmail} numberOfLines={1}>{a.email}</Text>
+                  <Text style={s.drawerServer} numberOfLines={1}>{a.host}</Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => { setDrawer(false); void openFolder(a, 'INBOX') }}
+                style={[s.folderRow, s.folderIndent, scope.accountId === a.id && scope.folder === 'INBOX' && s.folderOn]}
+              >
+                <Text style={s.folderText}>收件箱</Text>
+              </Pressable>
+              {(folders[a.id] ?? []).filter(f => f.name.toUpperCase() !== 'INBOX').map(f => (
+                <Pressable
+                  key={f.name}
+                  onPress={() => { setDrawer(false); void openFolder(a, f.name) }}
+                  style={[s.folderRow, s.folderIndent, scope.accountId === a.id && scope.folder === f.name && s.folderOn]}
+                >
+                  <Text style={s.folderText} numberOfLines={1}>{f.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ))}
+          {!accounts.length && <Text style={s.drawerEmpty}>还没有账户</Text>}
+          <Pressable onPress={() => { setDrawer(false); setTab('settings') }} style={s.manageBtn}>
+            <Text style={s.manageText}>管理 / 添加账户</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  )
+
   if (isTablet) {
     return (
-      <SafeAreaView style={s.root}>
-        <View style={s.header}>
-          <TouchableOpacity onPress={backToInbox} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={s.back}>‹ 账户</Text>
-          </TouchableOpacity>
-          <Text style={s.headerTitle} numberOfLines={1}>{active.email}</Text>
-          <TouchableOpacity onPress={() => void openInbox(active)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={s.refresh}>刷新</Text>
-          </TouchableOpacity>
+      <View style={s.tabletRoot}>
+        <View style={s.tabletList}>
+          {header}
+          {searchBar}
+          {statusBar}
+          {list}
         </View>
-        {status !== 'ready' && (
-          <View style={s.statusBar}>
-            <Text style={[s.statusText, status === 'error' && { color: T.danger }]}>
-              {statusText || (status === 'syncing' ? '同步中…' : '')}
-            </Text>
-          </View>
-        )}
-        <View style={s.tabletRow}>
-          <View style={s.listPane}>{list}</View>
-          <View style={s.readPane}>
-            {reading ? (
-              <>
-                <View style={s.readPaneHeader}>
-                  <TouchableOpacity onPress={closeReading} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                    <Text style={s.back}>✕ 关闭</Text>
-                  </TouchableOpacity>
-                </View>
-                <ReadScreen embedded />
-              </>
-            ) : (
-              <View style={s.panePlaceholder}>
-                <Text style={s.panePlaceholderIcon}>✉︎</Text>
-                <Text style={s.panePlaceholderText}>从左侧选择一封邮件</Text>
+        <View style={s.tabletRead}>
+          {reading ? (
+            <View style={{ flex: 1 }}>
+              <View style={s.readTop}>
+                <Text style={s.readTopText} numberOfLines={1}>阅读</Text>
+                <Pressable onPress={() => useMail.getState().closeReading()} hitSlop={12}><Text style={s.readClose}>✕</Text></Pressable>
               </View>
-            )}
-          </View>
+              <ReadScreen embedded />
+            </View>
+          ) : (
+            <View style={s.readPlaceholder}>
+              <Text style={s.readGlyph}>▤</Text>
+              <Text style={s.readEmptyTitle}>选择一封邮件</Text>
+              <Text style={s.readEmptyText}>左侧列表保持滚动位置；阅读后可以在这里直接回复。</Text>
+            </View>
+          )}
         </View>
-        <LensPeek msg={peek} onClose={() => setPeek(null)} />
-      </SafeAreaView>
+        {drawerView}
+        {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
+      </View>
     )
   }
 
-  // 手机：单栏压栈
   return (
-    <SafeAreaView style={s.root}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={backToInbox} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={s.back}>‹ 账户</Text>
-        </TouchableOpacity>
-        <Text style={s.headerTitle} numberOfLines={1}>{active.email}</Text>
-        <TouchableOpacity onPress={() => void openInbox(active)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={s.refresh}>刷新</Text>
-        </TouchableOpacity>
-      </View>
-      {status !== 'ready' && (
-        <View style={s.statusBar}>
-          <Text style={[s.statusText, status === 'error' && { color: T.danger }]}>
-            {statusText || (status === 'syncing' ? '同步中…' : '')}
-          </Text>
-        </View>
-      )}
+    <View style={s.root}>
+      {header}
+      {searchBar}
+      {statusBar}
       {list}
-      <LensPeek msg={peek} onClose={() => setPeek(null)} />
-    </SafeAreaView>
+      <Pressable onPress={() => composeNew()} style={s.fab} onPressIn={() => void linkToCore.haptic('light')}>
+        <Text style={s.fabGlyph}>✎</Text>
+      </Pressable>
+      {drawerView}
+      {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
+    </View>
   )
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline, gap: 10 },
-  back: { fontSize: 14, color: T.accent, fontWeight: '600' },
-  headerTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: T.ink, textAlign: 'center' },
-  refresh: { fontSize: 14, color: T.accent, fontWeight: '600' },
-  statusBar: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: 'rgba(0,129,126,0.08)' },
-  statusText: { fontSize: 12, color: T.accent },
-  tabletRow: { flex: 1, flexDirection: 'row' },
-  listPane: { width: LIST_PANE_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: T.hairline },
-  readPane: { flex: 1 },
-  readPaneHeader: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
-  panePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  panePlaceholderIcon: { fontSize: 40, color: T.faint },
-  panePlaceholderText: { fontSize: 13, color: T.faint },
-  list: { paddingHorizontal: 16, paddingBottom: 30 },
-  row: { flexDirection: 'row', gap: 10, paddingVertical: 13, paddingHorizontal: 4, borderRadius: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
-  rowSelected: { backgroundColor: 'rgba(0,129,126,0.08)' },
-  dotCol: { width: 8, justifyContent: 'center' },
+  tabletRoot: { flex: 1, flexDirection: 'row', backgroundColor: T.paper },
+  tabletList: { width: LIST_PANE_WIDTH, backgroundColor: T.paper, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: T.hairline },
+  tabletRead: { flex: 1, backgroundColor: T.paper },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
+  headerIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  headerGlyph: { fontSize: 20, color: T.inkSoft },
+  composeIcon: { backgroundColor: T.accent },
+  composeGlyph: { fontSize: 18, color: T.accentInk },
+  title: { fontSize: 21, fontWeight: '700', color: T.ink, letterSpacing: 0.1 },
+  sub: { fontSize: 11, color: T.faint, marginTop: 2 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: T.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
+  searchInput: { flex: 1, backgroundColor: T.surfaceAlt, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 8, fontSize: 13, color: T.ink },
+  searchCancel: { fontSize: 13, color: T.accent },
+  statusBar: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16, paddingVertical: 6 },
+  statusText: { fontSize: 10, color: T.faint },
+  row: { flexDirection: 'row', gap: 11, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: T.paper, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
+  rowSelected: { backgroundColor: T.accentSoft },
+  avatar: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  from: { flex: 1, fontSize: 14, color: T.inkSoft },
+  fromUnread: { color: T.ink, fontWeight: '700' },
+  date: { fontSize: 10, color: T.faint },
+  rowBottom: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
+  subject: { flex: 1, fontSize: 13, color: T.faint },
+  subjectUnread: { color: T.ink, fontWeight: '600' },
   unreadDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: T.accent },
-  mid: { flex: 1 },
-  from: { fontSize: 12, color: T.faint },
-  fromUnread: { color: T.ink, fontWeight: '600' },
-  subject: { fontSize: 14, color: T.faint, marginTop: 2, lineHeight: 19 },
-  subjectUnread: { color: T.ink },
-  date: { fontSize: 11, color: T.faint, alignSelf: 'flex-start', marginTop: 3 },
-  empty: { textAlign: 'center', color: T.faint, marginTop: 80, fontSize: 13 },
-  btn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', marginHorizontal: 20 },
-  btnPrimary: { backgroundColor: T.accent },
-  btnPrimaryText: { color: T.accentInk, fontSize: 14, fontWeight: '600' }
+  accountTag: { fontSize: 9, color: T.faint, marginTop: 3 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, paddingTop: 80 },
+  emptyGlyph: { fontSize: 34, color: T.hairline },
+  emptyTitle: { fontSize: 15, color: T.ink, fontWeight: '600', marginTop: 12 },
+  emptyText: { fontSize: 12, color: T.faint, marginTop: 5, textAlign: 'center', lineHeight: 18 },
+  skRow: { flexDirection: 'row', gap: 11, paddingHorizontal: 14, paddingVertical: 14, alignItems: 'center' },
+  skAvatar: { width: 34, height: 34, borderRadius: 11, backgroundColor: T.surfaceAlt },
+  skBar: { height: 10, borderRadius: 5, backgroundColor: T.surfaceAlt },
+  fab: { position: 'absolute', right: 18, bottom: 18, width: 54, height: 54, borderRadius: 27, backgroundColor: T.accent, alignItems: 'center', justifyContent: 'center', shadowColor: T.shadow, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
+  fabGlyph: { color: T.accentInk, fontSize: 23, marginTop: -1 },
+  readTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline, backgroundColor: T.surface },
+  readTopText: { flex: 1, fontSize: 11, color: T.faint },
+  readClose: { fontSize: 16, color: T.faint, paddingHorizontal: 6 },
+  readPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36 },
+  readGlyph: { fontSize: 38, color: T.hairline },
+  readEmptyTitle: { fontSize: 16, color: T.ink, fontWeight: '600', marginTop: 14 },
+  readEmptyText: { fontSize: 12, color: T.faint, marginTop: 6, textAlign: 'center', lineHeight: 19, maxWidth: 260 },
+  drawerRoot: { flex: 1, backgroundColor: T.paper },
+  drawerHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
+  drawerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: T.ink },
+  drawerClose: { fontSize: 14, color: T.accent, fontWeight: '600' },
+  folderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 12, marginHorizontal: 10, borderRadius: 10 },
+  folderIndent: { paddingLeft: 30, paddingVertical: 9 },
+  folderOn: { backgroundColor: T.accentSoft },
+  folderGlyph: { fontSize: 16, color: T.accent },
+  folderText: { flex: 1, fontSize: 14, color: T.inkSoft },
+  folderTextOn: { color: T.accent, fontWeight: '600' },
+  folderCount: { fontSize: 11, color: T.faint },
+  accountHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 8 },
+  drawerAvatar: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  drawerAvatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  drawerEmail: { fontSize: 13, color: T.ink, fontWeight: '600' },
+  drawerServer: { fontSize: 10, color: T.faint, marginTop: 1 },
+  drawerEmpty: { padding: 20, fontSize: 13, color: T.faint },
+  manageBtn: { marginTop: 20, marginHorizontal: 20, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, paddingVertical: 12, alignItems: 'center' },
+  manageText: { fontSize: 13, color: T.accent, fontWeight: '600' }
 })

@@ -1,14 +1,13 @@
 import { useEffect } from 'react'
+import { ActivityIndicator, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useMail } from './src/store/mail'
-import { AccountsScreen } from './src/screens/AccountsScreen'
-import { InboxScreen } from './src/screens/InboxScreen'
-import { ReadScreen } from './src/screens/ReadScreen'
 import { GuardScreen } from './src/screens/GuardScreen'
+import { MainShell } from './src/screens/MainShell'
 
-/** 林可兔移动版 v0.3：原生安全内核（LinkToCore）→ 守卫 → 账户 / 收件箱 / 阅读 */
+/** 林可兔移动版 v0.4：守卫 → 多账户邮件 / 加密 / 保险箱 / 设置 */
 export default function App() {
-  const { screen, guard, init } = useMail()
+  const { guard, init } = useMail()
 
   useEffect(() => {
     void init()
@@ -16,16 +15,16 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      {guard === 'setup' ? (
+      {guard === 'unknown' ? (
+        <View style={{ flex: 1, backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color="#007C78" />
+        </View>
+      ) : guard === 'setup' ? (
         <GuardScreen mode="setup" />
       ) : guard === 'locked' || guard === 'burned' ? (
         <GuardScreen mode="locked" />
-      ) : screen === 'inbox' ? (
-        <InboxScreen />
-      ) : screen === 'read' ? (
-        <ReadScreen />
       ) : (
-        <AccountsScreen />
+        <MainShell />
       )}
     </SafeAreaProvider>
   )

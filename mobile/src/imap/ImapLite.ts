@@ -31,6 +31,8 @@ export interface MailEnvelope {
   subject: string
   from: string
   to: string
+  /** Message-ID（回复时写 In-Reply-To） */
+  messageId?: string
 }
 
 type LineHandler = (line: string) => void
@@ -104,11 +106,12 @@ function fixUtf8(s: string): string {
 }
 
 /** 从一串原始头字段文本提取 FROM/TO/SUBJECT/DATE */
-function parseHeaderBlock(raw: string): { from: string; to: string; subject: string; date: number } {
+function parseHeaderBlock(raw: string): { from: string; to: string; subject: string; date: number; messageId?: string } {
   let from = ''
   let to = ''
   let subject = ''
   let date = 0
+  let messageId: string | undefined
   // 折叠行拼接：以空白开头的行为上一行的延续
   const unfolded = raw.replace(/\r?\n[ \t]+/g, ' ')
   for (const line of unfolded.split(/\r?\n/)) {
@@ -122,14 +125,14 @@ function parseHeaderBlock(raw: string): { from: string; to: string; subject: str
     else if (name === 'date') {
       const t = Date.parse(value)
       if (!isNaN(t)) date = t
-    }
+    } else if (name === 'message-id') messageId = value
   }
   // from/to 只取地址与人名的可读形式
   const pretty = (v: string) => {
     const mm = v.match(/^"?([^"<]*)"?\s*<([^>]+)>/)
     return mm ? (mm[1].trim() ? `${mm[1].trim()} <${mm[2]}>` : mm[2]) : v
   }
-  return { from: pretty(from), to: pretty(to), subject, date }
+  return { from: pretty(from), to: pretty(to), subject, date, ...(messageId ? { messageId } : {}) }
 }
 
 export class ImapLite {
@@ -322,6 +325,15 @@ export class ImapLite {
     return { exists }
   }
 
+  private async fetchEnvelopesByUids(uids: number[]): Promise<MailEnvelope[]> {
+    if (!uids.length) return []
+    const range = uids.join(',')
+    const r = await this.cmd(
+      `FETCH ${range} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID)])`
+    )
+    return ImapLite.parseEnvelopes(r.lines)
+  }
+
   /** 收件箱列表：SEARCH ALL 取最大 uid 往回拉 max 封 */
   async fetchEnvelopes(mailbox: string, max = 50): Promise<MailEnvelope[]> {
     await this.selectMailbox(mailbox)
@@ -332,12 +344,30 @@ export class ImapLite {
       .filter(n => !isNaN(n))
       .sort((a, b) => b - a)
       .slice(0, max)
-    if (!uids.length) return []
-    const range = uids.join(',')
-    const r = await this.cmd(
-      `FETCH ${range} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`
-    )
-    return ImapLite.parseEnvelopes(r.lines)
+    return this.fetchEnvelopesByUids(uids)
+  }
+
+  /** IMAP SEARCH TEXT；取最近的 max 封 */
+  async searchEnvelopes(mailbox: string, query: string, max = 50): Promise<MailEnvelope[]> {
+    await this.selectMailbox(mailbox)
+    const q = ImapLite.quote(query.replace(/[\r\n]+/g, ' ').slice(0, 200))
+    const s = await this.cmd(`SEARCH TEXT ${q}`)
+    const uids = s.lines
+      .filter(l => l.startsWith('* SEARCH'))
+      .flatMap(l => l.slice(8).trim().split(/\s+/).map(Number))
+      .filter(n => !isNaN(n))
+      .sort((a, b) => a - b)
+      .slice(-max)
+    return this.fetchEnvelopesByUids(uids)
+  }
+
+  /** 取完整 MIME 原文（阅读页解析 HTML / 附件 / 纯文本） */
+  async fetchRaw(mailbox: string, uid: number): Promise<string> {
+    await this.selectMailbox(mailbox)
+    const parts: string[] = []
+    const r = await this.cmd(`FETCH ${uid} (BODY.PEEK[])`, chunk => parts.push(chunk), 60000)
+    if (!r.ok) throw new Error('正文获取失败')
+    return parts.join('')
   }
 
   /** 解析 FETCH 响应（literal 以 \u0000LIT\u0000 前缀行嵌入） */
@@ -349,7 +379,7 @@ export class ImapLite {
     const flush = () => {
       if (!cur) return
       const h = parseHeaderBlock(headerRaw)
-      out.push({ ...cur, subject: h.subject, from: h.from, to: h.to, date: cur.date || h.date })
+      out.push({ ...cur, subject: h.subject, from: h.from, to: h.to, date: cur.date || h.date, ...(h.messageId ? { messageId: h.messageId } : {}) })
       cur = null
       headerRaw = ''
       inHeader = false
