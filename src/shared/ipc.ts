@@ -128,6 +128,10 @@ export interface LinkToApi {
   // ---------- 设置 ----------
   getGeneralSettings(): Promise<GeneralSettings>
   setGeneralSettings(s: GeneralSettings): Promise<void>
+  /** 本机已安装的终端应用（macOS：Terminal / iTerm / Warp / WezTerm …） */
+  terminalApps(): Promise<import('./terminal').TerminalAppInfo[]>
+  /** 在选定的（或设置里的默认）终端打开数据目录；appId 省略时用设置 */
+  terminalOpen(appId?: string): Promise<import('./terminal').TerminalOpenResult>
   /** 把应用当前明暗告诉主进程，让 macOS vibrancy 材质与主题一致 */
   setNativeAppearance(source: 'system' | 'light' | 'dark'): Promise<void>
   /** macOS SF Symbols 运行时渲染结果（symbol 名 → data URL）；非 macOS / 失败返回 {} */

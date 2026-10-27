@@ -42,6 +42,7 @@ import { BUILTIN_CONNECTORS } from './connectors/builtin'
 import { installUserConnector, listUserConnectorFiles, loadUserConnectors, removeUserConnector, USER_CONNECTOR_TEMPLATE } from './connectors/user-loader'
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-drive/proton'
+import { detectTerminalApps, defaultTerminalId, openTerminalAt } from './terminal'
 import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
 import { todoFromMessage } from './todo-collect'
@@ -1086,6 +1087,14 @@ export function registerIpc(ctx: AppContext) {
       applyLoginItem(s.launchAtLogin)
       // 关闭 Screener：历史待审 / 已拒记录全部放行，否则过滤查询继续吞邮件（held 判定已同步看开关）
       if (!s.screenerEnabled) store.clearSenderScreening()
+    },
+    terminalApps: () => detectTerminalApps(),
+    terminalOpen: async ([appId]: [string?]) => {
+      const apps = detectTerminalApps()
+      const configured = appStore.get('general', DEFAULT_GENERAL).terminalApp
+      const target = apps.find(a => a.id === (appId || configured)) ?? apps.find(a => a.id === defaultTerminalId(apps)) ?? apps[0]
+      if (!target) return { ok: false, error: '没有检测到本机终端应用' }
+      return openTerminalAt(target.path, appStore.dataDir)
     },
     getNotificationSettings: () => appStore.get('notifications', DEFAULT_NOTIFICATIONS),
     setNotificationSettings: ([s]: [NotificationSettings]) => appStore.set('notifications', s),

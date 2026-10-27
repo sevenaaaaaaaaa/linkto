@@ -4,6 +4,12 @@
 
 桌面版与移动版分别编号：本文件的版本号指桌面版（macOS / Windows / Linux）；移动版（Android / iOS / 鸿蒙）尚未单独发布，其进度在条目中注明「移动版」。
 
+### 0.6.1 — 2026-10-28  修复：终端应用可选
+
+- 设置 → 通用 → 终端会动态列出本机已安装的终端应用（Terminal / iTerm2 / Warp / WezTerm / Alacritty / kitty / Ghostty / Hyper / Tabby），并记住默认选择；不再写死系统 Terminal。
+- 菜单「显示 → 在终端中打开数据目录」按探测结果生成子菜单；Terminal 与 Warp 并存时可直接选其中一个，也可以走设置里的默认。
+- 打开的是本机数据目录（附件 / eml / 数据库），路径作为 argv 传给 `/usr/bin/open`，不经过 shell 拼接。
+
 ## 0.6.0 — 2026-10-28 · 后台更新、暂存箱与保险箱
 
 **后台更新**

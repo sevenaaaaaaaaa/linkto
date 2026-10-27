@@ -6,6 +6,7 @@ import {
   activePresetId, setPreset, getThemePref, setThemePref, onThemeChange, type ThemePref
 } from '../../lib/theme'
 import type { GeneralSettings } from '@shared/types'
+import type { TerminalAppInfo } from '@shared/terminal'
 import type { UpdateCheckResult, UpdateDownloadStatus } from '@shared/updates'
 
 export function SectionTitle(props: { children: React.ReactNode }) {
@@ -59,9 +60,12 @@ export function Select(props: { value: string; onChange(v: string): void; option
 
 export function GeneralTab() {
   const [s, setS] = useState<GeneralSettings | null>(null)
+  const [terminals, setTerminals] = useState<TerminalAppInfo[]>([])
+  const [terminalNote, setTerminalNote] = useState('')
 
   useEffect(() => {
     void api.getGeneralSettings().then(setS)
+    void api.terminalApps().then(setTerminals).catch(() => setTerminals([]))
   }, [])
 
   if (!s) return null
@@ -109,6 +113,37 @@ export function GeneralTab() {
       <SettingRow label="Dock 未读角标">
         <Toggle checked={s.dockBadge} onChange={v => update({ dockBadge: v })} />
       </SettingRow>
+
+      <SectionTitle>终端</SectionTitle>
+      <SettingRow
+        label="打开终端时使用"
+        desc="列表来自本机实际安装的终端。也可以在菜单「显示 → 在终端中打开数据目录」里为这一次临时选另一个。"
+      >
+        {terminals.length ? (
+          <Select
+            value={terminals.some(t => t.id === s.terminalApp) ? (s.terminalApp ?? '') : ''}
+            onChange={v => update({ terminalApp: v })}
+            options={[
+              { value: '', label: '自动（' + (terminals.find(t => t.id === 'com.apple.Terminal')?.name ?? terminals[0]?.name ?? '终端') + '）' },
+              ...terminals.map(t => ({ value: t.id, label: t.name + (t.version ? ' · ' + t.version : '') }))
+            ]}
+          />
+        ) : (
+          <span className="text-xs" style={{ color: 'var(--faint)' }}>没有检测到终端应用</span>
+        )}
+      </SettingRow>
+      <SettingRow label="在终端中打开数据目录" desc="打开 ~/Library/Application Support/linkto/mail-studio，方便查看附件、eml 与数据库。">
+        <button
+          onClick={() => {
+            setTerminalNote('')
+            void api.terminalOpen().then(r => setTerminalNote(r.ok ? '已打开' : r.error ?? '打开失败'))
+          }}
+          className="no-drag text-sm px-3 py-1.5 rounded-lg bg-zinc-100"
+        >
+          打开
+        </button>
+      </SettingRow>
+      {terminalNote && <div className="text-xs mt-1" style={{ color: 'var(--faint)' }}>{terminalNote}</div>}
 
       <SectionTitle>快捷键</SectionTitle>
       <div className="text-sm text-zinc-600 leading-loose">

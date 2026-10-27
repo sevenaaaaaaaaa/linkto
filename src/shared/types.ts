@@ -258,6 +258,8 @@ export interface GeneralSettings {
   cleanupNewsletterDays?: number
   /** 定期整理：已读的通知类邮件 N 天后自动归档（0 / 缺省 = 关闭） */
   cleanupNotificationDays?: number
+  /** 在终端中打开时使用的终端应用 id（本机探测结果）；空 = 自动 */
+  terminalApp?: string
 }
 
 export interface NotificationSettings {

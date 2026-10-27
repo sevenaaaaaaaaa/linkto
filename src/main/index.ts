@@ -28,6 +28,7 @@ import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
 import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
 import { checkForUpdates, compareVersions, startUpdateDownload, getUpdateStatus, installUpdate, hasReadyUpdate, isUpdateInstalling, cleanupOldUpdateBundle } from './updates'
+import { detectTerminalApps, defaultTerminalId, openTerminalAt } from './terminal'
 import { registerIpc, type AppContext } from './ipc'
 import { McpService } from './mcp/server'
 import { TodoSyncService, notifyLocalChange } from './todo-sync'
@@ -770,8 +771,36 @@ function updateDockBadge() {
   setTrayUnread(unread)
 }
 
+async function openTerminalFromMenu(appId?: string): Promise<void> {
+  const apps = detectTerminalApps()
+  const configured = appStore.get('general', DEFAULT_GENERAL).terminalApp
+  const target = apps.find(a => a.id === (appId || configured)) ?? apps.find(a => a.id === defaultTerminalId(apps)) ?? apps[0]
+  if (!target) {
+    dialog.showErrorBox('没有找到终端', '本机没有检测到可用的终端应用。')
+    return
+  }
+  const r = await openTerminalAt(target.path, appStore.dataDir)
+  if (!r.ok) dialog.showErrorBox('打开终端失败', r.error ?? '未知错误')
+}
+
+/** 菜单里动态列出本机已安装的终端；Terminal / Warp / iTerm 都在时逐个可选 */
+function terminalMenuItem(): Electron.MenuItemConstructorOptions | null {
+  if (process.platform !== 'darwin') return null
+  const apps = detectTerminalApps()
+  if (!apps.length) return null
+  return {
+    label: '在终端中打开数据目录',
+    submenu: [
+      { label: '默认（按设置）', click: () => void openTerminalFromMenu() },
+      { type: 'separator' },
+      ...apps.map(a => ({ label: a.name, click: () => void openTerminalFromMenu(a.id) }))
+    ]
+  }
+}
+
 function buildAppMenu() {
   const isMac = process.platform === 'darwin'
+  const terminalItem = terminalMenuItem()
   const devItems: Electron.MenuItemConstructorOptions[] = app.isPackaged
     ? []
     : [{ type: 'separator' }, { role: 'toggleDevTools', label: '开发者工具' }]
@@ -841,6 +870,7 @@ function buildAppMenu() {
         { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
+        ...(terminalItem ? [terminalItem] : []),
         ...(NATIVE_SHELL_ENABLED ? [{ label: '自定义工具栏…', click: () => macShellCustomize() }] : []),
         ...devItems
       ]

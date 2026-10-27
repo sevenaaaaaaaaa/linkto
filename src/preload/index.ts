@@ -19,7 +19,7 @@ const METHOD_NAMES = [
   'sendMail', 'scheduleSend', 'cancelScheduledSend', 'listScheduledSends',
   'saveDraft', 'listDrafts', 'deleteDraft', 'pickFiles', 'openExternal',
   'suggestRecipients', 'aiComposeAssist',
-  'getGeneralSettings', 'setGeneralSettings', 'setNativeAppearance', 'systemSymbols', 'macShellSetTitle', 'macShellSetSearch', 'macShellFocusSearch', 'macShellCustomize', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'notifyTestResult', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove', 'aiLocalImportCustom',
+  'getGeneralSettings', 'setGeneralSettings', 'terminalApps', 'terminalOpen', 'setNativeAppearance', 'systemSymbols', 'macShellSetTitle', 'macShellSetSearch', 'macShellFocusSearch', 'macShellCustomize', 'getNotificationSettings', 'setNotificationSettings', 'notifyTest', 'notifyTestResult', 'getAISettings', 'setAISettings', 'aiProbeLocal', 'aiListModels', 'aiLocalStatus', 'aiLocalDownload', 'aiLocalCancelDownload', 'aiLocalRemove', 'aiLocalImportCustom',
   'listSignatures', 'saveSignature', 'deleteSignature',
   'listTemplates', 'saveTemplate', 'deleteTemplate',
   'listRules', 'saveRule', 'deleteRule', 'reorderRules',
