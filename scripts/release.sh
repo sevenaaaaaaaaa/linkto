@@ -51,8 +51,8 @@ notes_body="$(awk -v v="$VERSION" '
   grab && /^## / { exit }
   grab && /^### / { exit }
   grab { print; next }
-  # Patch: the single "### X.Y.Z — …" line.
-  $0 ~ "^### " esc " " { print; exit }
+  # Patch: the whole "### X.Y.Z — …" block (bullets included), up to the next heading.
+  $0 ~ "^### " esc " " { grab = 1; print; next }
 ' CHANGELOG.md)"
 [ -n "$notes_body" ] || die "CHANGELOG.md has no '## ${VERSION} — …' section or '### ${VERSION} — …' line; write it first"
 heading="$(printf '%s\n' "$notes_body" | head -1)"
