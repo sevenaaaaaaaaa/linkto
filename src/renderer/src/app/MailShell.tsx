@@ -320,6 +320,8 @@ export function MailShell() {
 
   return (
     <div className="h-full flex">
+      {/* 原生壳：整条 52px 标题带铺一层拖动区（原生工具栏空白处的事件会落到渲染进程） */}
+      {nativeShell && <div className="app-drag-strip" aria-hidden />}
       <AccountRail />
       <Sidebar />
       <FolderManager />

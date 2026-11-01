@@ -745,6 +745,30 @@ body::before {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+/* 拖动区里的可交互元素必须让位：否则 mousedown 被窗口拖动吞掉，按钮 / 输入框点不动 */
+.drag-region :is(button, a, input, textarea, select, label, [role='button'], [role='tab'], [role='option'], [role='tabpanel'], [tabindex], [contenteditable='true']) {
+  -webkit-app-region: no-drag;
+}
+
+/* 原生壳标题带：NSToolbar 的空白背景是透明的，鼠标事件直接落到 Web 层，
+   只有工具栏按钮会吃掉事件。渲染进程不在这里铺一条 drag 带，整条标题带就拖不动窗口。 */
+.app-drag-strip {
+  display: none;
+}
+html[data-native-shell='1'] .app-drag-strip {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+  z-index: 30;
+  -webkit-app-region: drag;
+}
+/* 全屏时原生工具栏隐藏、Web 内容顶到 0，这条带会盖住真实内容 */
+html[data-native-shell='1'][data-native-shell-full='1'] .app-drag-strip {
+  display: none;
+}
 
 ::-webkit-scrollbar {
   width: 8px;

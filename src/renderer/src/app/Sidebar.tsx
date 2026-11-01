@@ -334,7 +334,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
+      <nav className="drag-region flex-1 min-h-0 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         {layout.core.map(entry)}
         {pendingCount > 0 && (
           <Row icon={<IconShield {...ico} />} label="待审批发件人" unread={pendingCount} active={is('screener')} onClick={() => go({ kind: 'screener', title: '待审批发件人' })} />
