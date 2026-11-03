@@ -28,7 +28,7 @@ import { FlyService } from './fly/service'
 import { VaultService } from './vault/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
-import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, type MacShellAction } from './mac-shell'
+import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, macShellSetMainWindow, macShellSetTrafficLights, type MacShellAction } from './mac-shell'
 import { checkForUpdates, compareVersions, startUpdateDownload, getUpdateStatus, installUpdate, hasReadyUpdate, isUpdateInstalling, cleanupOldUpdateBundle } from './updates'
 import { detectTerminalApps, defaultTerminalId, openTerminalAt } from './terminal'
 import { registerIpc, type AppContext } from './ipc'
@@ -456,6 +456,9 @@ function createMainWindow() {
   })
   let nativeShell = false
   if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachMacShell(mainWindow, handleMacShellAction)
+  // 红绿灯三键默认隐藏（hiddenInset 压内容区标题带）；只在极简模式时显示，见 mac-shell 注释
+  macShellSetMainWindow(mainWindow)
+  macShellSetTrafficLights(false)
   installWindowState(mainWindow)
   if (nativeShell) {
     // NSToolbar 会给窗口帧加 52px：布局完成后再收一次，避免底边被挤出屏幕

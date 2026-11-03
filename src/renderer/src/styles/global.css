@@ -236,6 +236,13 @@ html[data-native-material='1'][data-native-shell='1'] body {
   background-repeat: no-repeat;
   background-position: top;
 }
+/* 设置窗口：标题带整行用右栏（内容区）底色——左栏磨砂色只盖到侧栏会把内容区上方染深一条 */
+html[data-native-material='1'][data-native-shell='1'] body.settings-window {
+  background: linear-gradient(90deg, var(--bg) 0, var(--bg) 100%);
+  background-size: 100% 52px;
+  background-repeat: no-repeat;
+  background-position: top;
+}
 /* 全屏时原生工具栏隐藏、内容回到顶部，补色带不再存在 */
 html[data-native-material='1'][data-native-shell='1'][data-native-shell-full='1'] body {
   background: none;

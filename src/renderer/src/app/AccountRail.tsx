@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMail, type Scope } from '../stores/mail'
 import { api } from '../lib/api'
 import { goView, goAgent, useView } from '../lib/route'
@@ -64,6 +64,30 @@ export function AccountRail() {
     }
   })
   const [aiMenu, setAiMenu] = useState(false)
+  // 加密沟通（幽灵信）做成隐藏入口：连点 Logo ≥3 次触发；900ms 内不到 3 次则按正常 Logo 语义走
+  const logoClicks = useRef(0)
+  const logoTimer = useRef<number>(0)
+  const onLogoClick = () => {
+    logoClicks.current += 1
+    if (logoClicks.current >= 3) {
+      window.clearTimeout(logoTimer.current)
+      logoClicks.current = 0
+      setAiMenu(false)
+      void api.openGhost()
+      return
+    }
+    window.clearTimeout(logoTimer.current)
+    logoTimer.current = window.setTimeout(() => {
+      if (logoClicks.current < 3) {
+        if (logoClicks.current === 2) {
+          window.dispatchEvent(new CustomEvent('ms:toast', { detail: '再点一次 Logo，进入加密沟通（幽灵信）' }))
+        }
+        if (collapsed) setAiMenu(o => !o)
+        else setSidebarCollapsed(true)
+      }
+      logoClicks.current = 0
+    }, 900)
+  }
 
   const toggleAccountsHidden = () => {
     setAccountsHidden(h => {
@@ -121,12 +145,12 @@ export function AccountRail() {
 
   return (
     /* 外层与侧栏同底色：顶部 52px 是和侧栏连成一体的标题带，红绿灯落在这里（不再受深色栏宽度约束）；
-       深色账户栏从标题带下方开始，四周留边做成圆角柱 */
+       深色账户柱与右栏同节奏：圆角收为 r-md（10px），与列表 / 阅读区卡片的圆角统一 */
     <div className="w-[var(--rail-w)] shrink-0 h-full flex flex-col" style={{ background: 'var(--native-shell-bg, var(--bg))' }}>
       <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] w-full shrink-0" />
       <nav
         aria-label="账户"
-        className="drag-region flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-lg)] flex flex-col items-center overflow-y-auto"
+        className="drag-region flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-md)] flex flex-col items-center overflow-y-auto"
         style={{ background: 'var(--rail-bg)', color: 'var(--rail-fg)', scrollbarWidth: 'none' }}
       >
         <div className="flex flex-col items-center gap-2.5 pt-3">
@@ -194,9 +218,10 @@ export function AccountRail() {
             </button>
           )}
           {/* Logo 常驻慢转，职责随状态切换：
-              展开态点击 = 开启极简模式（侧栏收进 Dock）；折叠态点击 = AI 入口菜单 */}
+              展开态点击 = 开启极简模式（侧栏收进 Dock）；折叠态点击 = AI 入口菜单；
+              连点 ≥3 次 = 加密沟通（幽灵信）的隐藏入口 */}
           <button
-            onClick={() => (collapsed ? setAiMenu(o => !o) : setSidebarCollapsed(true))}
+            onClick={onLogoClick}
             title={collapsed ? 'AI 入口：Agent · 简报 · AI 搜索订阅' : '极简模式：把侧栏收进这条 Dock（再点 Dock 底部「›」展开）'}
             aria-label={collapsed ? 'AI 入口' : '开启极简模式'}
             aria-expanded={collapsed ? aiMenu : undefined}

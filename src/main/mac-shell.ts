@@ -83,12 +83,34 @@ export function macShellFocusSearch(): boolean {
   }
 }
 
-/** 打开主窗口工具栏的原生自定义面板（拖动排序 / 显示隐藏，系统自动保存） */
+/** 打开主窗口原生工具栏的原生自定义面板（拖动排序 / 显示隐藏，系统自动保存） */
 export function macShellCustomize(): boolean {
   if (!attached || !mod) return false
   try {
     return mod.customize()
   } catch {
     return false
+  }
+}
+
+let mainWin: Electron.BrowserWindow | null = null
+
+/** 记住主窗口句柄，供红绿灯三键显隐使用 */
+export function macShellSetMainWindow(win: Electron.BrowserWindow): void {
+  mainWin = win
+}
+
+/**
+ * 红绿灯三键默认隐藏（hiddenInset 会压住内容区标题带）；
+ * 只在极简模式（侧栏收进 Dock，账户栏标题带空出）时显示。
+ * Web 壳没有原生工具栏，三键照常显示（visible = true）。
+ */
+export function macShellSetTrafficLights(visible: boolean): void {
+  if (process.platform !== 'darwin') return
+  const show = attached ? visible : true
+  try {
+    mainWin?.setWindowButtonVisibility(show)
+  } catch {
+    /* 窗口已销毁时静默 */
   }
 }

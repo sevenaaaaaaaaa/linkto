@@ -142,6 +142,8 @@ export interface LinkToApi {
   macShellFocusSearch(): Promise<void>
   /** 打开主窗口原生工具栏自定义面板（拖动排序 / 显示隐藏） */
   macShellCustomize(): Promise<boolean>
+  /** 极简模式（侧栏收进 Dock）时显示红绿灯三键，否则隐藏（默认不出现） */
+  macShellSetSidebarCollapsed(collapsed: boolean): Promise<void>
   getNotificationSettings(): Promise<NotificationSettings>
   setNotificationSettings(s: NotificationSettings): Promise<void>
   notifyTest(): Promise<boolean>

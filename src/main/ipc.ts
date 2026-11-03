@@ -4,7 +4,7 @@ import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
-import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
+import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize, macShellSetTrafficLights } from './mac-shell'
 import { checkForUpdates, getUpdateStatus, installUpdate, openUpdateUrl, startUpdateDownload } from './updates'
 import type { GhostService } from './ghost/service'
 import type { FlyService } from './fly/service'
@@ -1085,6 +1085,7 @@ export function registerIpc(ctx: AppContext) {
       macShellFocusSearch()
     },
     macShellCustomize: () => macShellCustomize(),
+    macShellSetSidebarCollapsed: ([collapsed]: [boolean]) => macShellSetTrafficLights(collapsed === true),
     setGeneralSettings: ([s]: [GeneralSettings]) => {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效

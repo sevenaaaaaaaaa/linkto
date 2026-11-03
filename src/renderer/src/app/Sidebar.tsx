@@ -10,7 +10,7 @@ import { useLifeBadge } from './life/LifeStrip'
 import { useTraceBadge } from './trace/TraceStrip'
 import {
   IconFlag, IconTrash, IconArchive, IconSend, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost, IconLock
+  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -327,21 +327,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="px-2 pb-2 shrink-0">
-        <button
-          onClick={() => api.openGhost()}
-          title="加密沟通（幽灵信）：端到端加密 · 阅后即焚 · 不绑账号"
-          className="w-full h-9 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] border transition-all hover:brightness-[1.06]"
-          style={{ background: 'linear-gradient(135deg, var(--rail-bg), color-mix(in oklab, var(--rail-bg) 82%, var(--accent)))', borderColor: 'var(--rail-line)', color: 'var(--rail-fg)', boxShadow: 'var(--shadow-sm)' }}
-        >
-          <IconLock width={15} height={15} style={{ color: 'var(--rail-fg)' }} />
-          <span className="flex-1 text-left text-sm font-medium">加密沟通</span>
-          <span className="text-2xs px-1.5 py-0.5 rounded-[var(--r-xs)]" style={{ background: 'var(--rail-line)', color: 'var(--rail-fg)' }}>
-            幽灵信
-          </span>
-        </button>
-      </div>
-
       <nav className="drag-region flex-1 min-h-0 overflow-y-auto px-2 pb-3" aria-label="邮箱导航">
         {layout.core.map(entry)}
         {pendingCount > 0 && (
@@ -461,14 +446,6 @@ export function Sidebar() {
           style={{ color: editing ? 'var(--accent-ink)' : 'var(--faint)' }}
         >
           <IconList width={15} height={15} />
-        </button>
-        <button
-          onClick={() => api.openGhost()}
-          title="加密沟通（幽灵信）· 端到端加密阅后即焚"
-          className="icon-btn w-7 h-7 inline-flex items-center justify-center"
-          style={{ color: 'var(--faint)' }}
-        >
-          <IconGhost width={15} height={15} />
         </button>
         <button onClick={() => api.openSettings()} title="设置（⌘,）" className="icon-btn w-7 h-7 inline-flex items-center justify-center" style={{ color: 'var(--faint)' }}>
           <IconSettings width={15} height={15} />

@@ -15,4 +15,6 @@ export function initNativePlatform(): void {
   if (isSettings || !isSheet) el.dataset.nativeMaterial = '1'
   // 主进程成功挂上 NSToolbar 时，loadFile 会带 ?nativeShell=1；Web 顶部让出原生工具栏高度
   if (!isSheet && new URLSearchParams(location.search).get('nativeShell') === '1') el.dataset.nativeShell = '1'
+  // 设置窗标题带配色单独处理：整行跟内容区底色走（见 global.css .settings-window）
+  if (isSettings) document.body.classList.add('settings-window')
 }
