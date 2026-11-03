@@ -93,23 +93,15 @@ export function macShellCustomize(): boolean {
   }
 }
 
-let mainWin: Electron.BrowserWindow | null = null
-
-/** 记住主窗口句柄，供红绿灯三键显隐使用 */
-export function macShellSetMainWindow(win: Electron.BrowserWindow): void {
-  mainWin = win
-}
-
 /**
- * 红绿灯三键默认隐藏（hiddenInset 会压住内容区标题带）；
- * 只在极简模式（侧栏收进 Dock，账户栏标题带空出）时显示。
- * Web 壳没有原生工具栏，三键照常显示（visible = true）。
+ * 红绿灯三键常态隐藏（所有窗口）：hiddenInset 的三键会压住内容区标题带，
+ * 且极简模式下超出 dock 宽度、幽灵信窗口挤占标题。
+ * 唤出走渲染层 TrafficHotzone（hover / 连击左上角），经 setTrafficLights IPC 临时显示。
  */
-export function macShellSetTrafficLights(visible: boolean): void {
+export function hideTrafficLights(win: Electron.BrowserWindow): void {
   if (process.platform !== 'darwin') return
-  const show = attached ? visible : true
   try {
-    mainWin?.setWindowButtonVisibility(show)
+    win.setWindowButtonVisibility(false)
   } catch {
     /* 窗口已销毁时静默 */
   }

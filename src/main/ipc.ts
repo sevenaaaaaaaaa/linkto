@@ -4,7 +4,7 @@ import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
 import { systemSymbols } from './system-symbols'
-import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize, macShellSetTrafficLights } from './mac-shell'
+import { macShellSetTitle, macShellSetSearch, macShellFocusSearch, macShellCustomize } from './mac-shell'
 import { checkForUpdates, getUpdateStatus, installUpdate, openUpdateUrl, startUpdateDownload } from './updates'
 import type { GhostService } from './ghost/service'
 import type { FlyService } from './fly/service'
@@ -1085,7 +1085,13 @@ export function registerIpc(ctx: AppContext) {
       macShellFocusSearch()
     },
     macShellCustomize: () => macShellCustomize(),
-    macShellSetSidebarCollapsed: ([collapsed]: [boolean]) => macShellSetTrafficLights(collapsed === true),
+    // 已废弃（契约保留）：三键不再跟随侧栏折叠，统一由 TrafficHotzone 经 setTrafficLights 唤出
+    macShellSetSidebarCollapsed: () => {},
+    setTrafficLights: ([visible]: [boolean], event) => {
+      // registerIpc 传入的第二参数运行时是 event.sender（WebContents）
+      const win = BrowserWindow.fromWebContents(event as unknown as Electron.WebContents)
+      if (win && !win.isDestroyed()) win.setWindowButtonVisibility(visible === true)
+    },
     setGeneralSettings: ([s]: [GeneralSettings]) => {
       appStore.set('general', s)
       // 开机自启跟随设置即时生效

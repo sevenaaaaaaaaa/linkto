@@ -147,7 +147,7 @@ export function AccountRail() {
     /* 外层与侧栏同底色：顶部 52px 是和侧栏连成一体的标题带，红绿灯落在这里（不再受深色栏宽度约束）；
        深色账户柱与右栏同节奏：圆角收为 r-md（10px），与列表 / 阅读区卡片的圆角统一 */
     <div className="w-[var(--rail-w)] shrink-0 h-full flex flex-col" style={{ background: 'var(--native-shell-bg, var(--bg))' }}>
-      <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] w-full shrink-0" />
+      <div className="drag-region native-web-titlebar rail-titlebar h-[var(--titlebar-h)] w-full shrink-0" />
       <nav
         aria-label="账户"
         className="rail-nav drag-region flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-md)] flex flex-col items-center overflow-y-auto"

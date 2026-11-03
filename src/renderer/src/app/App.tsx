@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMail } from '../stores/mail'
 import { useMailEvent } from '../lib/api'
 import { parseComposePrefill } from '../preload/parse'
+import { TrafficHotzone } from '../components/TrafficHotzone'
 import type { ComposeDraft } from '@shared/types'
 
 // 按窗口路由拆包：撰写窗不再加载整个邮箱、幽灵信不再加载邮件列表与 TipTap
@@ -95,6 +96,8 @@ export default function App() {
 
   return (
     <Suspense fallback={<div className="h-screen w-screen" style={{ background: 'var(--bg)' }} />}>
+      {/* 红绿灯唤出热区：所有窗口统一（hover 左上角 3 秒 / 连击 3 次） */}
+      <TrafficHotzone />
       {r.name === 'compose' ? (
         <ComposeWindow prefill={r.prefill} />
       ) : r.name === 'ghost' ? (

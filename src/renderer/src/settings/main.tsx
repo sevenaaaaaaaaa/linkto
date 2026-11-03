@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client'
 import SettingsApp from './SettingsApp'
+import { TrafficHotzone } from '../components/TrafficHotzone'
 import { initTheme } from '../lib/theme'
 import { applyPrefsToDocument } from '../lib/prefs'
 import '../styles/global.css'
@@ -15,4 +16,9 @@ applyPrefsToDocument()
 // 个性化设置参与跨设备同步（设置 → 同步与备份）
 initDevSyncPrefs()
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<SettingsApp />)
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <>
+    <TrafficHotzone />
+    <SettingsApp />
+  </>
+)

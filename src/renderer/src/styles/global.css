@@ -222,10 +222,10 @@ html[data-native-material='1'] body {
 html[data-native-material='1'] body::before {
   display: none;
 }
-/* 原生壳的 52px 标题带按列位补色：左段与账户轨道 / 侧栏同用磨砂染色，右段与内容底色一致——
-   否则这条带露出原生振动材质，比两侧都「生」一截，形成割裂的标题栏。
+/* 原生壳的 52px 标题带补色带（仅唤出三键 / 设置窗需要）：左段与账户轨道 / 侧栏同用磨砂染色，
+   右段与内容底色一致——否则这条带露出原生振动材质，比两侧都「生」一截，形成割裂的标题栏。
    只画 52px 高的带（body 其余区域保持透明），避免和下方列自身的一层染色叠成双层出现接缝 */
-html[data-native-material='1'][data-native-shell='1'] body {
+html[data-native-material='1'][data-native-shell='1'][data-traffic='shown'] body {
   background: linear-gradient(
     90deg,
     var(--native-sidebar-bg, var(--bg)) 0,
@@ -248,33 +248,62 @@ html[data-native-material='1'][data-native-shell='1'][data-native-shell-full='1'
   background: none;
 }
 
-/* ---------- 红绿灯隐藏（默认）：dock 与侧栏向上贯通到窗口顶部，不再留 52px 空带 ---------- */
-/* 原生壳是 fullSizeContentView，Web 本就铺满全窗，padding-top 只是给红绿灯和工具栏让位。
-   红绿灯隐藏后：dock / 侧栏内容贴顶（侧栏标题带显示账户名与写邮件，充实且不冲突）；
-   内容区各列仍让位给原生工具栏的搜索与按钮（它们在右侧）。 */
-html[data-native-shell='1'][data-traffic='hidden'] body {
+/* ---------- 红绿灯常态隐藏：dock 与侧栏向上贯通到窗口顶部（无任何空带） ----------
+   原生壳是 fullSizeContentView，Web 本就铺满全窗，padding-top 只是给红绿灯和工具栏让位。
+   三键常态隐藏（TrafficHotzone 唤出时才临时让位）：dock / 侧栏内容贴顶；
+   内容区各列仍让位给原生工具栏的搜索与按钮（它们在右侧）。设置窗保留 52px（其工具栏标题居左）。 */
+html[data-native-shell='1'] body:not(.settings-window) {
   padding-top: 0;
   background: none;
 }
-html[data-native-shell='1'][data-traffic='hidden'] .col-content {
+html[data-native-shell='1'] .col-content {
   padding-top: var(--titlebar-h);
   background: var(--bg);
 }
 /* 侧栏标题带（账户名 + 写邮件）显示在窗口顶部 */
-html[data-native-shell='1'][data-traffic='hidden'] .col-sidebar .native-web-titlebar {
+html[data-native-shell='1'] .col-sidebar .native-web-titlebar {
   display: flex;
 }
 /* dock 深色柱顶部与左右 / 下边距统一（8px） */
-html[data-native-shell='1'][data-traffic='hidden'] .rail-nav {
+html[data-native-shell='1'] .rail-nav {
   margin-top: 8px;
 }
 /* 窗口拖动带收窄到内容区（dock / 侧栏自己的标题带与内容区可拖，不被它盖住） */
-html[data-native-shell='1'][data-traffic='hidden'] .app-drag-strip {
+html[data-native-shell='1'] .app-drag-strip {
   left: calc(var(--rail-w) + var(--sidebar-w));
+}
+/* 唤出三键（hover / 连击左上角，TrafficHotzone）：主窗临时让位 52px，各列恢复原布局 */
+html[data-native-shell='1'][data-traffic='shown'] body:not(.settings-window) {
+  padding-top: var(--titlebar-h);
+}
+html[data-native-shell='1'][data-traffic='shown'] .col-content {
+  padding-top: 0;
+}
+html[data-native-shell='1'][data-traffic='shown'] .col-sidebar .native-web-titlebar {
+  display: none;
+}
+html[data-native-shell='1'][data-traffic='shown'] .rail-nav {
+  margin-top: 0;
+}
+html[data-native-shell='1'][data-traffic='shown'] .app-drag-strip {
+  left: 0;
 }
 /* 全屏时内容区不再让位（原生工具栏全屏隐藏） */
 html[data-native-shell='1'][data-native-shell-full='1'] .col-content {
   padding-top: 0;
+}
+/* Web 壳（无原生工具栏）同理：三键隐藏时 dock 顶部空带收起、深色柱贯通；唤出时恢复空带 */
+html[data-os='mac']:not([data-native-shell='1']) .rail-titlebar {
+  display: none;
+}
+html[data-os='mac']:not([data-native-shell='1']) .rail-nav {
+  margin-top: 8px;
+}
+html[data-os='mac']:not([data-native-shell='1'])[data-traffic='shown'] .rail-titlebar {
+  display: block;
+}
+html[data-os='mac']:not([data-native-shell='1'])[data-traffic='shown'] .rail-nav {
+  margin-top: 0;
 }
 
 /* ---------- 原生 NSToolbar 混合壳：Web 内容让出 52px 顶部 ---------- */

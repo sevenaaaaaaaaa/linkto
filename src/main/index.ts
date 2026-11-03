@@ -28,7 +28,7 @@ import { FlyService } from './fly/service'
 import { VaultService } from './vault/service'
 import { Notifier } from './notify'
 import { initNativeIntegration, setTrayUnread, applyLoginItem, attachNativeContextMenu, installWindowState, setNativeAboutPanel } from './native-integration'
-import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, macShellSetMainWindow, macShellSetTrafficLights, type MacShellAction } from './mac-shell'
+import { attachMacShell, attachSettingsShell, macShellCustomize, macShellFocusSearch, hideTrafficLights, type MacShellAction } from './mac-shell'
 import { checkForUpdates, compareVersions, startUpdateDownload, getUpdateStatus, installUpdate, hasReadyUpdate, isUpdateInstalling, cleanupOldUpdateBundle } from './updates'
 import { detectTerminalApps, defaultTerminalId, openTerminalAt } from './terminal'
 import { registerIpc, type AppContext } from './ipc'
@@ -456,9 +456,8 @@ function createMainWindow() {
   })
   let nativeShell = false
   if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachMacShell(mainWindow, handleMacShellAction)
-  // 红绿灯三键默认隐藏（hiddenInset 压内容区标题带）；只在极简模式时显示，见 mac-shell 注释
-  macShellSetMainWindow(mainWindow)
-  macShellSetTrafficLights(false)
+  // 红绿灯三键常态隐藏（所有窗口）：唤出走 TrafficHotzone（hover / 连击左上角）
+  hideTrafficLights(mainWindow)
   installWindowState(mainWindow)
   if (nativeShell) {
     // NSToolbar 会给窗口帧加 52px：布局完成后再收一次，避免底边被挤出屏幕
@@ -556,6 +555,7 @@ function createSettingsWindow(tab?: string) {
   })
   let nativeShell = false
   if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachSettingsShell(settingsWindow, handleSettingsShellAction)
+  hideTrafficLights(settingsWindow)
   attachNativeContextMenu(settingsWindow)
   settingsWindow.loadFile(join(__dirname, '../renderer/settings.html'), {
     hash: tab ? `/${tab}` : '/general',
@@ -590,6 +590,7 @@ function createComposeWindow(prefill?: Record<string, unknown>) {
     }
   })
   attachNativeContextMenu(win)
+  hideTrafficLights(win)
   const query = prefill ? `?prefill=${encodeURIComponent(JSON.stringify(prefill))}` : ''
   win.loadFile(join(__dirname, '../renderer/index.html'), { hash: `/compose${query}` })
   win.once('ready-to-show', () => win.show())
@@ -624,6 +625,7 @@ function createGhostWindow() {
     }
   })
   attachNativeContextMenu(ghostWindow)
+  hideTrafficLights(ghostWindow)
   ghostWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ghost' })
   ghostWindow.webContents.once('did-finish-load', () => ghostWindow?.setTitle('加密沟通 · 幽灵信'))
   ghostWindow.once('ready-to-show', () => {
@@ -659,6 +661,7 @@ function createGhostReaderWindow(id: string) {
   ghostReaderWindow.loadFile(join(__dirname, '../renderer/index.html'), {
     hash: `/ghostread?id=${encodeURIComponent(id)}`
   })
+  hideTrafficLights(ghostReaderWindow)
   // 兜底：任何情况下确保阅读窗可见（阅后即焚窗必须所见即所得）
   ghostReaderWindow.once('ready-to-show', () => ghostReaderWindow?.show())
   ghostReaderWindow.webContents.once('did-finish-load', () => ghostReaderWindow?.showInactive())
@@ -699,6 +702,7 @@ function createFlyWindow() {
   })
   const writerSession = flyWindow.webContents.session
   attachNativeContextMenu(flyWindow)
+  hideTrafficLights(flyWindow)
   flyWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/fly' })
   flyWindow.webContents.once('did-finish-load', () => flyWindow?.setTitle('萤火密信'))
   flyWindow.once('ready-to-show', () => {
@@ -743,6 +747,7 @@ function createFlyReaderWindow(token: string) {
   // 关闭后 webContents 已销毁，session 引用要提前取出
   const readerSession = win.webContents.session
   win.setContentProtection(true)
+  hideTrafficLights(win)
   win.loadFile(join(__dirname, '../renderer/index.html'), {
     hash: '/flyread?token=' + encodeURIComponent(token)
   })
@@ -786,6 +791,7 @@ function createVaultWindow() {
   const win = vaultWindow
   const session = win.webContents.session
   attachNativeContextMenu(win)
+  hideTrafficLights(win)
   win.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/vault' })
   win.webContents.once('did-finish-load', () => win.setTitle('暂存箱与保险箱'))
   win.once('ready-to-show', () => {
