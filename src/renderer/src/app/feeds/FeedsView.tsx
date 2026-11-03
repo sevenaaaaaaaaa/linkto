@@ -8,6 +8,7 @@ import { scopeKey, type FeedCandidate, type FeedDigest, type FeedItem } from '@s
 import {
   IconCheck, IconChevronDown, IconClose, IconFolder, IconLink, IconMailDot, IconMore, IconPlus, IconRefresh, IconRss, IconSearch, IconSettings, IconSparkles, IconStar
 } from '../../components/icons'
+import { usePanelWidth, PanelGrip } from '../../components/PanelResizer'
 
 /**
  * 订阅视图（#/feeds）：条目列表沿用邮件列表的视觉与操作习惯（未读点 / 已读、收藏、J/K、全部已读），右侧是独立的订阅阅读区。
@@ -340,6 +341,8 @@ export function FeedsView() {
   const [refreshing, setRefreshing] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
+  // 列宽可调：与邮件列表同一套拖柄
+  const [listW, setListW] = usePanelWidth('ms_feeds_list_w', 260, 480)
 
   // 路由 → 范围
   useEffect(() => {
@@ -451,7 +454,11 @@ export function FeedsView() {
 
   return (
     <>
-      <div className="surface relative w-[var(--list-w)] min-w-[300px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]" data-feeds-list>
+      <div
+        className="surface relative w-[var(--list-w)] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]"
+        style={listW ? { width: listW, minWidth: listW } : undefined}
+        data-feeds-list
+      >
         <div className="drag-region h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
           <div className="no-drag relative flex-1 h-7 flex items-center gap-1.5 rounded-[var(--r-sm)] px-2 border border-[var(--border-soft)] focus-within:shadow-[var(--focus-ring)]" style={{ background: 'var(--bg-soft)' }}>
             <IconSearch width={14} height={14} style={{ color: 'var(--faint)' }} />
@@ -543,6 +550,7 @@ export function FeedsView() {
             </>
           )}
         </div>
+        <PanelGrip storageKey="ms_feeds_list_w" min={260} max={480} side="right" onResize={setListW} label="订阅列表宽度" />
       </div>
       {scope.kind === 'digest' ? <DigestPanel key={scopeKey(scope)} /> : <FeedReader id={selectedId} />}
     </>

@@ -694,6 +694,32 @@ body::before {
   filter: brightness(0.97);
 }
 
+/* 品牌 Logo 常驻慢转（年轮 @ 的圆环适合旋转）；尊重系统减弱动态偏好 */
+@keyframes ms-logo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.logo-spin {
+  animation: ms-logo-spin 18s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-spin {
+    animation: none;
+  }
+}
+
+/* 列宽拖柄：默认隐形，悬停 / 拖动时一条 accent 细线提示可调 */
+.panel-grip {
+  transition: background var(--dur-1) var(--ease-out);
+}
+.panel-grip:hover,
+.panel-grip-on {
+  background: color-mix(in oklab, var(--accent) 42%, transparent);
+}
+
 /* 工具栏图标按钮：不做 hover 上浮（审计 D-7） */
 .icon-btn {
   border-radius: var(--r-sm);

@@ -6,6 +6,7 @@ import { IconBook, IconBrain, IconClose, IconFileText, IconRobot, IconUser } fro
 import { AgentChatPanel } from './agent/AgentChatPanel'
 import { ContactTimelineLinks } from './projects/ProjectBits'
 import { RailAgentHost } from './agent/RailSkills'
+import { usePanelWidth, PanelGrip } from '../components/PanelResizer'
 
 type SenderContext = NonNullable<Awaited<ReturnType<typeof api.senderContext>>>
 
@@ -20,6 +21,8 @@ export function ContextRail() {
   const [loading, setLoading] = useState(false)
   const [learned, setLearned] = useState('')
   const multi = selectedIds.size > 1
+  // 右侧栏宽度可调（220~400）：开 Agent / 上下文时可拖窄给正文让位
+  const [railW, setRailW] = usePanelWidth('ms_context_w', 220, 400)
 
   useEffect(() => {
     setLearned('')
@@ -53,8 +56,8 @@ export function ContextRail() {
   return (
     <aside
       aria-label={rail === 'agent' ? 'Agent' : '上下文'}
-      className="w-[var(--context-w)] shrink-0 h-full flex flex-col border-l border-[var(--border)]"
-      style={{ background: 'var(--bg)' }}
+      className="relative w-[var(--context-w)] shrink-0 h-full flex flex-col border-l border-[var(--border)]"
+      style={{ background: 'var(--bg)', ...(railW ? { width: railW, minWidth: railW } : null) }}
     >
       <div className="drag-region native-shell-context-header h-[var(--titlebar-h)] shrink-0 flex items-center gap-1 px-2 border-b border-[var(--border-soft)]">
         <Tab active={rail === 'context'} onClick={() => toggleRail('context')} icon={<IconUser width={13} height={13} />} label="上下文" />
@@ -159,6 +162,8 @@ export function ContextRail() {
           )}
         </div>
       )}
+      {/* 左缘拖柄：往左拖加宽、往右拖收窄（双击恢复默认） */}
+      <PanelGrip storageKey="ms_context_w" min={220} max={400} side="left" onResize={setRailW} label="右侧栏宽度" />
     </aside>
   )
 }

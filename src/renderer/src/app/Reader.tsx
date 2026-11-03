@@ -11,7 +11,7 @@ import {
 import {
   IconReply, IconReplyAll, IconForward, IconArchive, IconTrash, IconFlag,
   IconSparkles, IconAttach, IconSave, IconPlug, IconUnsub, IconTask, IconRefresh, IconClose,
-  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot, IconSend, IconCompose
+  IconPin, IconPalette, IconKey, IconLock, IconCloud, IconClock, IconMore, IconMailDot, IconFolder, IconUser, IconRobot, IconSend, IconCompose, IconChevronDown
 } from '../components/icons'
 import { MenuButton, type MenuItem } from '../components/Menu'
 import { AttachmentBadge } from './attachments/AttachmentBadge'
@@ -221,6 +221,28 @@ export function Reader() {
   const [extracting, setExtracting] = useState(false)
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const snoozeRef = useRef<HTMLDivElement>(null)
+
+  // 摘要与识别信息折叠：滚动正文时自动收起给正文让位（滑回顶部自动展开）；
+  // 用户手动点过开关后尊重手动选择，直到换下一封邮件
+  const [metaCollapsed, setMetaCollapsed] = useState(false)
+  const metaManualRef = useRef(false)
+  const scrollBoxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    setMetaCollapsed(false)
+    metaManualRef.current = false
+    scrollBoxRef.current?.scrollTo({ top: 0 })
+  }, [selectedId])
+  const onBodyScroll = () => {
+    if (metaManualRef.current) return
+    const el = scrollBoxRef.current
+    if (!el) return
+    if (el.scrollTop > 32) setMetaCollapsed(true)
+    else if (el.scrollTop <= 8) setMetaCollapsed(false)
+  }
+  const toggleMeta = () => {
+    metaManualRef.current = true
+    setMetaCollapsed(c => !c)
+  }
 
   useEffect(() => {
     if (!snoozeOpen) return
@@ -745,7 +767,7 @@ export function Reader() {
         </MenuButton>
       </div>
 
-      {/* 头部信息 */}
+      {/* 头部信息：主题 + 发件人常驻；收件人与下方摘要 / 识别信息可折叠，给正文让出垂直空间 */}
       <div className="shrink-0 px-6 pt-5 pb-4 border-b border-[var(--border-soft)]">
         <h1 className="selectable text-lg font-semibold leading-snug" style={{ color: 'var(--fg)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}>{msg.subject || '（无主题）'}</h1>
         <div className="mt-2.5 flex items-center gap-3">
@@ -761,13 +783,26 @@ export function Reader() {
               )}
               <span className="ml-auto text-xs shrink-0 tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{fmtFullDate(msg.date)}</span>
             </div>
-            <div className="text-xs selectable truncate" style={{ color: 'var(--faint)' }}>
-              收件人：{msg.to.map(displayName).join('，') || '—'}
-              {msg.cc.length > 0 && `；抄送：${msg.cc.map(displayName).join('，')}`}
-            </div>
+            {!metaCollapsed && (
+              <div className="text-xs selectable truncate" style={{ color: 'var(--faint)' }}>
+                收件人：{msg.to.map(displayName).join('，') || '—'}
+                {msg.cc.length > 0 && `；抄送：${msg.cc.map(displayName).join('，')}`}
+              </div>
+            )}
           </div>
+          <button
+            onClick={toggleMeta}
+            title={metaCollapsed ? '展开收件人与摘要 / 识别信息' : '收起摘要 / 识别信息（滚动正文时也会自动收起）'}
+            aria-expanded={!metaCollapsed}
+            className="icon-btn shrink-0 w-7 h-7 inline-flex items-center justify-center"
+            style={{ color: 'var(--faint)' }}
+          >
+            <span className="inline-flex transition-transform" style={{ transform: metaCollapsed ? 'none' : 'rotate(180deg)', transitionDuration: 'var(--dur-2)' }}>
+              <IconChevronDown width={13} height={13} />
+            </span>
+          </button>
         </div>
-        {canUnsub && (
+        {canUnsub && !metaCollapsed && (
           <button
             onClick={unsubscribe}
             className="mt-2.5 inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full"
@@ -778,6 +813,9 @@ export function Reader() {
         )}
       </div>
 
+      {/* 摘要 / 识别信息区：收件人之外的辅助信息，可折叠（滚动正文时自动收起） */}
+      {!metaCollapsed && (
+        <>
       {linkedTodos.length > 0 && (
         <div className="shrink-0 px-6 pt-3 flex flex-wrap items-center gap-1.5 text-xs">
           <span style={{ color: 'var(--faint)' }}>关联待办</span>
@@ -866,6 +904,19 @@ export function Reader() {
           onEntity={runEntity}
         />
       )}
+        </>
+      )}
+      {metaCollapsed && (
+        <button
+          onClick={toggleMeta}
+          className="shrink-0 mx-6 mt-3 h-7 px-2.5 inline-flex items-center gap-1.5 rounded-[var(--r-sm)] text-xs hover:bg-[var(--hover)]"
+          style={{ color: 'var(--faint)' }}
+          title="展开收件人、要点、待办等摘要与识别信息"
+        >
+          <span className="inline-flex"><IconChevronDown width={11} height={11} /></span>
+          摘要与识别信息已收起 · 点击展开
+        </button>
+      )}
 
       {/* AI 工具（原 AI 助手：全文摘要 / 起草 / 提取待办 / 提炼 / 学习） */}
       <div className="shrink-0 px-6 pt-2">
@@ -930,7 +981,7 @@ export function Reader() {
       )}
 
       {/* 正文 */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div ref={scrollBoxRef} onScroll={onBodyScroll} className="flex-1 overflow-y-auto px-6 py-4">
         {remoteCount > 0 && (
           <div className="mb-3 flex items-center gap-2 text-xs rounded-[var(--r-sm)] px-3.5 py-2.5" style={{ background: 'var(--warn-soft)', color: 'var(--muted)' }}>
             <span>为保护隐私，已拦截 {remoteCount} 个远程图片 / 背景资源（可能包含追踪像素）</span>

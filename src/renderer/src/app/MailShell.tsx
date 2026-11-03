@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useView, goView, viewFromHash } from '../lib/route'
 import { initLiquidGlass } from '../lib/liquid-glass'
+import { useSidebarCollapsed } from '../lib/sidebar-collapse'
 import { Sidebar } from './Sidebar'
 import { AccountRail } from './AccountRail'
 import { FolderManager } from './FolderManager'
@@ -48,6 +49,8 @@ export function MailShell() {
   const view = useView()
   const triage = useMail(st => st.triage)
   const rail = useMail(st => st.rail)
+  // 侧栏折叠：整体收进账户 Dock（核心入口 icon 融入账户栏，顶部图标成折叠入口）
+  const sidebarCollapsed = useSidebarCollapsed()
   const nativeShell = document.documentElement.dataset.nativeShell === '1'
   const scopeKind = useMail(st => st.scope.kind)
   const accountCtx = useMail(st => st.accountCtx)
@@ -323,7 +326,7 @@ export function MailShell() {
       {/* 原生壳：整条 52px 标题带铺一层拖动区（原生工具栏空白处的事件会落到渲染进程） */}
       {nativeShell && <div className="app-drag-strip" aria-hidden />}
       <AccountRail />
-      <Sidebar />
+      {!sidebarCollapsed && <Sidebar />}
       <FolderManager />
       <CoachTip />
       <LensLayer />

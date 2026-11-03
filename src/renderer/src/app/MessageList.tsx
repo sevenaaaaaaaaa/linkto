@@ -21,6 +21,7 @@ import { ProjectTag } from './projects/ProjectBits'
 import { FollowupBoard, FollowQuickBtn } from './followups/FollowupBoard'
 import { RuleSuggestionCard } from './RuleSuggestionCard'
 import { openShare, currentShareIds } from './share/SharePanel'
+import { usePanelWidth, PanelGrip } from '../components/PanelResizer'
 
 const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   newsletter: { label: '订阅', cls: 'bg-[var(--cat-newsletter-soft)] text-[var(--cat-newsletter)]' },
@@ -378,6 +379,8 @@ export function MessageList() {
   const [narrow, setNarrow] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
+  // 列宽可调（260~480，可拖窄给正文让位；双击拖柄恢复默认）
+  const [listW, setListW] = usePanelWidth('ms_list_w', 260, 480)
 
   // —— 交互创新 ——
   // 重力滑块：t∈[0,100]，0=时间引力（默认），100=重要性引力，中间为连续混合谱
@@ -831,7 +834,10 @@ export function MessageList() {
   }
 
   return (
-    <div className="surface relative w-[var(--list-w)] min-w-[300px] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]">
+    <div
+      className="surface relative w-[var(--list-w)] shrink-0 h-full flex flex-col border-r border-[var(--border-soft)]"
+      style={listW ? { width: listW, minWidth: listW } : undefined}
+    >
       <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 px-3">
         <SearchBox />
       </div>
@@ -1291,6 +1297,9 @@ export function MessageList() {
           onClose={() => setNudgeId(null)}
         />
       )}
+
+      {/* 列宽拖柄：右缘 5px，按住拖动调宽，双击恢复默认 */}
+      <PanelGrip storageKey="ms_list_w" min={260} max={480} side="right" onResize={setListW} label="邮件列表宽度" />
     </div>
   )
 }
