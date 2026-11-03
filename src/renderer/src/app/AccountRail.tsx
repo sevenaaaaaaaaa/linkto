@@ -8,7 +8,6 @@ import { useOverdueCount } from '../lib/followups'
 import { useProjectBadge } from './projects/ProjectBits'
 import { useFeeds, useFeedEvents, unreadOf, openFeeds } from '../lib/feeds'
 import { navIcon } from './upgrade/nav-meta'
-import { Sidebar } from './Sidebar'
 import { accountHoverText } from './AccountIssues'
 import { IconLayers, IconPlus, IconChevronRight } from '../components/icons'
 
@@ -41,10 +40,10 @@ interface DockEntry {
 
 /**
  * 账户栏：最左侧深墨竖条，天然是应用的 Dock。
- * - 平时：切换账户（顶部「全部账户」+ 各账户头像，角标 = 未读，右下圆点 = 同步状态）
- * - 侧栏折叠时：文字侧栏整体收进这里——顶部图标变成折叠入口（点开完整导航浮层），
- *   核心导航（收件箱 / 待办 / 等待对方 / 项目 / 订阅）以 icon 融入 Dock
- * - 底部 Logo 常驻慢转，点击弹出 AI 入口（Agent / 简报 / AI 搜索订阅），两种状态下都可用
+ * - 顶部 layers 图标 = 账户收纳开关：点一下把平时不常用的邮箱账户入口收起来，给 Dock 里的
+ *   导航 icon 腾地方（收起时汇总未读挂在 layers 上；切换全部账户仍可用 ⌘0）
+ * - 侧栏折叠（极简模式）时：核心导航（收件箱 / 待办 / 等待对方 / 项目 / 订阅）以 icon 融入 Dock
+ * - 底部 Logo 常驻慢转：展开态点击 = 开启极简模式（侧栏收进 Dock）；折叠态点击 = AI 入口菜单
  */
 export function AccountRail() {
   const { accounts, folders, accountCtx, setAccountCtx, scope, setScope } = useMail()
@@ -56,29 +55,46 @@ export function AccountRail() {
   const followupOverdue = useOverdueCount()
   const projectBadge = useProjectBadge()
   const feedUnread = unreadOf(useFeeds(st => st.sources))
-  const [navOpen, setNavOpen] = useState(false)
+  // 账户入口收纳：收起来给 Dock 里的导航 icon 腾地方（记住习惯）
+  const [accountsHidden, setAccountsHidden] = useState(() => {
+    try {
+      return localStorage.getItem('ms_rail_accounts_hidden') === '1'
+    } catch {
+      return false
+    }
+  })
   const [aiMenu, setAiMenu] = useState(false)
+
+  const toggleAccountsHidden = () => {
+    setAccountsHidden(h => {
+      try {
+        localStorage.setItem('ms_rail_accounts_hidden', h ? '0' : '1')
+      } catch {
+        /* 存储不可用时仅本次生效 */
+      }
+      return !h
+    })
+  }
 
   const accountUnread = (id: string) => folders.filter(f => f.accountId === id && f.special === 'inbox').reduce((s, f) => s + f.unread, 0)
   const totalUnread = folders.filter(f => f.special === 'inbox').reduce((s, f) => s + f.unread, 0)
   const ctxAccount = accountCtx ? accounts.find(a => a.id === accountCtx) ?? null : null
 
-  // 浮层：Esc 关闭
+  // AI 菜单：Esc 关闭
   useEffect(() => {
-    if (!navOpen && !aiMenu) return
+    if (!aiMenu) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        setNavOpen(false)
         setAiMenu(false)
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [navOpen, aiMenu])
-  // 侧栏展开时导航浮层失去意义
+  }, [aiMenu])
+  // 退出极简模式时收起 AI 菜单（此时 Logo 的职责变了）
   useEffect(() => {
-    if (!collapsed) setNavOpen(false)
+    if (!collapsed) setAiMenu(false)
   }, [collapsed])
 
   const go = (next: Scope) => {
@@ -114,41 +130,46 @@ export function AccountRail() {
         style={{ background: 'var(--rail-bg)', color: 'var(--rail-fg)', scrollbarWidth: 'none' }}
       >
         <div className="flex flex-col items-center gap-2.5 pt-3">
-          {/* 顶部图标：平时 = 全部账户；侧栏折叠后 = 折叠入口（完整侧栏收进这里，点开浮层） */}
+          {/* 顶部 layers = 账户收纳开关：收起平时不常用的邮箱入口，给下面的导航 icon 腾地方；
+              收起时汇总未读挂在图标上（切全部账户仍可用 ⌘0） */}
           <RailButton
-            label={collapsed ? '导航：侧栏已收进这里，点开（Esc 关闭）' : `全部账户 · ${totalUnread} 封未读`}
-            active={collapsed ? navOpen : accountCtx === null}
-            onClick={() => (collapsed ? setNavOpen(o => !o) : setAccountCtx(null))}
-            badge={0}
+            label={accountsHidden ? `展开账户入口（${accounts.length} 个${totalUnread ? ` · 共 ${totalUnread > 99 ? '99+' : totalUnread} 未读` : ''}）` : `收起账户入口（${accounts.length} 个邮箱收进这个图标）`}
+            active={false}
+            onClick={toggleAccountsHidden}
+            badge={accountsHidden ? totalUnread : 0}
             style={{ background: 'var(--rail-line)' }}
           >
             <IconLayers width={18} height={18} />
           </RailButton>
-          <div className="w-6 h-px my-0.5" style={{ background: 'var(--rail-line)' }} />
-          {accounts.map((a, i) => (
-            <RailButton
-              key={a.id}
-              label={accountHoverText(a, i < 9 ? `⌘${i + 1}` : undefined)}
-              active={accountCtx === a.id}
-              onClick={() => setAccountCtx(a.id)}
-              badge={accountUnread(a.id)}
-              status={a.status}
-              style={{ background: a.color, color: 'oklch(100% 0 0)' }}
-            >
-              <span className="text-base font-semibold">{initialOf(a.name)}</span>
-            </RailButton>
-          ))}
-          <button
-            onClick={() => api.openSettings('accounts')}
-            title="添加账户"
-            aria-label="添加账户"
-            className="w-10 h-10 rounded-[var(--r-md)] inline-flex items-center justify-center transition-colors hover:bg-[var(--rail-line)]"
-            style={{ border: '1px dashed var(--rail-line)', color: 'var(--rail-muted)' }}
-          >
-            <IconPlus width={16} height={16} />
-          </button>
+          {!accountsHidden && (
+            <>
+              <div className="w-6 h-px my-0.5" style={{ background: 'var(--rail-line)' }} />
+              {accounts.map((a, i) => (
+                <RailButton
+                  key={a.id}
+                  label={accountHoverText(a, i < 9 ? `⌘${i + 1}` : undefined)}
+                  active={accountCtx === a.id}
+                  onClick={() => setAccountCtx(a.id)}
+                  badge={accountUnread(a.id)}
+                  status={a.status}
+                  style={{ background: a.color, color: 'oklch(100% 0 0)' }}
+                >
+                  <span className="text-base font-semibold">{initialOf(a.name)}</span>
+                </RailButton>
+              ))}
+              <button
+                onClick={() => api.openSettings('accounts')}
+                title="添加账户"
+                aria-label="添加账户"
+                className="w-10 h-10 rounded-[var(--r-md)] inline-flex items-center justify-center transition-colors hover:bg-[var(--rail-line)]"
+                style={{ border: '1px dashed var(--rail-line)', color: 'var(--rail-muted)' }}
+              >
+                <IconPlus width={16} height={16} />
+              </button>
+            </>
+          )}
 
-          {/* 折叠时：侧栏核心入口融入 Dock（文字侧栏整体收进顶部图标，AI 入口在底部 Logo） */}
+          {/* 极简模式：侧栏核心入口融入 Dock（其余入口走 ⌘K / Logo AI 菜单） */}
           {collapsed && (
             <>
               <div className="w-6 h-px my-0.5" style={{ background: 'var(--rail-line)' }} />
@@ -172,12 +193,13 @@ export function AccountRail() {
               <IconChevronRight width={16} height={16} />
             </button>
           )}
-          {/* Logo：常驻慢转；点击弹出 AI 入口（折叠时 Dock 放不下的 AI 功能都在这里） */}
+          {/* Logo 常驻慢转，职责随状态切换：
+              展开态点击 = 开启极简模式（侧栏收进 Dock）；折叠态点击 = AI 入口菜单 */}
           <button
-            onClick={() => setAiMenu(o => !o)}
-            title="AI 入口：Agent · 简报 · AI 搜索订阅"
-            aria-label="AI 入口"
-            aria-expanded={aiMenu}
+            onClick={() => (collapsed ? setAiMenu(o => !o) : setSidebarCollapsed(true))}
+            title={collapsed ? 'AI 入口：Agent · 简报 · AI 搜索订阅' : '极简模式：把侧栏收进这条 Dock（再点 Dock 底部「›」展开）'}
+            aria-label={collapsed ? 'AI 入口' : '开启极简模式'}
+            aria-expanded={collapsed ? aiMenu : undefined}
             className="w-10 h-10 rounded-[var(--r-md)] inline-flex items-center justify-center transition-colors hover:bg-[var(--rail-line)]"
           >
             <LogoMark size={28} spin />
@@ -185,21 +207,8 @@ export function AccountRail() {
         </div>
       </nav>
 
-      {/* 折叠入口浮层：完整侧栏临时弹出；「固定侧栏」恢复常驻 */}
-      {collapsed && navOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setNavOpen(false)} aria-hidden />
-          <div
-            className="fixed top-2 bottom-2 z-50 rounded-[var(--r-lg)] overflow-hidden pop-in"
-            style={{ left: 'calc(var(--rail-w) - 4px)', width: 236, background: 'var(--bg)', boxShadow: 'var(--shadow-float)', ['--sidebar-w' as never]: '236px' }}
-          >
-            <Sidebar overlay onPin={() => setNavOpen(false)} />
-          </div>
-        </>
-      )}
-
-      {/* Logo 的 AI 入口菜单 */}
-      {aiMenu && (
+      {/* 折叠态 Logo 的 AI 入口菜单 */}
+      {collapsed && aiMenu && (
         <>
           <div className="fixed inset-0 z-40" onMouseDown={() => setAiMenu(false)} aria-hidden />
           <div

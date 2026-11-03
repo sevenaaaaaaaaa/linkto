@@ -4,14 +4,13 @@ import { api } from '../lib/api'
 import { ThemeMenu } from './ThemeMenu'
 import { SyncStatus } from './AccountIssues'
 import { usePrefs, getPrefs, setPrefs } from '../lib/prefs'
-import { setSidebarCollapsed } from '../lib/sidebar-collapse'
 import { useTodos, useTodoEvents, todayCount } from '../lib/todos'
 import { useFinanceBadge } from './finance/FinanceNav'
 import { useLifeBadge } from './life/LifeStrip'
 import { useTraceBadge } from './trace/TraceStrip'
 import {
   IconFlag, IconTrash, IconArchive, IconSend, IconFolder, IconCompose, IconSettings,
-  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost, IconLock, IconPin
+  IconChevronDown, IconShield, IconSave, IconClose, IconSearch, IconList, IconGhost, IconLock
 } from '../components/icons'
 import { useView, goView } from '../lib/route'
 import type { Folder, FolderPref, SpecialFolder } from '@shared/types'
@@ -168,10 +167,14 @@ function folderIcon(f: Folder, color?: string) {
  * - 导航可滚动区与底部状态区（整理进度 / 离线 / 账户出错）分开布局，小窗口下导航仍可滚动、不被遮挡
  */
 /**
- * @param overlay 在账户 Dock 的折叠入口浮层里渲染时：底部「收起」按钮换成「固定侧栏」
- * @param onPin   overlay 模式点「固定侧栏」后回调（关闭浮层）
+ * 侧栏（v4 · 可自定义）：账户切换交给左侧账户栏，这里只回答「在这个账户里看什么」。
+ * - 每个入口「钉在侧栏 / 收进更多 / 隐藏」+ 排序，见 lib/sidebar-layout（纯函数）与 upgrade/SidebarEditor
+ * - 默认（克制）：核心 收件箱 · 待办 · 等待对方 · 项目；智能 今日简报 · Agent · 财务；其余在「更多」里
+ * - 升级用户已经在用（有数据）的入口默认钉住；「更多」收起时把里面入口的角标汇总到「更多」上
+ * - 导航可滚动区与底部状态区（整理进度 / 离线 / 账户出错）分开布局，小窗口下导航仍可滚动、不被遮挡
+ * - 收进 Dock（极简模式）的入口是最左账户栏底部的 Logo；Dock 底部「›」按钮展开回常驻
  */
-export function Sidebar(props: { overlay?: boolean; onPin?(): void }) {
+export function Sidebar() {
   const { accounts, folders, scope, setScope, accountCtx } = useMail()
   const view = useView()
   const prefs = useFolderPrefs()
@@ -293,7 +296,7 @@ export function Sidebar(props: { overlay?: boolean; onPin?(): void }) {
   const moreHasActive = layout.more.some(id => isEntryActive(id, view, scope.kind))
 
   return (
-    <div className={`relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col ${props.overlay ? '' : 'border-r border-[var(--border)]'}`} style={{ background: 'var(--native-sidebar-bg, var(--bg))' }}>
+    <div className={`relative z-20 w-[var(--sidebar-w)] shrink-0 h-full flex flex-col border-r border-[var(--border)]`} style={{ background: 'var(--native-sidebar-bg, var(--bg))' }}>
       <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] shrink-0 flex items-center gap-2 pl-5 pr-3">
         <div className="flex-1 min-w-0 flex flex-col leading-tight">
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--fg)' }}>{ctxAccount ? ctxAccount.name : '全部账户'}</span>
@@ -447,28 +450,6 @@ export function Sidebar(props: { overlay?: boolean; onPin?(): void }) {
       </div>
 
       <div className="relative shrink-0 h-11 border-t border-[var(--border)] px-2 flex items-center gap-0.5">
-        <button
-          onClick={() => {
-            if (props.overlay) {
-              setSidebarCollapsed(false)
-              props.onPin?.()
-            } else {
-              setSidebarCollapsed(true)
-            }
-          }}
-          title={props.overlay ? '固定侧栏：恢复常驻显示' : '收起侧栏进 Dock（核心入口融入最左账户栏）'}
-          aria-label={props.overlay ? '固定侧栏' : '收起侧栏进 Dock'}
-          className="icon-btn w-7 h-7 inline-flex items-center justify-center"
-          style={{ color: 'var(--faint)' }}
-        >
-          {props.overlay ? (
-            <IconPin width={14} height={14} />
-          ) : (
-            <span className="inline-flex" style={{ transform: 'rotate(-90deg)' }}>
-              <IconChevronDown width={13} height={13} />
-            </span>
-          )}
-        </button>
         <ThemeMenu />
         <div className="flex-1" />
         <button
