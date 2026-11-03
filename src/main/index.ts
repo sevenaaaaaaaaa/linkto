@@ -454,8 +454,10 @@ function createMainWindow() {
       spellcheck: true
     }
   })
-  let nativeShell = false
-  if (process.platform === 'darwin' && NATIVE_SHELL_ENABLED) nativeShell = attachMacShell(mainWindow, handleMacShellAction)
+  // 主窗不再挂原生 NSToolbar：它要求内容区整列让位 52px，但搜索框 / 按钮只占右侧一小段，
+  // 阅读区上方留一条死空带。改为各列 Web 标题带（侧栏账户名 + 写邮件 / 列表搜索框 / 阅读区工具栏）
+  // 全部显示——每一列的 52px 都有内容，零空带；原生壳仅保留在设置窗。
+  const nativeShell = false
   // 红绿灯三键常态隐藏（所有窗口）：唤出走 TrafficHotzone（hover / 连击左上角）
   hideTrafficLights(mainWindow)
   installWindowState(mainWindow)
