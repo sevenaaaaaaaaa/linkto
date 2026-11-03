@@ -332,20 +332,23 @@ export function MailShell() {
       <LensLayer />
       <RipplePanel />
       <SonarBar />
-      <Suspense fallback={<div className="flex-1 min-w-0 h-full" style={{ background: 'var(--bg)' }} />}>
-        {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
-          <>
-            <MessageList />
-            <div className="flex-1 min-w-0 h-full flex" style={{ background: 'var(--bg)' }}>
-              <Reader />
-            </div>
-            <ContextRail />
-            <MovePalette />
-            {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}
-            {!rail && <DropWell bottom={outbox.length ? 296 : 24} />}
-          </>
-        )}
-      </Suspense>
+      {/* col-content：红绿灯隐藏时让位给原生工具栏右侧的搜索与按钮（见 global.css data-traffic） */}
+      <div className="col-content flex-1 min-w-0 h-full flex">
+        <Suspense fallback={<div className="flex-1 min-w-0 h-full" style={{ background: 'var(--bg)' }} />}>
+          {view === 'kb' ? <KbView /> : view === 'insights' ? <InsightsView /> : view === 'agent' ? <AgentView /> : view === 'todo' ? <TodoView /> : view === 'attachments' ? <AttachmentsView /> : view === 'projects' ? <ProjectsView /> : view === 'finance' ? <FinanceView /> : view === 'life' ? <LifeView /> : view === 'feeds' ? <FeedsView /> : view === 'trace' ? <TraceView /> : triage ? <TriageView /> : (
+            <>
+              <MessageList />
+              <div className="flex-1 min-w-0 h-full flex" style={{ background: 'var(--bg)' }}>
+                <Reader />
+              </div>
+              <ContextRail />
+              <MovePalette />
+              {/* 液态投放井：仅邮件视图且右侧栏收起时（避免压住 Agent 输入框）；发件队列打开时自动上移让位 */}
+              {!rail && <DropWell bottom={outbox.length ? 296 : 24} />}
+            </>
+          )}
+        </Suspense>
+      </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ShortcutSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <ProjectPickerHost />

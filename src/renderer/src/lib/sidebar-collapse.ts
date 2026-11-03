@@ -21,6 +21,11 @@ function applyWidth(collapsed: boolean) {
   document.documentElement.style.setProperty('--sidebar-w', collapsed ? '0px' : '')
 }
 
+/** 红绿灯三键显隐：默认隐藏（dock / 侧栏向上贯通窗口顶部），极简模式显示（落在 dock 顶部） */
+function applyTraffic(collapsed: boolean) {
+  document.documentElement.dataset.traffic = collapsed ? 'shown' : 'hidden'
+}
+
 export function setSidebarCollapsed(collapsed: boolean) {
   try {
     localStorage.setItem(KEY, collapsed ? '1' : '0')
@@ -28,15 +33,17 @@ export function setSidebarCollapsed(collapsed: boolean) {
     /* 存储不可用时仅本次生效 */
   }
   applyWidth(collapsed)
-  // 红绿灯三键只在极简模式显示（默认隐藏，hiddenInset 会压内容区标题带）
+  applyTraffic(collapsed)
   void window.api?.macShellSetSidebarCollapsed?.(collapsed)
   window.dispatchEvent(new CustomEvent(EVT))
 }
 
 // 模块加载即同步一次，避免首帧侧栏闪现再收起；开机恢复极简模式时红绿灯同步显示
 if (typeof document !== 'undefined') {
-  applyWidth(readSidebarCollapsed())
-  if (readSidebarCollapsed()) void window.api?.macShellSetSidebarCollapsed?.(true)
+  const initial = readSidebarCollapsed()
+  applyWidth(initial)
+  applyTraffic(initial)
+  if (initial) void window.api?.macShellSetSidebarCollapsed?.(true)
 }
 
 function subscribe(cb: () => void) {

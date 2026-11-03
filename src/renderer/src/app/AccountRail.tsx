@@ -150,7 +150,7 @@ export function AccountRail() {
       <div className="drag-region native-web-titlebar h-[var(--titlebar-h)] w-full shrink-0" />
       <nav
         aria-label="账户"
-        className="drag-region flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-md)] flex flex-col items-center overflow-y-auto"
+        className="rail-nav drag-region flex-1 min-h-0 mx-2 mb-2 rounded-[var(--r-md)] flex flex-col items-center overflow-y-auto"
         style={{ background: 'var(--rail-bg)', color: 'var(--rail-fg)', scrollbarWidth: 'none' }}
       >
         <div className="flex flex-col items-center gap-2.5 pt-3">

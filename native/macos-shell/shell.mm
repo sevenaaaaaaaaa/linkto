@@ -97,7 +97,8 @@ static LinkToToolbarHost *gSettingsHost = nil; // 设置窗口
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
   if ([self isSettingsToolbar]) return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kThemeItem, kCloseItem ];
-  return @[ kTitleItem, NSToolbarFlexibleSpaceItemIdentifier, kSearchItem, kAISearchItem, kComposeItem, kGhostItem, kSettingsItem ];
+  // v4：主窗默认不再放标题 item——标题由 Web 侧栏标题带承接，左侧空间让给 dock / 侧栏向上贯通
+  return @[ NSToolbarFlexibleSpaceItemIdentifier, kSearchItem, kAISearchItem, kComposeItem, kGhostItem, kSettingsItem ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag {
@@ -237,8 +238,9 @@ static napi_value Attach(napi_env env, napi_callback_info info) {
   if (napi_create_reference(env, argv[1], 1, &callbackRef) != napi_ok) return result;
   host.callback = callbackRef;
 
-  // v3：默认布局改为「标题居左、搜索靠右」（v2 的用户保存配置不含 flexible 开头，会覆盖新默认，故升版本重置）
-  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar.v3", kind];
+  // v4：主窗默认布局去掉标题 item——标题改由 Web 侧栏标题带显示；红绿灯隐藏后
+  // dock / 侧栏向上贯通到窗口顶部，标题 item 会盖住延伸内容（v3 的用户保存配置会覆盖新默认，故升版本重置）
+  NSString *identifier = [NSString stringWithFormat:@"com.linkto.%@.toolbar.v4", kind];
   NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:identifier];
   toolbar.delegate = host;
   toolbar.displayMode = NSToolbarDisplayModeIconOnly;
