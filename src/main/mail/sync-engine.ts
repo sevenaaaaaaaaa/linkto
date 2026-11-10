@@ -727,8 +727,10 @@ export class AccountWorker {
     // Screener：新发件人登记（存量往来自动放行，新面孔进待审队列）。
     // 已登记为待审 / 已拒的发件人，后续来信同样视为被拦（之前只拦第一封）。
     // 开关关闭时不拦：关闭意味着放行所有人，表里的历史 pending/deny 不得继续吞邮件（开关处会同步清表）
+    // 只有「真正到达」的新邮件才登记发件人：首次同步 / 历史回填 / UIDVALIDITY 重建都会把整箱重扫一遍，
+    // 在这里登记会把几年前的陌生发件人一次性打成待审，并从收件箱里静默吞掉（v0.7.x 真实事故根因）
     let held = false
-    if (inserted && special === 'inbox' && env.from?.address) {
+    if (inserted && arrival && special === 'inbox' && env.from?.address) {
       const screenerEnabled = this.appStore.get('general', DEFAULT_GENERAL).screenerEnabled
       if (screenerEnabled) {
         held = this.store.ensureSenderScreened(env.from.address, screenerEnabled) === 'pending'

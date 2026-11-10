@@ -1450,6 +1450,16 @@ export function registerIpc(ctx: AppContext) {
 
     screenerPendingCount: () => store.screenerPendingCount(),
 
+    /** 收件箱里被 Screener 暂缓的邮件数（让「静默吞信」可见） */
+    screenerHeldCount: () => store.screenerHeldMailCount(),
+
+    /** 一键放行全部待审发件人，返回放行条数 */
+    approveAllPendingSenders: () => {
+      const n = store.approveAllPending()
+      ctx.event(null as never, { type: 'messages-changed' })
+      return n
+    },
+
     aiScreenSuggest: ([addr]: [string]) => insights.screenSuggest(addr),
 
     /** AI 从邮件统计建议订阅主题（设置 → 订阅） */

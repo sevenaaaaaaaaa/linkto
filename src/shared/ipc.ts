@@ -217,6 +217,10 @@ export interface LinkToApi {
   snoozeMessages(ids: string[], until: number | null): Promise<void>
   setSenderStatus(addr: string, status: 'allow' | 'deny' | 'pending', reason?: string): Promise<void>
   screenerPendingCount(): Promise<number>
+  /** 收件箱里被 Screener 暂缓的邮件数（收件箱顶部提示用） */
+  screenerHeldCount(): Promise<number>
+  /** 一键放行全部待审发件人，返回放行条数 */
+  approveAllPendingSenders(): Promise<number>
   aiScreenSuggest(addr: string): Promise<{ ok: boolean; error?: string; verdict: 'allow' | 'deny'; reason: string }>
   getSplitSignals(): Promise<{ known: string[] }>
   listSmartViews(): Promise<SmartView[]>

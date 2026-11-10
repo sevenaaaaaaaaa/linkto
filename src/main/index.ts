@@ -993,6 +993,17 @@ async function bootstrap() {
     const screened = (db.prepare('SELECT COUNT(*) AS c FROM sender_screening').get() as any).c as number
     if (screened === 0) mailStore.seedExistingSenders()
   } catch { /* 表刚建好 */ }
+  // Screener 误登记修复（v0.7.x）：全量回填 / UIDVALIDITY 重建期间登记的历史发件人一次性放行，
+  // 否则它们会继续把收件箱邮件挡在常规视图之外（静默吞信）。只跑一次。
+  try {
+    if (!appStore.getRaw<boolean>('screenerRepairV1', false)) {
+      const released = mailStore.repairBackfilledScreening()
+      appStore.set('screenerRepairV1', true)
+      if (released) console.log(`[screener] 回填误登记修复：放行 ${released} 位发件人`)
+    }
+  } catch (err) {
+    console.error('[screener] 回填误登记修复失败：', err)
+  }
 
   oauth = new OAuthService(appStore)
 

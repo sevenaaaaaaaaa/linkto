@@ -395,6 +395,25 @@ export function MessageList() {
     localStorage.setItem('ms_gravity', String(gravity))
   }, [gravity])
 
+  // Screener 静默吞信可见化：收件箱里有多少封被暂缓（发件人待审）的邮件没有显示出来
+  const [heldCount, setHeldCount] = useState(0)
+  useEffect(() => {
+    let alive = true
+    void api
+      .screenerHeldCount()
+      .then(n => { if (alive) setHeldCount(n) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [scope.kind, total, messages.length])
+
+  /** 一键放行全部待审发件人：让被暂缓的邮件立刻回到收件箱 */
+  const releaseAllHeld = async () => {
+    const n = await api.approveAllPendingSenders()
+    setHeldCount(0)
+    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已放行 ${n} 位发件人，邮件已回到收件箱` }))
+    await useMail.getState().loadMessages()
+  }
+
   /** View Transitions：让重排 / 过滤像液体一样流动到新位置 */
   const withViewTransition = (fn: () => void) => {
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
@@ -1089,6 +1108,40 @@ export function MessageList() {
       )}
 
       <AccountErrorBanner />
+      {(scope.kind === 'unified' || scope.kind === 'account') && !searchActive && heldCount > 0 && (
+        <div
+          className="mx-3 mt-2 rounded-[var(--r-sm)] border px-2.5 py-2 fade-in"
+          style={{ background: 'var(--surface-strong)', borderColor: 'var(--border-soft)' }}
+        >
+          <div className="flex items-start gap-2">
+            <span
+              className="mt-px shrink-0 text-2xs font-semibold uppercase tracking-[0.06em]"
+              style={{ color: 'var(--warn-ink)', fontFamily: 'var(--font-mono)' }}
+            >
+              Screener
+            </span>
+            <span className="text-2xs min-w-0 flex-1 leading-[1.45]" style={{ color: 'var(--muted)' }}>
+              {heldCount} 封新发件人的邮件被暂缓，没有显示在收件箱
+            </span>
+          </div>
+          <div className="mt-1.5 flex items-center justify-end gap-1.5">
+            <button
+              onClick={() => useMail.getState().setScope({ kind: 'screener', title: '待审批发件人' })}
+              className="text-2xs px-2 h-6 rounded-[var(--r-xs)] border hover:bg-[var(--hover)]"
+              style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}
+            >
+              查看
+            </button>
+            <button
+              onClick={() => void releaseAllHeld()}
+              className="text-2xs px-2 h-6 rounded-[var(--r-xs)] font-medium"
+              style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
+            >
+              全部放行
+            </button>
+          </div>
+        </div>
+      )}
       <div ref={listRef} className={`flex-1 overflow-y-auto ${multiMode ? 'pb-14' : ''}`}>
         {loading && !messages.length && (
           <div className="p-8 text-center text-sm" style={{ color: 'var(--faint)' }}>加载中…</div>
@@ -1119,24 +1172,31 @@ export function MessageList() {
         {scope.kind === 'followup' && <FollowupBoard passiveCount={total} />}
         {scope.kind === 'screener' && screenerSenders.length > 0 && (
           <div className="px-3 py-2 space-y-1.5 fade-in">
-            <div className="flex items-center gap-2">
-              <div className="text-2xs font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <div className="text-2xs flex-1 min-w-0 truncate font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
                 {screenerSenders.length} 位新发件人待审 · 放行后邮件才进入收件箱
               </div>
-              <div className="flex-1" />
               {batchVerdicts && batchVerdicts.size > 0 && (
                 <button
                   onClick={() => void applyAllVerdicts()}
-                  className="text-2xs font-medium px-2.5 py-1 rounded-full"
+                  className="text-2xs shrink-0 whitespace-nowrap font-medium px-2.5 py-1 rounded-full"
                   style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
                 >
                   一键采纳（{batchVerdicts.size}）
                 </button>
               )}
               <button
+                onClick={() => void releaseAllHeld()}
+                className="text-2xs shrink-0 whitespace-nowrap font-medium px-2.5 py-1 rounded-full border"
+                style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}
+                title="放行全部待审发件人，被暂缓的邮件立刻回到收件箱"
+              >
+                全部放行
+              </button>
+              <button
                 onClick={() => void runBatchScreen()}
                 disabled={batchBusy}
-                className="text-2xs font-medium px-2.5 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
+                className="text-2xs shrink-0 whitespace-nowrap font-medium px-2.5 py-1 rounded-full border inline-flex items-center gap-1 disabled:opacity-50"
                 style={{ borderColor: 'var(--accent)', color: 'var(--accent-strong)' }}
               >
                 <IconSparkles width={10} height={10} className={batchBusy ? 'spinning' : ''} />

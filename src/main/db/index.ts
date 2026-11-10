@@ -435,6 +435,44 @@ export class MailStore {
     ).c as number
   }
 
+  /** 收件箱里被 Screener 暂缓（发件人待审 / 已拒）的邮件数：用于收件箱提示，避免静默吞信 */
+  screenerHeldMailCount(): number {
+    return (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM messages m WHERE m.folder_path = 'INBOX'
+             AND (m.snoozed_until IS NULL OR m.snoozed_until <= ?)
+             AND EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status IN ('pending','deny'))`
+        )
+        .get(Date.now()) as any
+    ).c as number
+  }
+
+  /**
+   * 一次性修复：全量回填 / UIDVALIDITY 重建会把整箱重扫一遍，期间被登记的待审发件人其实是老面孔。
+   * 判据：该发件人的邮件早于登记时间 24h 以上 → 回填产物，放行；真正的新面孔首封与登记几乎同时，不会被误伤。
+   */
+  repairBackfilledScreening(): number {
+    const info = this.db
+      .prepare(
+        `UPDATE sender_screening SET status = 'allow', reason = '存量回填误登记自动放行', decided_at = ?
+         WHERE status = 'pending' AND EXISTS (
+           SELECT 1 FROM messages m
+           WHERE lower(m.from_addr) = sender_screening.addr AND m.date < sender_screening.created_at - 86400000
+         )`
+      )
+      .run(Date.now())
+    return Number(info.changes ?? 0)
+  }
+
+  /** 一键放行全部待审发件人，返回放行条数 */
+  approveAllPending(): number {
+    const info = this.db
+      .prepare(`UPDATE sender_screening SET status = 'allow', reason = '一键放行全部待审', decided_at = ? WHERE status = 'pending'`)
+      .run(Date.now())
+    return Number(info.changes ?? 0)
+  }
+
   /** Split Inbox 行为信号：有过往来的发件人（我回复过 / 我发过信） */
   getKnownSenders(): string[] {
     const answered = this.db
@@ -565,7 +603,7 @@ export class MailStore {
     }
     if (disciplineScopes.includes(query.scope) && query.scope !== 'folder') {
       where.push(
-        `NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`
+        `NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status IN ('pending','deny'))`
       )
     }
     if (query.scope === 'unified') {
@@ -593,7 +631,7 @@ export class MailStore {
     } else if (query.scope === 'snoozed') {
       where.push('m.snoozed_until IS NOT NULL')
     } else if (query.scope === 'screener') {
-      where.push("EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status = 'pending')")
+      where.push("EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status = 'pending')")
       where.push("m.folder_path = 'INBOX'")
     } else if (query.scope === 'followup') {
       // 我发出后对方一直没回：sent 邮件，且线程内没有更晚的「非我方」来信
@@ -656,7 +694,7 @@ export class MailStore {
     }
     if (q.flaggedOnly) where.push("m.flags LIKE '%\\Flagged%'")
     where.push(`(m.snoozed_until IS NULL OR m.snoozed_until <= ${now})`)
-    where.push(`NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = m.from_addr AND ss.status IN ('pending','deny'))`)
+    where.push(`NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status IN ('pending','deny'))`)
     if (q.category) {
       where.push('m.category = ?')
       params.push(q.category)

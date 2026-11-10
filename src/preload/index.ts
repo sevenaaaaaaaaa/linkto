@@ -29,7 +29,7 @@ const METHOD_NAMES = [
   'insightExtract', 'generateDaily', 'companyInsight', 'listCompanyDomains',
   'listInsights', 'setInsightStatus', 'deleteInsight', 'saveMemo',
   'pinMessages', 'aiRankMessages', 'aiAskBulk', 'saveTodoSet',
-  'snoozeMessages', 'setSenderStatus', 'screenerPendingCount', 'aiScreenSuggest', 'getSplitSignals',
+  'snoozeMessages', 'setSenderStatus', 'screenerPendingCount', 'screenerHeldCount', 'approveAllPendingSenders', 'aiScreenSuggest', 'getSplitSignals',
   'listSmartViews', 'saveSmartView', 'deleteSmartView',
   'aiComposeQuery', 'aiSnoozeSuggest', 'aiJudgeFollowups', 'aiFollowupDraft', 'aiScreenBatch', 'nlSearch',
   'listConnectorManifests', 'listConnectorInstances', 'connectConnector', 'disconnectConnector', 'runConnectorAction', 'installUserConnector', 'listUserConnectors', 'removeUserConnector', 'getUserConnectorTemplate',
