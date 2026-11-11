@@ -1,14 +1,14 @@
 import { useEffect } from 'react'
-import { ActivityIndicator, Platform, StatusBar, useColorScheme, View } from 'react-native'
+import { ActivityIndicator, StatusBar, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useMail } from './src/store/mail'
 import { GuardScreen } from './src/screens/GuardScreen'
 import { MainShell } from './src/screens/MainShell'
 import { T } from './src/theme'
 
-/** 林可兔移动版 v0.4：守卫 → 多账户邮件 / 加密 / 保险箱 / 设置 */
+/** 林可兔移动版 v0.6：守卫 → 邮件 / 今日 / 随手记 / 更多 */
 export default function App() {
-  const dark = useColorScheme() === 'dark' && Platform.OS === 'ios'
+  const dark = useColorScheme() === 'dark'
   const { guard, init } = useMail()
 
   useEffect(() => {

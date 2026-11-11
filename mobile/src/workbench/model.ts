@@ -1,3 +1,4 @@
+import type { Planning } from './planning'
 export interface MailSource {
   accountEmail: string
   mailbox: string
@@ -51,21 +52,24 @@ export function parseSchedule(date: string, time: string): number | null {
 }
 
 /** Stable gap-filling schedule: preserve fixed blocks, never overlap or overflow the day. */
-export function autoSchedule(items: WorkItem[], now: number, end: number): { scheduled: Map<string, number>; overflow: string[] } {
+export function autoSchedule(items: WorkItem[], now: number, end: number, planning?: Planning): { scheduled: Map<string, number>; overflow: string[] } {
   const blocks = items.filter(i => i.kind === 'todo' && i.status === 'open' && i.data.fixedAt)
     .map(i => ({ start: Number(i.data.fixedAt), end: Number(i.data.fixedAt) + durationOf(i) * 60000 }))
-    .sort((a, b) => a.start - b.start)
+
+  const date = new Date(now); date.setHours(0, 0, 0, 0)
+  if (planning && planning.breakEnd > planning.breakStart) blocks.push({ start: date.getTime() + planning.breakStart * 60000, end: date.getTime() + planning.breakEnd * 60000 })
+  blocks.sort((a, b) => a.start - b.start)
   const candidates = items.filter(i => i.kind === 'todo' && i.status === 'open' && !i.data.fixedAt && (!i.dueAt || i.dueAt < dayEnd(now)))
-    .sort((a, b) => (a.data.priority ?? 2) - (b.data.priority ?? 2) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    .sort((a, b) => (Number(a.data.order ?? Infinity) - Number(b.data.order ?? Infinity) || 0) || (a.data.priority ?? 2) - (b.data.priority ?? 2) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
   const scheduled = new Map<string, number>(), overflow: string[] = []
-  let cursor = Math.ceil(now / 300000) * 300000
+  let cursor = Math.ceil(Math.max(now, planning ? date.getTime() + planning.start * 60000 : now) / 300000) * 300000
   for (const item of candidates) {
     const length = durationOf(item) * 60000
     let candidate = cursor
     for (const block of blocks) if (candidate < block.end && candidate + length > block.start) candidate = block.end
     if (candidate + length > end) { overflow.push(item.id); continue }
     scheduled.set(item.id, candidate)
-    cursor = candidate + length
+    cursor = candidate + length + (planning?.buffer ?? 0) * 60000
   }
   return { scheduled, overflow }
 }

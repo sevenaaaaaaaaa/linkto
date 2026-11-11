@@ -21,7 +21,7 @@ test('UID search/fetch and literal parsing return the requested message after se
   const header = 'From: Alice <alice@example.com>\r\nSubject: right message\r\nMessage-ID: <right@example.com>\r\n'
   const { imap, commands } = client((command, tag) => {
     if (command.startsWith('SELECT')) return `* 1 EXISTS\r\n${tag} OK selected\r\n`
-    if (command === 'UID SEARCH ALL') return `* SEARCH 70\r\n${tag} OK search\r\n`
+    if (command === 'UID SEARCH UNDELETED') return `* SEARCH 70\r\n${tag} OK search\r\n`
     if (command.startsWith('UID FETCH 70 ')) return `* 1 FETCH (UID 70 FLAGS () BODY[HEADER] {${header.length}}\r\n${header})\r\n${tag} OK fetched\r\n`
     throw new Error(command)
   })
@@ -49,8 +49,24 @@ test('an empty search never fetches invalid UID zero', async () => {
 test('fetch errors preserve the distinction from an empty inbox', async () => {
   const { imap } = client((command, tag) => {
     if (command.startsWith('SELECT')) return `${tag} OK selected\r\n`
-    if (command === 'UID SEARCH ALL') return `* SEARCH 70\r\n${tag} OK done\r\n`
+    if (command === 'UID SEARCH UNDELETED') return `* SEARCH 70\r\n${tag} OK done\r\n`
     return `${tag} NO unavailable\r\n`
   })
   await expect(imap.fetchEnvelopes('INBOX')).rejects.toThrow('邮件信封获取失败')
+})
+
+test('MOVE returns the new UID for undo and never expunges unrelated mail', async () => {
+  const { imap, commands } = client((command, tag) => command.startsWith('UID MOVE') ? `${tag} OK [COPYUID 5 70 901] moved\r\n` : `${tag} OK selected\r\n`)
+  expect(await imap.moveMessage('INBOX', 70, 'Archive')).toBe(901)
+  expect(commands.some(c => /EXPUNGE/.test(c))).toBe(false)
+})
+test('legacy MOVE fallback copies and expunges only the selected UID', async () => {
+  const { imap, commands } = client((command, tag) => command.startsWith('UID MOVE') ? `${tag} BAD unsupported\r\n` : command.startsWith('UID COPY') ? `${tag} OK [COPYUID 5 70 902] copied\r\n` : `${tag} OK done\r\n`)
+  expect(await imap.moveMessage('INBOX', 70, 'Trash')).toBe(902)
+  expect(commands.some(c => c.endsWith('UID EXPUNGE 70'))).toBe(true)
+  expect(commands.some(c => /^A\d+ EXPUNGE/.test(c))).toBe(false)
+})
+test('special-use folder beats an unrelated folder with an archive-like name', async () => {
+  const { imap } = client((_, tag) => `* LIST (\\HasNoChildren) "/" "Project Archive"\r\n* LIST (\\Trash) "/" "Deleted Items"\r\n${tag} OK done\r\n`)
+  expect(await imap.actionFolder('trash')).toBe('Deleted Items')
 })

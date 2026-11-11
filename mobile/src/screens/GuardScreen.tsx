@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import { useMail } from '../store/mail'
 
 /**
@@ -9,7 +9,7 @@ import { useMail } from '../store/mail'
  * 阶梯焚毁：错 5 次锁 15 分钟（翻倍递增），累计 15 次 → 焚毁全部本地数据
  */
 export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
-  const { setupMaster, unlockMaster, guardFailsLeft, guardLockUntil, burnReason, init } = useMail()
+  const { setupMaster, unlockMaster, guardFailsLeft, guardLockUntil, burnReason, init, initError } = useMail()
   const [pass, setPass] = useState('')
   const [pass2, setPass2] = useState('')
   const [err, setErr] = useState('')
@@ -30,21 +30,24 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
     if (busy) return
     setBusy(true)
     setErr('')
-    if (mode === 'setup') {
-      if (pass !== pass2) {
-        setErr('两次输入不一致')
-        setBusy(false)
-        return
+    try {
+      if (mode === 'setup') {
+        if (pass !== pass2) {
+          setErr('两次输入不一致')
+          return
+        }
+        const problem = await setupMaster(pass)
+        if (problem) setErr(problem)
+      } else {
+        await unlockMaster(pass)
       }
-      const problem = await setupMaster(pass)
-      if (problem) setErr(problem)
-    } else {
-      await unlockMaster(pass)
-    }
-    setPass('')
-    setPass2('')
-    setBusy(false)
+      setPass('')
+      setPass2('')
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
   }
+
+  if (initError) return <SafeAreaView style={s.root}><Text style={s.title}>暂时无法打开本机钥匙串</Text><Text accessibilityRole="alert" style={s.sub}>尚未进入密码验证。请重试；如果刚更新应用，检查系统签名与钥匙串权限。</Text><Text selectable style={s.err}>{initError}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="重试初始化" style={s.btn} onPress={() => void init()}><Text style={s.btnText}>重试</Text></TouchableOpacity></SafeAreaView>
 
   return (
     <SafeAreaView style={s.root}>
@@ -87,7 +90,7 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
       <TouchableOpacity
         style={[s.btn, (busy || locked || !pass) && { opacity: 0.5 }]}
         disabled={busy || locked || !pass}
-        onPress={() => void submit()}
+        onPress={submit}
       >
         <Text style={s.btnText}>{busy ? '验证中…' : mode === 'setup' ? '设置并进入' : '解锁'}</Text>
       </TouchableOpacity>
@@ -98,7 +101,7 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper, paddingHorizontal: 24 },
   burnBanner: { backgroundColor: T.danger, borderRadius: 10, padding: 12, marginTop: 12 },
   burnText: { color: '#fff', fontSize: 13, fontWeight: '600', lineHeight: 19 },
@@ -106,9 +109,9 @@ const s = StyleSheet.create({
   restartText: { color: '#fff', fontSize: 12 },
   title: { fontSize: 22, fontWeight: '700', color: T.ink, marginTop: 40 },
   sub: { fontSize: 12, color: T.faint, marginTop: 8, lineHeight: 18, marginBottom: 20 },
-  input: { backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, marginBottom: 12 },
+  input: { minHeight: 48, backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, marginBottom: 12 },
   err: { fontSize: 12, color: T.danger, marginBottom: 10, lineHeight: 17 },
-  btn: { backgroundColor: T.accent, borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
+  btn: { minHeight: 48, backgroundColor: T.accent, borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
   btnText: { color: T.accentInk, fontSize: 14, fontWeight: '600' },
   note: { fontSize: 11, color: T.faint, marginTop: 16, lineHeight: 16 }
-})
+}))

@@ -3,7 +3,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import { useMail } from '../store/mail'
 import { aiDraftReply } from '../ai/client'
 
@@ -119,7 +119,7 @@ export function ComposeScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
   cancel: { fontSize: 14, color: T.accent, width: 52 },
@@ -142,4 +142,4 @@ const s = StyleSheet.create({
   warn: { marginTop: 12, fontSize: 11, color: T.warn, lineHeight: 17 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 },
   footerText: { fontSize: 11, color: T.faint }
-})
+}))

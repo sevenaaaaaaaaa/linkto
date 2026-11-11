@@ -1,28 +1,38 @@
-import { DynamicColorIOS, Platform } from 'react-native'
-const color = (light: string, dark: string) => Platform.OS === 'ios' ? DynamicColorIOS({ light, dark }) : light
+import { Appearance, DynamicColorIOS, Platform } from 'react-native'
+const color = (light: string, dark: string) => Platform.OS === 'ios' ? DynamicColorIOS({ light, dark }) : Appearance.getColorScheme() === 'dark' ? dark : light
 /** iOS resolves semantic colors natively, including styles created before a theme change. */
 export const T = {
-  paper: color('#F5F1E8', '#14181B'),
-  surface: color('#FFFDF7', '#20262B'),
-  surfaceAlt: color('#EFEAE0', '#2B3339'),
-  ink: color('#1F2226', '#F0EEE8'),
-  inkSoft: color('#3C4146', '#C9CFD1'),
-  faint: color('#6C706F', '#A5B0B3'),
-  hairline: color('rgba(31,34,38,0.12)', 'rgba(237,242,240,0.15)'),
-  accent: color('#007C78', '#72D8C8'),
-  accentDeep: color('#005F5D', '#9EE6D9'),
-  accentSoft: color('rgba(0,124,120,0.09)', 'rgba(114,216,200,0.12)'),
-  accentInk: color('#FFFFFF', '#102C29'),
-  danger: color('#B4232A', '#FF9D9D'),
-  dangerSoft: color('rgba(180,35,42,0.09)', 'rgba(255,157,157,0.10)'),
-  ok: color('#0F766E', '#72D8C8'),
-  okSoft: color('rgba(15,118,110,0.10)', 'rgba(114,216,200,0.10)'),
-  warn: color('#9A6A1F', '#E7C075'),
-  warnSoft: color('rgba(154,106,31,0.12)', 'rgba(231,192,117,0.12)'),
+  get paper() { return color('#F5F1E8', '#14181B') },
+  get surface() { return color('#FFFDF7', '#20262B') },
+  get surfaceAlt() { return color('#EFEAE0', '#2B3339') },
+  get ink() { return color('#1F2226', '#F0EEE8') },
+  get inkSoft() { return color('#3C4146', '#C9CFD1') },
+  get faint() { return color('#6C706F', '#A5B0B3') },
+  get hairline() { return color('rgba(31,34,38,0.12)', 'rgba(237,242,240,0.15)') },
+  get accent() { return color('#007C78', '#72D8C8') },
+  get accentDeep() { return color('#005F5D', '#9EE6D9') },
+  get accentSoft() { return color('rgba(0,124,120,0.09)', 'rgba(114,216,200,0.12)') },
+  get accentInk() { return color('#FFFFFF', '#102C29') },
+  get danger() { return color('#B4232A', '#FF9D9D') },
+  get dangerSoft() { return color('rgba(180,35,42,0.09)', 'rgba(255,157,157,0.10)') },
+  get ok() { return color('#0F766E', '#72D8C8') },
+  get okSoft() { return color('rgba(15,118,110,0.10)', 'rgba(114,216,200,0.10)') },
+  get warn() { return color('#9A6A1F', '#E7C075') },
+  get warnSoft() { return color('rgba(154,106,31,0.12)', 'rgba(231,192,117,0.12)') },
   shadow: 'rgba(31,34,38,0.12)',
   scrim: 'rgba(31,34,38,0.36)',
   white: '#FFFFFF'
 } as const
+
+/** Lazy per-scheme styles keep Android colors reactive without remounting editors. */
+export function themedStyles<S extends object>(factory: () => S): S {
+  const cache = new Map<string, S>()
+  return new Proxy({} as S, { get: (_target, name) => {
+    const scheme = Platform.OS === 'ios' ? 'dynamic' : Appearance.getColorScheme() ?? 'light'
+    if (!cache.has(scheme)) cache.set(scheme, factory())
+    return cache.get(scheme)![name as keyof S]
+  } })
+}
 
 export function accountInitial(email: string): string {
   const local = (email || '?').split('@')[0]

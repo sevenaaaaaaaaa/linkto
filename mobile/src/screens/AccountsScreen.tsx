@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { T, accountInitial } from '../theme'
+import { themedStyles, T, accountInitial } from '../theme'
 import { useMail } from '../store/mail'
 import { useTablet } from '../hooks/useTablet'
 import { ACCOUNT_PROVIDER_CHOICES, PROVIDER_PRESETS, microsoftProviderFor, presetFor } from '../providers'
@@ -157,7 +157,7 @@ export function AccountsScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   headRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 16 },
   title: { fontSize: 24, fontWeight: '700', color: T.ink },
@@ -195,4 +195,4 @@ const s = StyleSheet.create({
   btnGhostText: { color: T.faint, fontSize: 12 },
   note: { fontSize: 11, color: T.faint, marginTop: 10, lineHeight: 16 }
   ,providerChip: { minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: T.hairline, backgroundColor: T.surface }, providerNotice: { padding: 14, gap: 12, borderRadius: 14, backgroundColor: T.surfaceAlt }
-})
+}))

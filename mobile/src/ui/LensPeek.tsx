@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Animated, Easing, Modal, StyleSheet, Text, View } from 'react-native'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import type { MailEnvelope } from '../imap/ImapLite'
 import { linkToCore } from '../native/LinkToCore'
 
@@ -65,7 +65,7 @@ export function LensPeek({ msg, onClose }: { msg: MailEnvelope | null; onClose()
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   scrim: { flex: 1, backgroundColor: 'rgba(31,34,38,0.32)', alignItems: 'center', justifyContent: 'center', padding: 32 },
   card: {
     width: '100%',
@@ -84,4 +84,4 @@ const s = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: T.hairline },
   from: { fontSize: 13, color: T.accent, fontWeight: '600' },
   hint: { fontSize: 10, color: T.faint, marginTop: 6, textAlign: 'center' }
-})
+}))

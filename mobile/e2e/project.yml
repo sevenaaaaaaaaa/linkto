@@ -1,0 +1,17 @@
+name: LinkToQA
+options:
+  deploymentTarget:
+    iOS: '16.0'
+targets:
+  LinkToQA:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.linkto.mobile.qa
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: '-'
+        SWIFT_VERSION: '5.0'
+    scheme:
+      testTargets: [LinkToQA]

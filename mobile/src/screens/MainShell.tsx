@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import { useMail, type MailTab } from '../store/mail'
 import { useTablet } from '../hooks/useTablet'
 import { linkToCore } from '../native/LinkToCore'
@@ -12,6 +12,8 @@ import { ComposeScreen } from './ComposeScreen'
 import { FlyScreen } from './FlyScreen'
 import { VaultScreen } from './VaultScreen'
 import { SettingsScreen } from './SettingsScreen'
+import { ReminderSettings } from '../ui/ReminderSettings'
+import { Notice } from '../ui/Notice'
 import { Icon } from '../ui/Icon'
 import { WorkbenchScreen } from '../workbench/WorkbenchScreen'
 import { CaptureSheet } from '../workbench/CaptureSheet'
@@ -30,6 +32,7 @@ function MoreScreen() {
   return <ScrollView style={{ flex: 1, backgroundColor: T.paper }} contentContainerStyle={{ padding: 22, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 40 }}>
     <Text style={s.moreTitle}>更多</Text><Text style={s.moreSubtitle}>让邮件、安排与想法，在自己的设备间流动。</Text>
     <SyncSettings />
+    <ReminderSettings />
     {([{ id: 'settings', title: '邮箱与设置', text: '账户、AI、应用锁与本机数据' }, { id: 'fly', title: '萤火密信', text: '发送一封阅后即焚的消息' }, { id: 'vault', title: '保险箱', text: '加密暂存内容与密码' }] as const).map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => useMail.getState().setTab(item.id)} style={({ pressed }) => [s.moreCard, pressed && { opacity: 0.7 }]}><Text style={s.moreCardTitle}>{item.title}</Text><Text style={s.moreSubtitle}>{item.text}</Text></Pressable>)}
   </ScrollView>
 }
@@ -63,15 +66,16 @@ export function MainShell() {
     const listener = AppState.addEventListener('change', state => {
       if (state === 'active') { void openReminder(); void syncWorkbench(); if (useMail.getState().accounts.length) void useMail.getState().refresh() }
     })
+    const reminderTimer = setInterval(() => { if (AppState.currentState === 'active') void openReminder() }, 2000)
     const timer = setInterval(() => { if (AppState.currentState === 'active') { void syncWorkbench(); if (useMail.getState().accounts.length && useMail.getState().tab === 'mail') void useMail.getState().refresh() } }, 60_000)
-    return () => { clearInterval(timer); listener.remove(); pauseWorkSync(); useWorkbench.getState().clear() }
+    return () => { clearInterval(timer); clearInterval(reminderTimer); listener.remove(); pauseWorkSync(); useWorkbench.getState().clear() }
   }, [])
   const create = () => Alert.alert('新建', '从一封邮件，或一段想法开始。', [
     { text: '写邮件', onPress: () => { if (!useMail.getState().accounts.length) { setTab('mail'); useMail.getState().go('accounts') } else useMail.getState().composeNew() } },
     { text: '随手记 / 待办', onPress: () => useWorkbench.getState().openCapture() },
     { text: '取消', style: 'cancel' }
   ])
-  const content = <><View style={{ flex: 1 }}>{activeTab === 'more' && tab !== 'more' && <Pressable accessibilityRole="button" onPress={() => setTab('more')} style={s.backMore}><Text style={s.backMoreText}>‹ 更多</Text></Pressable>}<Content tab={tab} /></View><CaptureSheet /></>
+  const content = <><View style={{ flex: 1 }}>{activeTab === 'more' && tab !== 'more' && <Pressable accessibilityRole="button" onPress={() => setTab('more')} style={s.backMore}><Text style={s.backMoreText}>‹ 更多</Text></Pressable>}<Content tab={tab} /><Notice /></View><CaptureSheet /></>
 
   const select = (next: MailTab) => {
     if (next === tab) return
@@ -125,7 +129,7 @@ export function MainShell() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   content: { flex: 1 },
   tabletRow: { flex: 1, flexDirection: 'row' },
@@ -148,4 +152,4 @@ const s = StyleSheet.create({
   tabGlyphActive: { color: T.accent },
   tabLabel: { fontSize: 10, color: T.faint },
   tabLabelActive: { color: T.accent, fontWeight: '600' }
-})
+}))

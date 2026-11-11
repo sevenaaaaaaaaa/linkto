@@ -1,4 +1,4 @@
-import { binaryFromB64, bytesFromBinary, decodeBytes, decodeWords } from './encoding'
+import { binaryFromB64, b64FromBinary, bytesFromBinary, decodeBytes, decodeWords } from './encoding'
 
 export interface ParsedAttachment {
   filename: string
@@ -6,6 +6,8 @@ export interface ParsedAttachment {
   size: number
   contentId?: string
   inline: boolean
+  data?: string
+  tooLarge?: boolean
 }
 
 export interface ParsedMail {
@@ -75,7 +77,9 @@ function toText(binary: string, charset: string): string {
 function filenameOf(headers: HeaderMap, partType: string): string {
   const ct = parseContentType(headers['content-type'])
   const cd = parseContentType(headers['content-disposition'])
-  const name = cd.params.filename ?? ct.params.name ?? ''
+  let name = cd.params.filename ?? ct.params.name ?? ''
+  const encoded = cd.params['filename*'] ?? ct.params['name*']
+  if (encoded) { try { name = decodeURIComponent(encoded.replace(/^[^']*'[^']*'/, '')) } catch { /* fallback filename */ } }
   if (name) return decodeWords(name)
   return '附件.' + (partType.split('/')[1] || 'bin')
 }
@@ -138,15 +142,16 @@ function parsePart(headers: HeaderMap, body: string): ParsedMail {
   const binary = decodeTransfer(body, transfer)
   const charset = ct.params.charset ?? 'utf-8'
 
-  if (ct.type === 'text/html') {
+  const disposition = parseContentType(headers['content-disposition'])
+  const attachment = disposition.type === 'attachment' || !!disposition.params.filename || !!disposition.params['filename*'] || !!ct.params.name
+  if (!attachment && ct.type === 'text/html') {
     return { html: toText(binary, charset), text: null, attachments: [] }
   }
-  if (ct.type === 'text/plain' || ct.type === '') {
+  if (!attachment && (ct.type === 'text/plain' || ct.type === '')) {
     const text = toText(binary, charset).replace(/\r\n/g, '\n').trim()
     return { html: null, text, attachments: [] }
   }
 
-  const disposition = parseContentType(headers['content-disposition'])
   const contentId = (headers['content-id'] ?? '').replace(/^<|>$/g, '').trim()
   return {
     html: null,
@@ -155,6 +160,7 @@ function parsePart(headers: HeaderMap, body: string): ParsedMail {
       filename: filenameOf(headers, ct.type),
       contentType: ct.type,
       size: binary.length,
+      ...(binary.length <= 15 * 1024 * 1024 ? { data: b64FromBinary(binary) } : { tooLarge: true }),
       ...(contentId ? { contentId } : {}),
       inline: disposition.type === 'inline' || !!contentId
     }]

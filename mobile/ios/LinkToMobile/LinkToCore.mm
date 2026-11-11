@@ -12,6 +12,7 @@
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>
 #import <UserNotifications/UserNotifications.h>
+#import <QuickLook/QuickLook.h>
 
 static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
   NSMutableString *out = [NSMutableString stringWithCapacity:len * 2];
@@ -19,12 +20,62 @@ static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
   return out;
 }
 
+@interface LinkToAttachmentPreview : QLPreviewController <QLPreviewControllerDataSource>
+@property(nonatomic, strong) NSURL *attachmentURL;
+@end
+@implementation LinkToAttachmentPreview
+- (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)controller { return 1; }
+- (id<QLPreviewItem>)previewController:(QLPreviewController *)controller previewItemAtIndex:(NSInteger)index { return self.attachmentURL; }
+@end
+
 @interface LinkToCore : NSObject <RCTBridgeModule>
 @end
 
 @implementation LinkToCore
 
 RCT_EXPORT_MODULE(LinkToCore)
+
+RCT_EXPORT_METHOD(clearAttachments:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:@"linkto-attachments"];
+  [[NSFileManager defaultManager] removeItemAtPath:directory error:nil];
+  resolve(@YES);
+}
+
+RCT_EXPORT_METHOD(openAttachment:(NSString *)filename data:(NSString *)base64 type:(NSString *)mime share:(BOOL)share resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSData *data = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
+  if (!data || data.length > 15 * 1024 * 1024) { reject(@"ATTACHMENT_SIZE", @"附件无效或超过 15MB", nil); return; }
+  NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"linkto-attachments"];
+  NSFileManager *manager = [NSFileManager defaultManager];
+  for (NSString *entry in [manager contentsOfDirectoryAtPath:root error:nil]) {
+    NSString *path = [root stringByAppendingPathComponent:entry];
+    NSDate *created = [manager attributesOfItemAtPath:path error:nil][NSFileCreationDate];
+    if (created && -created.timeIntervalSinceNow > 86400) [manager removeItemAtPath:path error:nil];
+  }
+  NSString *directory = [root stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+  [manager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:nil];
+  NSString *name = filename.lastPathComponent.length ? filename.lastPathComponent : @"attachment.bin";
+  NSURL *url = [NSURL fileURLWithPath:[directory stringByAppendingPathComponent:name]];
+  NSError *error;
+  if (![data writeToURL:url options:NSDataWritingAtomic | NSDataWritingFileProtectionComplete error:&error]) { reject(@"ATTACHMENT_WRITE", @"附件暂存失败", error); return; }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UIWindowScene *scene = nil;
+    for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) if (candidate.activationState == UISceneActivationStateForegroundActive && [candidate isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)candidate; break; }
+    UIViewController *presenter = scene.windows.firstObject.rootViewController;
+    while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+    if (!presenter) { reject(@"ATTACHMENT_VIEW", @"请回到应用后重试", nil); return; }
+    if (!share && [QLPreviewController canPreviewItem:url]) {
+      LinkToAttachmentPreview *preview = [LinkToAttachmentPreview new]; preview.attachmentURL = url; preview.dataSource = preview;
+      [presenter presentViewController:preview animated:YES completion:^{ resolve(@YES); }];
+    } else {
+      UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+      sheet.popoverPresentationController.sourceView = presenter.view;
+      sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1);
+      [presenter presentViewController:sheet animated:YES completion:^{ resolve(@YES); }];
+    }
+  });
+}
 
 RCT_EXPORT_METHOD(takeReminder:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, useColorScheme, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
-import { T, fmtBytes, fmtShortDate, prettyFrom } from '../theme'
+import { themedStyles, T, fmtBytes, fmtShortDate, prettyFrom } from '../theme'
 import { useMail } from '../store/mail'
 import { wrapHtml } from '../imap/MimeLite'
 import { SwipeReader, SwipeHint } from '../ui/SwipeReader'
@@ -10,12 +10,15 @@ import { addVaultItem } from '../vault/store'
 import { aiDraftReply, aiSummarize } from '../ai/client'
 import { htmlToText } from '../util/text'
 import { addressOf } from '../smtp/message'
+import { linkToCore } from '../native/LinkToCore'
+import { MailActions } from '../mail/MailActions'
 import { useWorkbench } from '../workbench/store'
 
 /** embedded=true：平板双栏右栏嵌入，无 SafeArea / 返回头 */
 export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
   const dark = useColorScheme() === 'dark'
   const { reading, body, bodyLoading, backToInbox, composeReply, composeNew, toggleSeen } = useMail()
+  const [mailActions, setMailActions] = useState(false)
   const [showImages, setShowImages] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
@@ -26,7 +29,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     setShowImages(false)
     setShowAttachments(false)
-  }, [reading?.uid, reading?.accountId])
+  }, [reading?.uid, reading?.accountId, reading?.mailbox])
 
   if (!reading) return null
 
@@ -99,7 +102,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
           <Text style={s.metaDim}>{fmtShortDate(reading.date)}</Text>
         </View>
         <Pressable
-          onPress={() => void toggleSeen(reading)}
+          onPress={() => void toggleSeen(reading).catch(e => Alert.alert('操作未完成', String(e)))}
           hitSlop={10}
           style={s.iconBtn}
         >
@@ -114,6 +117,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
 
   const actions = (
     <View style={s.actionRow}>
+      <Pressable accessibilityRole="button" accessibilityLabel="归档、删除或稍后处理" onPress={() => setMailActions(true)} style={s.actBtn}><Text style={s.actText}>处理邮件</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={() => useWorkbench.getState().openCapture({ source: { accountEmail: reading.accountEmail, mailbox: reading.mailbox, uid: reading.uid, messageId: reading.messageId, subject: reading.subject, from: reading.from, date: reading.date }, content: plainText.slice(0, 3000) })} style={s.actBtn}><Text style={s.actText}>记下 / 转待办</Text></Pressable>
       <Pressable onPress={() => void openAI()} style={s.actBtn}><Text style={s.actText}>AI 摘要</Text></Pressable>
       <Pressable onPress={saveMenu} style={s.actBtn}><Text style={s.actText}>暂存 / 保险箱</Text></Pressable>
@@ -200,9 +204,11 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
                 <View key={i} style={s.attachRow}>
                   <Text style={s.attachName} numberOfLines={1}>{a.filename}</Text>
                   <Text style={s.attachSize}>{fmtBytes(a.size)}</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`预览附件 ${a.filename}`} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }} onPress={() => { if (!a.data) { Alert.alert('附件暂不可用', a.tooLarge ? '附件超过 15MB，请在桌面端打开' : '当前仅有离线元数据，请联网重新打开这封邮件'); return }; void linkToCore.openAttachment(a.filename, a.data, a.contentType).catch(e => Alert.alert('预览未完成', String(e))) }}><Text style={s.toolbarAction}>预览</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`分享附件 ${a.filename}`} disabled={!a.data} accessibilityState={{ disabled: !a.data }} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }} onPress={() => { if (a.data) void linkToCore.openAttachment(a.filename, a.data, a.contentType, true).catch(e => Alert.alert('分享未完成', String(e))) }}><Text style={[s.toolbarAction, !a.data && { opacity: 0.4 }]}>分享</Text></Pressable>
                 </View>
               ))}
-              <Text style={s.attachNote}>附件下载下一轮支持</Text>
+              <Text style={s.attachNote}>点预览打开附件，分享可保存到文件或其他应用。</Text>
             </ScrollView>
           )}
         </View>
@@ -224,6 +230,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
         {actions}
         {wrapped}
         {aiModal}
+        <MailActions message={mailActions ? reading : null} onClose={() => setMailActions(false)} />
       </View>
     )
   }
@@ -239,11 +246,12 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
       {actions}
       {wrapped}
       {aiModal}
+      <MailActions message={mailActions ? reading : null} onClose={() => setMailActions(false)} />
     </SafeAreaView>
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
   back: { fontSize: 14, color: T.accent, fontWeight: '600', width: 60 },
@@ -290,4 +298,4 @@ const s = StyleSheet.create({
   aiDraft: { marginTop: 22, backgroundColor: T.accent, borderRadius: 11, paddingVertical: 13, alignItems: 'center' },
   aiDraftText: { color: T.accentInk, fontSize: 13, fontWeight: '700' },
   aiNote: { fontSize: 10, color: T.faint, lineHeight: 16, marginTop: 14 }
-})
+}))

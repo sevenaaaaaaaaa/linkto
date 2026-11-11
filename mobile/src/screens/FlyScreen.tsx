@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View
 } from 'react-native'
-import { T, fmtShortDate } from '../theme'
+import { themedStyles, T, fmtShortDate } from '../theme'
 import { composeFly, openFly, type FlyComposeResult, type FlyOpenResult } from '../fly/relay'
 import { addVaultItem } from '../vault/store'
 import { copyWithClear } from '../ui/clipboard'
@@ -230,7 +230,7 @@ export function FlyScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   inner: { flex: 1, width: '100%', maxWidth: 680, alignSelf: 'center' },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
@@ -272,4 +272,4 @@ const s = StyleSheet.create({
   againText: { fontSize: 12, color: T.accent, fontWeight: '600' },
   info: { marginTop: 18, backgroundColor: T.okSoft, borderRadius: 12, padding: 12 },
   infoText: { fontSize: 11, color: T.inkSoft, lineHeight: 17 }
-})
+}))

@@ -112,6 +112,7 @@ interface MailState {
   guardLockUntil: number
   guardFailsLeft: number
   burnReason: string
+  initError: string
   accounts: MobileAccount[]
   active: MobileAccount | null
   scope: MailScope
@@ -145,6 +146,7 @@ interface MailState {
   search(query: string): Promise<void>
   openMessage(m: MobileMessage, opts?: { stay?: boolean }): Promise<void>
   openSource(source: MailSource): Promise<void>
+  moveMessage(m: MobileMessage, kind: 'archive' | 'trash'): Promise<{ undo?: () => Promise<void> }>
   toggleSeen(m: MobileMessage): Promise<void>
   stepReading(dir: 1 | -1): Promise<void>
   backToInbox(): void
@@ -185,14 +187,14 @@ async function ensureClient(account: MobileAccount): Promise<ImapLite> {
   return client
 }
 
-export function withClient<T>(account: MobileAccount, fn: (c: ImapLite) => Promise<T>): Promise<T> {
+export function withClient<T>(account: MobileAccount, fn: (c: ImapLite) => Promise<T>, retry = true): Promise<T> {
   const execute = async () => {
     if (useMail.getState().guard !== 'ready') throw new Error('应用已锁定')
     const client = await ensureClient(account)
     try { return await fn(client) }
     catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      if (/未连接|网络错误|响应超时|连接超时/.test(msg) && useMail.getState().guard === 'ready') {
+      if (retry && /未连接|网络错误|响应超时|连接超时/.test(msg) && useMail.getState().guard === 'ready') {
         if (account.authType === 'oauth-ms') { client.disconnect(); clients.delete(account.id); return fn(await ensureClient(account)) }
         await client.reconnect(); return fn(client)
       }
@@ -223,6 +225,7 @@ export const useMail = create<MailState>((set, get) => ({
   guardLockUntil: 0,
   guardFailsLeft: 0,
   burnReason: '',
+  initError: '',
   accounts: [],
   active: null,
   scope: { kind: 'unified', folder: 'INBOX', title: '收件箱' },
@@ -239,6 +242,7 @@ export const useMail = create<MailState>((set, get) => ({
   composeError: '',
 
   init: async () => {
+    set({ guard: 'unknown', initError: '' })
     try {
       const gs = await guardState()
       if (!gs.initialized) {
@@ -252,7 +256,7 @@ export const useMail = create<MailState>((set, get) => ({
       set({ guard: 'locked', guardFailsLeft: BURN_AT_FAILS - gs.fails, guardLockUntil: 0, accounts: await loadAccounts() })
     } catch (e) {
       console.error('GUARD_INIT_ERR', e instanceof Error ? e.message : e)
-      set({ guard: 'locked', guardFailsLeft: BURN_AT_FAILS })
+      set({ guard: 'locked', guardFailsLeft: BURN_AT_FAILS, initError: e instanceof Error ? e.message : String(e) })
     }
   },
 
@@ -263,7 +267,7 @@ export const useMail = create<MailState>((set, get) => ({
   setupMaster: async password => {
     const err = await setupMasterGuard(password)
     if (err) return err
-    set({ guard: 'locked', guardFailsLeft: BURN_AT_FAILS, guardLockUntil: 0, accounts: await loadAccounts() })
+    await get().unlockMaster(password)
     return null
   },
 
@@ -450,6 +454,24 @@ export const useMail = create<MailState>((set, get) => ({
     await get().openMessage(message)
   },
 
+  moveMessage: async (m, kind) => {
+    const account = get().accounts.find(a => a.id === m.accountId)
+    if (!account) throw new Error('请先添加原邮箱')
+    const moved = await withClient(account, async client => {
+      const target = await client.actionFolder(kind)
+      const uid = await client.moveMessage(m.mailbox, m.uid, target, m.messageId)
+      return { target, uid }
+    }, false)
+    const same = (x: MobileMessage) => messageKey(x) === messageKey(m)
+    set(s => ({ messages: s.messages.filter(x => !same(x)), ...(s.reading && same(s.reading) ? { reading: null, body: null, screen: 'inbox' as const } : {}) }))
+    const cache = await readMailCache().catch(() => null)
+    if (cache) await saveMailList(m.accountId, m.mailbox, cache.messages.filter(x => x.accountId === m.accountId && x.mailbox === m.mailbox && !same(x))).catch(() => {})
+    return moved.uid ? { undo: async () => {
+      await withClient(account, client => client.moveMessage(moved.target, moved.uid!, m.mailbox, m.messageId), false)
+      await get().refresh()
+    } } : {}
+  },
+
   toggleSeen: async m => {
     const wasSeen = m.flags.includes('\\Seen')
     const patch = (list: MobileMessage[]) =>
@@ -466,8 +488,9 @@ export const useMail = create<MailState>((set, get) => ({
     if (!account) return
     try {
       await withClient(account, c => wasSeen ? c.markUnseen(m.mailbox, m.uid) : c.markSeen(m.mailbox, m.uid))
-    } catch {
-      set(s => ({ messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId && x.mailbox === m.mailbox ? { ...x, flags: m.flags } : x), statusText: '标记失败，请稍后重试' }))
+    } catch (error) {
+      set(s => ({ messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId && x.mailbox === m.mailbox ? { ...x, flags: m.flags } : x), reading: s.reading && messageKey(s.reading) === messageKey(m) ? { ...s.reading, flags: m.flags } : s.reading, statusText: '标记失败，请稍后重试' }))
+      throw error
     }
   },
 

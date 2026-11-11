@@ -1,0 +1,15 @@
+import { useState } from 'react'
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useWorkbench } from './store'
+import { minuteText, parseMinute, type Planning } from './planning'
+import { themedStyles, T } from '../theme'
+import { notice } from '../ui/Notice'
+export function PlanningSheet({ onClose }: { onClose(): void }) {
+  const current = useWorkbench(s => s.planning)
+  const [values, setValues] = useState({ start: minuteText(current.start), end: minuteText(current.end), breakStart: minuteText(current.breakStart), breakEnd: minuteText(current.breakEnd), buffer: String(current.buffer) }), [error, setError] = useState('')
+  const save = async () => { try { const result = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'buffer' ? Number(value) : parseMinute(value)])) as unknown as Planning; await useWorkbench.getState().savePlanning(result); notice('可用时段已保存，下次自动排程时生效'); onClose() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } }
+  return <Modal visible presentationStyle="pageSheet" animationType="fade" onRequestClose={onClose}><ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled"><View style={s.head}><Text style={s.title}>每天的可用时段</Text><Pressable accessibilityRole="button" onPress={onClose} style={s.button}><Text style={s.link}>取消</Text></Pressable></View><Text style={s.hint}>自动排程只填入这些时间。固定日程保持原样；休息开始与结束相同即不设休息。本机设置。</Text>
+    {(Object.keys(values) as Array<keyof typeof values>).map((key, index) => <View key={key} style={s.field}><Text style={s.label}>{['开始', '结束', '休息开始', '休息结束', '任务间隔（分钟）'][index]}</Text><TextInput accessibilityLabel={['可用时段开始', '可用时段结束', '休息开始', '休息结束', '任务间隔分钟'][index]} value={values[key]} onChangeText={v => setValues(prev => ({ ...prev, [key]: v }))} style={s.input} keyboardType={key === 'buffer' ? 'number-pad' : 'numbers-and-punctuation'} /></View>)}
+    {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}<Pressable accessibilityRole="button" onPress={() => void save()} style={s.save}><Text style={{ color: T.accentInk, fontWeight: '600' }}>保存可用时段</Text></Pressable></ScrollView></Modal>
+}
+const s = themedStyles(() => StyleSheet.create({ root: { flex: 1, backgroundColor: T.paper }, content: { padding: 24, paddingTop: 40, maxWidth: 640, alignSelf: 'center', width: '100%' }, head: { flexDirection: 'row', alignItems: 'center' }, title: { flex: 1, color: T.ink, fontSize: 23, fontWeight: '700' }, button: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12 }, link: { color: T.accent }, hint: { color: T.faint, fontSize: 13, lineHeight: 22, marginVertical: 20 }, field: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 }, label: { flex: 1, color: T.inkSoft }, input: { width: 110, backgroundColor: T.surface, borderRadius: 12, padding: 14, color: T.ink, fontSize: 17 }, error: { color: T.danger, marginVertical: 12 }, save: { minHeight: 48, backgroundColor: T.accent, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 20 } }))

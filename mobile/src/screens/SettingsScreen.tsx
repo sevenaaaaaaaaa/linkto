@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { T, accountInitial } from '../theme'
+import { themedStyles, T, accountInitial } from '../theme'
 import { useMail } from '../store/mail'
 import { linkToCore } from '../native/LinkToCore'
 import { DEFAULT_RELAY, getRelayUrl, setRelayUrl } from '../fly/relay'
@@ -158,7 +158,7 @@ export function SettingsScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },
   title: { fontSize: 22, fontWeight: '700', color: T.ink },
@@ -183,4 +183,4 @@ const s = StyleSheet.create({
   smallBtn: { backgroundColor: T.surfaceAlt, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 7 },
   smallText: { fontSize: 11, color: T.inkSoft, fontWeight: '500' },
   note: { fontSize: 10, color: T.ok, marginTop: 2 }
-})
+}))

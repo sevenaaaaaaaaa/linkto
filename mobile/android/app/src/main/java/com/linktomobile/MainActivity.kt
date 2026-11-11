@@ -1,6 +1,8 @@
 package com.linktomobile
 
 import android.os.Bundle
+import android.content.Intent
+import android.content.Context
 import android.view.WindowManager
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -22,7 +24,14 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
     super.onCreate(savedInstanceState)
+    rememberReminder(intent)
+    ReminderReceiver.restore(this)
   }
+
+  private fun rememberReminder(intent: Intent?) {
+    intent?.getStringExtra("workItemId")?.let { getSharedPreferences("linkto.navigation", Context.MODE_PRIVATE).edit().putString("workItemId", it).apply() }
+  }
+  override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); rememberReminder(intent) }
 
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]

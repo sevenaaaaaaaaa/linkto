@@ -81,3 +81,11 @@ describe('MIME 解析', () => {
     expect(wrapped).toContain("img-src data:")
   })
 })
+
+test('text attachments preserve file bytes instead of leaking into mail body', () => {
+  const raw = "Content-Type: text/plain; charset=utf-8\r\nContent-Disposition: attachment; filename*=utf-8''%E7%AC%94%E8%AE%B0.txt\r\nContent-Transfer-Encoding: base64\r\n\r\n" + btoa('private attachment')
+  const parsed = parseMime(raw)
+  expect(parsed.text).toBeNull()
+  expect(parsed.attachments[0].filename).toBe('笔记.txt')
+  expect(atob(parsed.attachments[0].data!)).toBe('private attachment')
+})

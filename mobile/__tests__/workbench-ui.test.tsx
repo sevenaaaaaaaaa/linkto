@@ -43,3 +43,25 @@ test('global create opens capture, timed note becomes a task and primary navigat
   await act(async () => app.unmount())
   alert.mockRestore()
 })
+
+test('mail actions, list density and batch actions remain reachable from the inbox', async () => {
+  const original = useMail.getState().moveMessage
+  const move = jest.fn(async () => ({ undo: async () => {} }))
+  const account = { id: 'qa-mail', email: 'qa@example.com', host: 'imap.example.com', port: 993, secure: true, smtpHost: 'smtp.example.com', smtpPort: 465, smtpSecure: true, color: '#006265' }
+  const first = { uid: 70, accountId: account.id, accountEmail: account.email, accountColor: account.color, mailbox: 'INBOX', flags: [], date: Date.now(), subject: 'First', from: 'a@example.com', to: account.email }
+  useMail.setState({ guard: 'ready', accounts: [account], messages: [first, { ...first, uid: 80, subject: 'Second' }], tab: 'mail', screen: 'inbox', status: 'ready', scope: { kind: 'unified', folder: 'INBOX', title: '收件箱' }, moveMessage: move })
+  let app!: TestRenderer.ReactTestRenderer
+  const button = (text: string) => app.root.findAll(node => node.props.accessibilityRole === 'button' && node.findAll(child => child.props.children === text).length > 0)[0]
+  try {
+    await act(async () => { app = TestRenderer.create(<MainShell />) })
+    await act(async () => app.root.findAllByProps({ accessibilityLabel: '处理邮件 First' })[0].props.onPress())
+    await act(async () => { button('归档').props.onPress() })
+    expect(move).toHaveBeenCalledWith(expect.objectContaining({ uid: 70 }), 'archive')
+    await act(async () => { await app.root.findAllByProps({ accessibilityLabel: '切换收件箱列表密度' })[0].props.onPress() })
+    expect(app.root.findAllByProps({ children: '紧凑列表' }).length).toBeGreaterThan(0)
+    await act(async () => { button('选择邮件').props.onPress() })
+    await act(async () => { button('全选').props.onPress() })
+    await act(async () => { button('归档').props.onPress() })
+    expect(move).toHaveBeenCalledTimes(3)
+  } finally { await act(async () => app.unmount()); useMail.setState({ moveMessage: original, accounts: [], messages: [] }) }
+})

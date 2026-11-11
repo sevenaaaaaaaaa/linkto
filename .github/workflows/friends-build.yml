@@ -88,7 +88,7 @@ jobs:
         working-directory: mobile
       - run: pod install
         working-directory: mobile/ios
-      - run: xcodebuild -workspace mobile/ios/LinkToMobile.xcworkspace -scheme LinkToMobile -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/mobile-ios CODE_SIGNING_ALLOWED=NO
+      - run: xcodebuild -workspace mobile/ios/LinkToMobile.xcworkspace -scheme LinkToMobile -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/mobile-ios CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
       - uses: actions/upload-artifact@v4
         with:
           name: LinkTo-iOS-simulator

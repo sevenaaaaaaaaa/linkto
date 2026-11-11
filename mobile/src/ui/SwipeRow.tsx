@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import { linkToCore } from '../native/LinkToCore'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 
@@ -13,12 +13,14 @@ const ACTIONS_W = 84
  */
 export function SwipeRow({
   seen,
+  disabled = false,
   onPress,
   onLongPress,
   onToggle,
   children
 }: {
   seen: boolean
+  disabled?: boolean
   onPress(): void
   onLongPress(): void
   onToggle(): void
@@ -30,6 +32,7 @@ export function SwipeRow({
   const reduced = useReducedMotion()
   const reducedRef = useRef(reduced); reducedRef.current = reduced
   const openRef = useRef(open); openRef.current = open
+  const disabledRef = useRef(disabled); disabledRef.current = disabled
 
   const snapTo = (v: number, openNext: boolean) => {
     base.current = v
@@ -43,12 +46,13 @@ export function SwipeRow({
       useNativeDriver: true
     }).start()
   }
+  useEffect(() => { if (disabled) snapTo(0, false) }, [disabled])
 
   const pan = useRef(
     PanResponder.create({
       // capture 阶段判定水平意图：祖先直接接管，避免被子组件抢占
       onMoveShouldSetPanResponderCapture: (_, g) =>
-        Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
+        !disabledRef.current && Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
       onPanResponderMove: (_, g) => {
         const next = Math.min(0, Math.max(-ACTIONS_W - 24, base.current + g.dx))
         translate.setValue(next)
@@ -69,7 +73,7 @@ export function SwipeRow({
   return (
     <View style={s.clip}>
       {/* 动作区（行内容右滑让位后露出） */}
-      <View style={s.actions}>
+      <View style={s.actions} pointerEvents={disabled ? 'none' : 'auto'} accessibilityElementsHidden={disabled || !open} importantForAccessibility={disabled || !open ? 'no-hide-descendants' : 'auto'}>
         <Pressable
           style={s.actionBtn}
           onPress={() => {
@@ -83,6 +87,7 @@ export function SwipeRow({
       </View>
       <Animated.View style={{ transform: [{ translateX: translate }] }} {...pan.panHandlers}>
         <Pressable
+          accessible={false}
           onPress={() => (open ? snapTo(0, false) : onPress())}
           onLongPress={onLongPress}
           delayLongPress={350}
@@ -96,7 +101,7 @@ export function SwipeRow({
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   clip: { overflow: 'hidden', borderRadius: 10 },
   actions: {
     position: 'absolute',
@@ -117,4 +122,4 @@ const s = StyleSheet.create({
   },
   actionText: { color: T.accentInk, fontSize: 12, fontWeight: '700' },
   content: { backgroundColor: T.paper }
-})
+}))

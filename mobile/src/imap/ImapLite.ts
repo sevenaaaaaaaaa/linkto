@@ -303,7 +303,7 @@ export class ImapLite {
       }
       if (line.startsWith(`${tag} `)) {
         const ok = /^\S+ OK/.test(line)
-        return { ok, lines: collected }
+        return { ok, lines: [...collected, line] }
       }
       if (line.startsWith('+')) {
         continuation?.()
@@ -350,7 +350,7 @@ export class ImapLite {
   /** 收件箱列表：SEARCH ALL 取最大 uid 往回拉 max 封 */
   async fetchEnvelopes(mailbox: string, max = 50): Promise<MailEnvelope[]> {
     await this.selectMailbox(mailbox)
-    const s = await this.cmd('UID SEARCH ALL')
+    const s = await this.cmd('UID SEARCH UNDELETED')
     if (!s.ok) throw new Error('邮件列表获取失败')
     const uids = s.lines
       .filter(l => l.startsWith('* SEARCH'))
@@ -365,7 +365,7 @@ export class ImapLite {
   async searchEnvelopes(mailbox: string, query: string, max = 50): Promise<MailEnvelope[]> {
     await this.selectMailbox(mailbox)
     const q = ImapLite.quote(query.replace(/[\r\n]+/g, ' ').slice(0, 200))
-    const s = await this.cmd(`UID SEARCH TEXT ${q}`)
+    const s = await this.cmd(`UID SEARCH UNDELETED TEXT ${q}`)
     if (!s.ok) throw new Error('邮件搜索失败')
     const uids = s.lines
       .filter(l => l.startsWith('* SEARCH'))
@@ -383,6 +383,39 @@ export class ImapLite {
     const r = await this.cmd(`UID FETCH ${uid} (BODY.PEEK[])`, chunk => parts.push(chunk), 60000)
     if (!r.ok) throw new Error('正文获取失败')
     return parts.join('')
+  }
+
+  /** Resolve special-use folders first; never guess a destructive destination by substring. */
+  async actionFolder(kind: 'archive' | 'trash'): Promise<string> {
+    const folders = await this.listMailboxes()
+    const special = kind === 'archive' ? ['\\Archive', '\\All'] : ['\\Trash']
+    const found = folders.find(f => special.some(flag => f.flags.some(v => v.toLowerCase() === flag.toLowerCase())))
+      ?? folders.find(f => (kind === 'archive' ? /^(archive|archives|all mail|所有邮件|归档|存档)$/i : /^(trash|deleted items|deleted messages|bin|已删除邮件|已删除|废纸篓|垃圾箱)$/i).test(f.name.split(/[/.]/).pop() ?? ''))
+    if (found) return found.name
+    const name = kind === 'archive' ? 'Archive' : 'Trash'
+    for (const path of [name, `INBOX.${name}`, `INBOX/${name}`]) {
+      if ((await this.cmd(`CREATE ${ImapLite.quote(path)}`)).ok) return path
+    }
+    throw new Error('无法找到或创建目标文件夹，请检查邮箱权限')
+  }
+
+  /** A lost MOVE response is ambiguous: callers must not retry this operation automatically. */
+  async moveMessage(mailbox: string, uid: number, target: string, messageId?: string): Promise<number | null> {
+    if (mailbox === target) throw new Error('邮件已经在目标文件夹中')
+    await this.selectMailbox(mailbox)
+    let result = await this.cmd(`UID MOVE ${uid} ${ImapLite.quote(target)}`)
+    if (!result.ok) {
+      result = await this.cmd(`UID COPY ${uid} ${ImapLite.quote(target)}`)
+      if (!result.ok) throw new Error('移动邮件失败：服务器拒绝复制到目标文件夹')
+      const deleted = await this.cmd(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`)
+      if (!deleted.ok) throw new Error('邮件已复制，但原邮件未能移除，请刷新检查')
+      // UID EXPUNGE removes only this message. Never issue an unrestricted EXPUNGE.
+      await this.cmd(`UID EXPUNGE ${uid}`)
+    }
+    const mapped = result.lines.join(' ').match(/\[COPYUID \d+ [\d:,]+ (\d+)(?:[,:]\d+)*\]/i)
+    if (mapped) return Number(mapped[1])
+    if (messageId) return (await this.findMessage(target, messageId))?.uid ?? null
+    return null
   }
 
   async ensureSyncFolder(): Promise<string> {

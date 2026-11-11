@@ -13,7 +13,7 @@ export const saveMailList = (accountId: string, mailbox: string, list: MobileMes
 export const saveMailBody = (m: MobileMessage, body: MailBody) => serial('mail-cache', async () => {
   const cache = await disk.read()
   const entries = Object.entries(cache.bodies).filter(([key]) => key !== messageKey(m)).slice(-39)
-  const bodies = Object.fromEntries([...entries, [messageKey(m), { ...body, html: body.html?.slice(0, 500000) ?? null, text: body.text?.slice(0, 250000) ?? null }]])
+  const bodies = Object.fromEntries([...entries, [messageKey(m), { ...body, attachments: body.attachments.map(({ data, ...metadata }) => metadata), html: body.html?.slice(0, 500000) ?? null, text: body.text?.slice(0, 250000) ?? null }]])
   await disk.write({ ...cache, bodies })
 })
 export const forgetCachedAccount = (id: string) => serial('mail-cache', async () => {

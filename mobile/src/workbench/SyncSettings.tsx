@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
-import { T } from '../theme'
+import { themedStyles, T } from '../theme'
 import { useMail } from '../store/mail'
 import { configureWorkSync, readSyncConfig, syncWorkbench, useWorkSync } from './sync'
 
@@ -30,4 +30,4 @@ export function SyncSettings() {
     {state.lastSync && <Text style={s.hint}>上次同步 · {new Date(state.lastSync).toLocaleTimeString('zh-CN')}</Text>}
   </View>
 }
-const s = StyleSheet.create({ root: { backgroundColor: T.surface, borderRadius: 18, padding: 18, gap: 14 }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, title: { color: T.ink, fontSize: 16, fontWeight: '600' }, hint: { color: T.faint, fontSize: 12, lineHeight: 20, marginTop: 4 }, label: { color: T.inkSoft, fontSize: 12, marginTop: 10 }, account: { borderWidth: 1, borderColor: T.hairline, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }, email: { color: T.ink, flex: 1, fontSize: 13 }, link: { color: T.accent, fontSize: 13, fontWeight: '600' }, input: { minHeight: 48, padding: 12, backgroundColor: T.surfaceAlt, color: T.ink, borderRadius: 12 }, error: { color: T.danger, fontSize: 12, lineHeight: 20 }, button: { minHeight: 48, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: T.accent }, buttonText: { color: T.accentInk, fontWeight: '600' }, hit: { minHeight: 48, justifyContent: 'center' } })
+const s = themedStyles(() => StyleSheet.create({ root: { backgroundColor: T.surface, borderRadius: 18, padding: 18, gap: 14 }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, title: { color: T.ink, fontSize: 16, fontWeight: '600' }, hint: { color: T.faint, fontSize: 12, lineHeight: 20, marginTop: 4 }, label: { color: T.inkSoft, fontSize: 12, marginTop: 10 }, account: { borderWidth: 1, borderColor: T.hairline, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }, email: { color: T.ink, flex: 1, fontSize: 13 }, link: { color: T.accent, fontSize: 13, fontWeight: '600' }, input: { minHeight: 48, padding: 12, backgroundColor: T.surfaceAlt, color: T.ink, borderRadius: 12 }, error: { color: T.danger, fontSize: 12, lineHeight: 20 }, button: { minHeight: 48, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: T.accent }, buttonText: { color: T.accentInk, fontWeight: '600' }, hit: { minHeight: 48, justifyContent: 'center' } }))

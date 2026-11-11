@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View
 } from 'react-native'
-import { T, fmtShortDate } from '../theme'
+import { themedStyles, T, fmtShortDate } from '../theme'
 import { addVaultItem, listVault, removeVaultItem, revealVaultItem, type VaultItem, type VaultItemMeta, type VaultKind } from '../vault/store'
 import { copyWithClear } from '../ui/clipboard'
 import { linkToCore } from '../native/LinkToCore'
@@ -172,7 +172,7 @@ export function VaultScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
   title: { fontSize: 22, fontWeight: '700', color: T.ink },
@@ -213,4 +213,4 @@ const s = StyleSheet.create({
   revealActions: { flexDirection: 'row', gap: 8, marginTop: 16 },
   smallBtn: { backgroundColor: T.surfaceAlt, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   smallText: { fontSize: 11, color: T.inkSoft, fontWeight: '500' }
-})
+}))

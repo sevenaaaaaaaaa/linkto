@@ -1,13 +1,13 @@
 # LinkTo 朋友试用交付
 
-本轮代码位于 `codex/mobile-workbench`。桌面版 0.7.5，移动版 0.5.0 / build 5；未推送或发布公开 Release。
+本轮代码位于 `codex/mobile-workbench`。桌面版 0.7.5，移动版 0.6.0 / build 6；未推送或发布公开 Release。
 
 ## 已有与待执行的构建
 
 | 平台 | 交付路径 | 当前验证 |
 | --- | --- | --- |
-| Android | `mobile/android/app/build/outputs/apk/preview/app-preview.apk` | 本机 `assemblePreview` 成功；未在真实 Android 设备验收 |
-| iPhone / iPad | `mobile/ios/LinkToMobile.xcworkspace` | 模拟器 Release 编译、安装启动通过；真实手机需连接并用个人团队签名 |
+| Android | `.build/friends/android/LinkTo-Mobile-0.6.0-preview.apk`（原始产物在 `mobile/android/app/build/outputs/apk/preview/`） | 本机 `assemblePreview` 成功，签名验证通过；未在真实 Android 设备验收 |
+| iPhone / iPad | `mobile/ios/LinkToMobile.xcworkspace` | 模拟器 Release 构建和原生界面流程通过；真机架构编译通过，实际安装需连接并用个人团队签名 |
 | macOS Apple Silicon | `.build/friends/mac-arm64/LinkTo-0.7.5-arm64.dmg` | 本机打包；采用 ad-hoc 签名，未公证 |
 | macOS Intel | `Friends preview builds` 工作流的 mac x64 artifact | 已配置，未在 Intel Mac 执行验收 |
 | Windows x64 | `.build/friends/windows-x64/LinkTo Setup 0.7.5.exe` | 本机跨平台打包成功，未在 Windows 真机执行验收 |
@@ -16,7 +16,7 @@
 
 ## Android 试用
 
-将 Preview APK 发给朋友安装。Preview 使用 `com.linktomobile.preview`，采用调试证书签名，与正式 `com.linktomobile` 的数据隔离。CI 调试证书可能随构建环境变化，不保证所有预览包之间可直接覆盖升级；稳定分发必须使用自己的持久签名密钥。
+将 Preview APK 发给朋友安装。Preview 使用 `com.linktomobile.preview`，采用仓库固定的预览调试证书，与正式 `com.linktomobile` 的数据隔离，可覆盖升级之前使用同证书的 Preview。正式分发必须使用自己的持久签名密钥。
 
 正式签名需要在环境中设置：`LINKTO_ANDROID_KEYSTORE`（绝对路径）、`LINKTO_ANDROID_STORE_PASSWORD`、`LINKTO_ANDROID_KEY_ALIAS`、`LINKTO_ANDROID_KEY_PASSWORD`，再执行 `mobile/android/gradlew -p mobile/android assembleRelease`。不要提交证书或密码。无配置的 Release 不会自动借用调试签名。
 
@@ -48,13 +48,20 @@
 
 同一用户的手机、电脑选择同一同步邮箱与口令，朋友之间分别配置。确认：手机新建随手记 → 电脑可编辑 → 手机看到更新；添加时间后转待办 → 完成 / 移除状态双向同步。暂时离线后本机缓存仍可读，联网后重新同步。
 
-## 后续体验改进顺序
+## 本轮完成情况和后续依赖
 
 | 优先级 | 改进 | 目的 |
 | --- | --- | --- |
-| P0 | 邮件归档 / 删除 / 稍后处理、附件预览与后台推送 | 补齐日常邮件替代能力 |
-| P1 | 排程可用时段设置、拖动改期、冲突提示、撤销 | 让今日时间轴更接近 Sorted³ 的日常操作 |
-| P1 | 便签快速置顶、搜索结果突出匹配词、批量处理 | 降低记录与整理成本 |
-| P1 | Android 深色模式、通知权限与提醒原生实现 | 缩小两种手机平台的体验差距 |
-| P2 | 完成态轻触反馈、排程位置过渡、加载占位一致性 | 帮助理解状态变化；遵守减少动态效果设置 |
-| P2 | 小组件、系统分享入口、桌面 / 手机快捷新建 | 减少捕获一封邮件或想法所需的步骤 |
+| P0 | 已接入邮件归档 / 移至垃圾箱 / 稍后处理、15MB 内附件预览分享 | 真机外部服务商验收仍待完成 |
+| P0 | 新邮件后台远程推送尚未启用 | 需要常开接收端、APNs / FCM 配置；当前 iPhone 使用 Personal Team |
+| P1 | 已接入可用时段、休息与间隔、拖动顺序后重新排程、15 分钟改期、冲突提示、撤销 | 不是按比例时间网格；本机可用时段不跨设备同步 |
+| P1 | 已接入便签直接置顶、搜索标题高亮、批量邮件处理、列表密度 | 批量移动部分失败会保留成功结果并报告 |
+| P1 | 已接入 Android 深色模式、本机提醒、精确提醒设置与重启恢复 | 系统可延迟未获精确闹钟权限的提醒；待 Android 真机验收 |
+| P2 | 已接入主要操作触感、180ms iOS 布局过渡、主题切换保留编辑器 | 遵守减少动态效果设置 |
+| 后续 | 小组件、系统分享扩展、富文本发信、离线发件队列、日历双向同步 | 需要单独的功能实现与平台配置 |
+
+原生界面测试脚本 `scripts/test-mobile-ios.sh` 会创建独立模拟器，测试中拒绝向已有主密码配置的环境输入密码；不会抹掉用户现有模拟器。首次启动系统迁移可能需要数分钟。结果与截图保存在 `.build/ios-ui-results/`。
+
+本轮验证：移动端 15 个测试套件 / 56 项检查通过，桌面 16 组邮件与加密同步回归通过；原生 XCUITest 验证首次设置进入、完整标题保存、自动排程、拖动、完成与撤销、可用时段、便签置顶。已检查今日 / 时段 / 便签截图。真实服务商的归档 / 删除，以及 Android 系统提醒的实际交付时效仍需真机验收。
+
+模拟器构建需要保留正常本地签名（脚本使用 `CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`），以生成钥匙串要求的模拟 entitlements；禁用全部签名只适用于编译检查，不能代表应用可正常访问钥匙串。首次设置主密码后会直接进入工作台，初始化异常独立显示重试入口。

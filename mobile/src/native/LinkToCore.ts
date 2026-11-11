@@ -1,4 +1,4 @@
-import { NativeModules, Platform, Vibration } from 'react-native'
+import { NativeModules, PermissionsAndroid, Platform, Vibration } from 'react-native'
 import { sha256Hex as jsSha256Hex } from '../security/sha256'
 
 /**
@@ -14,12 +14,16 @@ import { sha256Hex as jsSha256Hex } from '../security/sha256'
  */
 
 interface LinkToCoreNative {
+  openAttachment?(filename: string, data: string, type: string, share: boolean): Promise<boolean>
+  clearAttachments?(): Promise<boolean>
   sha256Hex(msg: string): Promise<string>
   randomB64(len: number): Promise<string>
   pbkdf2Hex(password: string, salt: string, iterations: number): Promise<string>
   haptic(kind: 'light' | 'medium' | 'heavy' | 'warn'): Promise<boolean>
   scheduleReminder?(id: string, title: string, at: number): Promise<boolean>
   cancelReminder?(id: string): Promise<boolean>
+  reminderStatus?(): Promise<{ authorized: boolean; exact: boolean }>
+  openReminderSettings?(): Promise<boolean>
   cancelAllReminders?(): Promise<boolean>
   takeReminder?(): Promise<string | null>
 }
@@ -27,9 +31,19 @@ interface LinkToCoreNative {
 const native = NativeModules.LinkToCore as LinkToCoreNative | undefined
 
 export const linkToCore = {
+  reminderStatus: async () => await native?.reminderStatus?.() ?? { authorized: true, exact: true },
+  openReminderSettings: async () => { await native?.openReminderSettings?.() },
+  clearAttachments: async (): Promise<void> => { await native?.clearAttachments?.() },
+  openAttachment: async (filename: string, data: string, type: string, share = false): Promise<void> => {
+    if (!native?.openAttachment) throw new Error('当前设备暂不支持附件预览')
+    await native.openAttachment(filename, data, type, share)
+  },
   cancelAllReminders: async (): Promise<void> => { await native?.cancelAllReminders?.() },
   takeReminder: async (): Promise<string | null> => await native?.takeReminder?.() ?? null,
   scheduleReminder: async (id: string, title: string, at: number): Promise<void> => {
+    if (Platform.OS === 'android' && Number(Platform.Version) >= 33 && !await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)) {
+      if (await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS) !== PermissionsAndroid.RESULTS.GRANTED) throw new Error('请在系统设置中允许 LinkTo 通知')
+    }
     if (!native?.scheduleReminder) throw new Error('此设备暂不支持本机提醒')
     await native.scheduleReminder(id, title, at)
   },

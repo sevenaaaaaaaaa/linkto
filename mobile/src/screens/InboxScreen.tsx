@@ -1,33 +1,40 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View
+  ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { T, accountInitial, fmtListDate, prettyFrom } from '../theme'
+import { themedStyles, T, accountInitial, fmtListDate, prettyFrom } from '../theme'
 import { useMail, type MobileMessage } from '../store/mail'
 import { LIST_PANE_WIDTH, useTablet } from '../hooks/useTablet'
 import { SwipeRow } from '../ui/SwipeRow'
 import { LensPeek } from '../ui/LensPeek'
 import { ReadScreen } from './ReadScreen'
+import { MailActions, sourceOf } from '../mail/MailActions'
+import { useWorkbench } from '../workbench/store'
+import { messageKey } from '../mail-cache'
+import { notice } from '../ui/Notice'
+import { useAppearance } from '../ui/preferences'
+import { SearchText } from '../ui/SearchText'
 import { linkToCore } from '../native/LinkToCore'
 
-function MessageRow({ m, unified, selected }: { m: MobileMessage; unified: boolean; selected: boolean }) {
+function MessageRow({ m, unified, selected, compact, query, snoozeUntil, onOpen }: { m: MobileMessage; unified: boolean; selected: boolean; compact: boolean; query: string; snoozeUntil?: number; onOpen(): void }) {
   const unread = !m.flags.includes('\\Seen')
   return (
-    <View style={[s.row, selected && s.rowSelected]}>
+    <View accessible accessibilityRole="button" accessibilityLabel={`${prettyFrom(m.from)}，${m.subject || '无主题'}${unified ? '，' + m.accountEmail : ''}`} accessibilityActions={[{ name: 'activate', label: '打开邮件' }]} onAccessibilityTap={onOpen} onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'activate') onOpen() }} style={[s.row, compact && { paddingVertical: 8 }, selected && s.rowSelected]}>
       <View style={[s.avatar, { backgroundColor: m.accountColor }]}>
         <Text style={s.avatarText}>{accountInitial(m.accountEmail)}</Text>
       </View>
       <View style={{ flex: 1 }}>
         <View style={s.rowTop}>
-          <Text style={[s.from, unread && s.fromUnread]} numberOfLines={1}>{prettyFrom(m.from)}</Text>
+          <SearchText query={query} style={[s.from, unread && s.fromUnread]} numberOfLines={1}>{prettyFrom(m.from)}</SearchText>
           <Text style={s.date}>{fmtListDate(m.date)}</Text>
         </View>
         <View style={s.rowBottom}>
-          <Text style={[s.subject, unread && s.subjectUnread]} numberOfLines={1}>{m.subject || '（无主题）'}</Text>
+          <SearchText query={query} style={[s.subject, unread && s.subjectUnread]} numberOfLines={1}>{m.subject || '（无主题）'}</SearchText>
           {unread && <View style={s.unreadDot} />}
         </View>
         {unified && <Text style={s.accountTag} numberOfLines={1}>{m.accountEmail}</Text>}
+        {!!snoozeUntil && <Text style={{ color: T.accent, fontSize: 11, marginTop: 4 }}>稍后至 {new Date(snoozeUntil).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</Text>}
       </View>
     </View>
   )
@@ -56,35 +63,71 @@ export function InboxScreen() {
     openUnified, openAccount, openFolder, openMessage, toggleSeen, refresh, search,
     searchQuery, composeNew, setTab
   } = useMail()
+  const appearance = useAppearance()
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [batchBusy, setBatchBusy] = useState(false)
+  useEffect(() => { void appearance.load() }, [])
+  const toggleSelection = (message: MobileMessage) => setSelected(current => {
+    const next = new Set(current), key = messageKey(message)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+  const batch = async (kind: 'archive' | 'trash' | 'seen') => {
+    setBatchBusy(true)
+    const undos: Array<() => Promise<void>> = []
+    let count = 0
+    try {
+      for (const message of messages.filter(m => selected.has(messageKey(m)))) {
+        if (kind === 'seen') { if (!message.flags.includes('\\Seen')) await toggleSeen(message) }
+        else { const moved = await useMail.getState().moveMessage(message, kind); if (moved.undo) undos.push(moved.undo) }
+        count++
+      }
+      notice(`已处理 ${count} 封邮件`, undos.length ? async () => { for (const undo of [...undos].reverse()) await undo() } : undefined)
+      setSelected(new Set()); setSelecting(false)
+    } catch (e) {
+      notice(`已处理 ${count} 封，其余未完成：${String(e)}`, undos.length ? async () => { for (const undo of [...undos].reverse()) await undo() } : undefined)
+    } finally { setBatchBusy(false) }
+  }
+  const workItems = useWorkbench(state => state.items)
+  const [showSnoozed, setShowSnoozed] = useState(false), [now, setNow] = useState(Date.now())
+  useEffect(() => { setSelected(new Set()); setSelecting(false) }, [scope.kind, scope.accountId, scope.folder, showSnoozed])
+  const [actions, setActions] = useState<MobileMessage | null>(null)
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer) }, [])
+  const held = workItems.filter(i => i.status === 'open' && Number(i.data.mailSnoozeUntil) > now && i.data.source)
+  const sameSource = (m: MobileMessage, source: NonNullable<typeof held[number]['data']['source']>) => m.accountEmail.toLowerCase() === source.accountEmail.toLowerCase() && (source.messageId ? m.messageId === source.messageId : m.mailbox === source.mailbox && m.uid === source.uid)
+  const visibleMessages: MobileMessage[] = showSnoozed ? held.flatMap(i => { const source = i.data.source!; const account = accounts.find(a => a.email.toLowerCase() === source.accountEmail.toLowerCase()); return account ? [{ ...source, accountId: account.id, accountColor: account.color, accountEmail: account.email, to: '', flags: [] }] : [] }) : messages.filter(m => !held.some(i => sameSource(m, i.data.source!)))
   const [drawer, setDrawer] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState(searchQuery)
   const [peek, setPeek] = useState<MobileMessage | null>(null)
 
-  const unread = useMemo(() => messages.filter(m => !m.flags.includes('\\Seen')).length, [messages])
+  const unread = visibleMessages.filter(m => !m.flags.includes('\\Seen')).length
   const unified = scope.kind === 'unified'
   const subtitle = unified ? accounts.length + ' 个账户' : scope.title
 
   const open = (m: MobileMessage) => {
+    if (selecting) { toggleSelection(m); return }
     void linkToCore.haptic('light')
+    if (showSnoozed) { void useMail.getState().openSource(sourceOf(m)).catch(e => Alert.alert('原邮件暂不可用', String(e))); return }
     void openMessage(m, isTablet ? { stay: true } : undefined)
   }
 
   const submitSearch = () => {
-    void search(query.trim())
+    if (showSnoozed) useMail.setState({ searchQuery: query.trim() }); else void search(query.trim())
     setSearchOpen(true)
   }
 
   const cancelSearch = () => {
     setQuery('')
     setSearchOpen(false)
-    void search('')
+    if (showSnoozed) useMail.setState({ searchQuery: '' }); else void search('')
   }
 
   const list = (
     <FlatList
-      data={messages}
-      keyExtractor={m => m.accountId + ':' + m.uid}
+      data={showSnoozed && searchQuery ? visibleMessages.filter(m => (m.subject + ' ' + m.from).toLowerCase().includes(searchQuery.toLowerCase())) : visibleMessages}
+      keyExtractor={messageKey}
       contentContainerStyle={messages.length ? { paddingBottom: 24 } : { flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={status === 'syncing'} onRefresh={() => void refresh()} tintColor={T.accent} />}
       ListEmptyComponent={
@@ -100,12 +143,13 @@ export function InboxScreen() {
       }
       renderItem={({ item }) => (
         <SwipeRow
+          disabled={showSnoozed || selecting}
           seen={item.flags.includes('\\Seen')}
           onPress={() => open(item)}
-          onLongPress={() => setPeek(item)}
-          onToggle={() => void toggleSeen(item)}
+          onLongPress={() => { if (showSnoozed) { const task = held.find(i => sameSource(item, i.data.source!)); if (task) Alert.alert('稍后处理', '可立即恢复到本应用收件箱。', [{ text: '取消' }, { text: '现在处理', onPress: () => void useWorkbench.getState().remove(task.id) }]); } else setActions(item) }}
+          onToggle={() => { if (!showSnoozed && !selecting) void toggleSeen(item).catch(e => notice(String(e))) }}
         >
-          <MessageRow m={item} unified={unified} selected={isTablet && reading?.uid === item.uid && reading?.accountId === item.accountId} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(messageKey(item)) }} accessibilityLabel={item.subject} onPress={() => toggleSelection(item)} style={{ display: selecting ? 'flex' : 'none', width: 44, minHeight: 60, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: T.accent }}>{selected.has(messageKey(item)) ? '✓' : '○'}</Text></Pressable><View style={{ flex: 1 }}><MessageRow onOpen={() => open(item)} snoozeUntil={showSnoozed ? Number(held.find(i => sameSource(item, i.data.source!))?.data.mailSnoozeUntil) : undefined} compact={appearance.compact} query={searchQuery} m={item} unified={unified} selected={selecting ? selected.has(messageKey(item)) : isTablet && reading?.uid === item.uid && reading?.accountId === item.accountId && reading?.mailbox === item.mailbox} /></View>{!showSnoozed && !selecting && <Pressable accessibilityRole="button" accessibilityLabel={`处理邮件 ${item.subject}`} onPress={() => setActions(item)} style={{ width: 44, minHeight: 60, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: T.faint, fontSize: 21 }}>···</Text></Pressable>}</View>
         </SwipeRow>
       )}
     />
@@ -115,7 +159,7 @@ export function InboxScreen() {
     <View style={s.header}>
       <Pressable onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Text style={s.headerGlyph}>☰</Text></Pressable>
       <View style={{ flex: 1 }}>
-        <Text style={s.title} numberOfLines={1}>{unified ? '收件箱' : scope.title === 'INBOX' ? '收件箱' : scope.title}</Text>
+        <Text style={s.title} numberOfLines={1}>{showSnoozed ? '稍后处理' : unified ? '收件箱' : scope.title === 'INBOX' ? '收件箱' : scope.title}</Text>
         <Text style={s.sub} numberOfLines={1}>{subtitle}{unread ? ' · ' + unread + ' 封未读' : ''}</Text>
       </View>
       <Pressable onPress={() => { setSearchOpen(v => !v); if (searchOpen) cancelSearch() }} hitSlop={10} style={s.headerIcon}>
@@ -147,6 +191,14 @@ export function InboxScreen() {
     </View>
   ) : null
 
+  const listTools = <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 16, flexWrap: 'wrap' }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="切换收件箱列表密度" onPress={() => void appearance.toggle()} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent, fontSize: 12 }}>{appearance.compact ? '紧凑列表' : '舒适列表'}</Text></Pressable>
+    {!showSnoozed && <Pressable accessibilityRole="button" disabled={batchBusy} onPress={() => { setSelecting(!selecting); setSelected(new Set()) }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent, fontSize: 12 }}>{selecting ? '取消选择' : '选择邮件'}</Text></Pressable>}
+    {selecting && <Pressable accessibilityRole="button" onPress={() => setSelected(new Set(visibleMessages.map(messageKey)))} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent, fontSize: 12 }}>全选</Text></Pressable>}
+    {!selecting && (held.length > 0 || showSnoozed) && <Pressable accessibilityRole="button" onPress={() => setShowSnoozed(!showSnoozed)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent, fontSize: 12 }}>{showSnoozed ? '返回收件箱' : `稍后处理 ${held.length}`}</Text></Pressable>}
+  </View>
+  const batchBar = selecting ? <View style={{ flexDirection: 'row', backgroundColor: T.surfaceAlt, paddingHorizontal: 16, gap: 18, flexWrap: 'wrap', alignItems: 'center' }}><Text style={{ color: T.inkSoft, fontSize: 12 }}>已选 {selected.size}</Text>{(['archive', 'seen', 'trash'] as const).map((kind, index) => <Pressable accessibilityRole="button" key={kind} disabled={batchBusy || !selected.size} onPress={() => void batch(kind)} style={{ minHeight: 48, justifyContent: 'center' }}><Text style={{ color: kind === 'trash' ? T.danger : T.accent, opacity: batchBusy || !selected.size ? 0.4 : 1, fontSize: 13 }}>{['归档', '标已读', '移至垃圾箱'][index]}</Text></Pressable>)}</View> : null
+
   const statusBar = status === 'syncing' ? (
     <View style={s.statusBar}><ActivityIndicator size="small" color={T.accent} /><Text style={s.statusText}>{statusText || '同步中…'}</Text></View>
   ) : status === 'error' ? (
@@ -162,17 +214,18 @@ export function InboxScreen() {
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
           <Pressable
-            onPress={() => { setDrawer(false); void openUnified() }}
+            onPress={() => { setDrawer(false); setShowSnoozed(false); void openUnified() }}
             style={[s.folderRow, unified && s.folderOn]}
           >
             <Text style={s.folderGlyph}>▤</Text>
             <Text style={[s.folderText, unified && s.folderTextOn]}>统一收件箱</Text>
             <Text style={s.folderCount}>{messages.length}</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => { setShowSnoozed(true); setDrawer(false) }} style={s.folderRow}><Text style={s.folderText}>稍后处理</Text><Text style={s.folderCount}>{held.length}</Text></Pressable>
           {accounts.map(a => (
             <View key={a.id} style={{ marginTop: 10 }}>
               <Pressable
-                onPress={() => { setDrawer(false); void openAccount(a) }}
+                onPress={() => { setDrawer(false); setShowSnoozed(false); void openAccount(a) }}
                 style={s.accountHead}
               >
                 <View style={[s.drawerAvatar, { backgroundColor: a.color }]}><Text style={s.drawerAvatarText}>{accountInitial(a.email)}</Text></View>
@@ -190,7 +243,7 @@ export function InboxScreen() {
               {(folders[a.id] ?? []).filter(f => f.name.toUpperCase() !== 'INBOX').map(f => (
                 <Pressable
                   key={f.name}
-                  onPress={() => { setDrawer(false); void openFolder(a, f.name) }}
+                  onPress={() => { setDrawer(false); setShowSnoozed(false); void openFolder(a, f.name) }}
                   style={[s.folderRow, s.folderIndent, scope.accountId === a.id && scope.folder === f.name && s.folderOn]}
                 >
                   <Text style={s.folderText} numberOfLines={1}>{f.name}</Text>
@@ -212,6 +265,8 @@ export function InboxScreen() {
       <View style={s.tabletRoot}>
         <View style={s.tabletList}>
           {header}
+          {listTools}
+          {batchBar}
           {searchBar}
           {statusBar}
           {list}
@@ -233,7 +288,8 @@ export function InboxScreen() {
             </View>
           )}
         </View>
-        {drawerView}
+        <MailActions message={actions} onPeek={setPeek} onClose={() => setActions(null)} />
+      {drawerView}
         {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
       </View>
     )
@@ -242,19 +298,22 @@ export function InboxScreen() {
   return (
     <View style={s.root}>
       {header}
+      {listTools}
+      {batchBar}
       {searchBar}
       {statusBar}
       {list}
       <Pressable onPress={() => composeNew()} style={s.fab} onPressIn={() => void linkToCore.haptic('light')}>
         <Text style={s.fabGlyph}>✎</Text>
       </Pressable>
+      <MailActions message={actions} onPeek={setPeek} onClose={() => setActions(null)} />
       {drawerView}
       {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
     </View>
   )
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   tabletRoot: { flex: 1, flexDirection: 'row', backgroundColor: T.paper },
   tabletList: { width: LIST_PANE_WIDTH, backgroundColor: T.paper, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: T.hairline },
@@ -319,4 +378,4 @@ const s = StyleSheet.create({
   drawerEmpty: { padding: 20, fontSize: 13, color: T.faint },
   manageBtn: { marginTop: 20, marginHorizontal: 20, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, paddingVertical: 12, alignItems: 'center' },
   manageText: { fontSize: 13, color: T.accent, fontWeight: '600' }
-})
+}))

@@ -31,3 +31,12 @@ test('newer tombstone wins and older remote data never resurrects removed notes'
   expect(mergeWorkItems([local], [item('same', 15)])[0].status).toBe('dismissed')
   expect(mergeWorkItems([item('same', 15)], [local])[0].status).toBe('dismissed')
 })
+
+test('configured working time, breaks and buffers are respected', () => {
+  const planning = { start: 9 * 60, end: 18 * 60, breakStart: 12 * 60, breakEnd: 13 * 60, buffer: 10 }
+  const result = autoSchedule([item('a', 60), item('b', 60), item('c', 60), item('d', 60)], at('08:00'), at('18:00'), planning)
+  expect(result.scheduled.get('a')).toBe(at('09:00'))
+  expect(result.scheduled.get('b')).toBe(at('10:10'))
+  expect(result.scheduled.get('c')).toBe(at('13:00'))
+  expect(result.scheduled.get('d')).toBe(at('14:10'))
+})

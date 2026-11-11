@@ -34,3 +34,25 @@ test('rescheduling clears an old appointment time when a task no longer fits tod
   expect(task.data.scheduledAt).toBeNull()
   expect(plannedAt(task)).toBeNull()
 })
+
+test('undo advances versions and refuses to overwrite a newer remote edit', async () => {
+  await useWorkbench.getState().save({ id: 'undo-me', title: '撤销测试', content: '', at: null })
+  await useWorkbench.getState().pin('undo-me')
+  await useWorkbench.getState().undo()
+  let note = useWorkbench.getState().items.find(i => i.id === 'undo-me')!
+  expect(note.data.pinned).toBeFalsy()
+  await useWorkbench.getState().pin('undo-me')
+  note = useWorkbench.getState().items.find(i => i.id === 'undo-me')!
+  await useWorkbench.getState().applyRemote([{ ...note, title: '另一台设备的新内容', data: { ...note.data, updatedAt: note.data.updatedAt + 1 } }])
+  await expect(useWorkbench.getState().undo()).rejects.toThrow('另一台设备')
+  expect(useWorkbench.getState().items.find(i => i.id === 'undo-me')?.title).toBe('另一台设备的新内容')
+})
+test('snoozing the same message updates one shared task and removal restores inbox eligibility', async () => {
+  const source = { accountEmail: 'me@example.com', mailbox: 'INBOX', uid: 70, messageId: '<stable@example.com>', subject: '客户回复', from: 'customer@example.com', date: Date.now() }
+  const id = await useWorkbench.getState().snooze(source, Date.now() + 3600000)
+  await useWorkbench.getState().snooze({ ...source, uid: 90 }, Date.now() + 7200000)
+  expect(useWorkbench.getState().items.filter(i => i.id === id)).toHaveLength(1)
+  expect(useWorkbench.getState().items.find(i => i.id === id)?.data.source?.uid).toBe(90)
+  await useWorkbench.getState().remove(id)
+  expect(useWorkbench.getState().items.find(i => i.id === id)?.status).toBe('dismissed')
+})
