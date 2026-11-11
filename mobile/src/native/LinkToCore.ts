@@ -14,6 +14,7 @@ import { sha256Hex as jsSha256Hex } from '../security/sha256'
  */
 
 interface LinkToCoreNative {
+  pickBackup?(): Promise<{ name: string; text: string } | null>
   openAttachment?(filename: string, data: string, type: string, share: boolean): Promise<boolean>
   clearAttachments?(): Promise<boolean>
   sha256Hex(msg: string): Promise<string>
@@ -31,6 +32,10 @@ interface LinkToCoreNative {
 const native = NativeModules.LinkToCore as LinkToCoreNative | undefined
 
 export const linkToCore = {
+  pickBackup: async () => {
+    if (!native?.pickBackup) throw new Error('当前构建不支持文件导入，请安装新版应用')
+    return native.pickBackup()
+  },
   reminderStatus: async () => await native?.reminderStatus?.() ?? { authorized: true, exact: true },
   openReminderSettings: async () => { await native?.openReminderSettings?.() },
   clearAttachments: async (): Promise<void> => { await native?.clearAttachments?.() },

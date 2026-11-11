@@ -21,6 +21,7 @@ import { validMicrosoftToken } from '../oauth/microsoft'
 import { presetFor } from '../providers'
 import { useWorkbench } from '../workbench/store'
 import { validateMailbox } from '../imap/mailbox-name'
+import { recoverPendingRestore } from '../backup/journal'
 
 export interface MobileAccount {
   id: string
@@ -34,6 +35,8 @@ export interface MobileAccount {
   color: string
   displayName?: string
   authType?: 'password' | 'oauth-ms'
+  username?: string
+  credentialState?: 'ready' | 'required'
 }
 
 export type MailTab = 'mail' | 'today' | 'notes' | 'agent' | 'more' | 'fly' | 'vault' | 'settings'
@@ -135,7 +138,7 @@ interface MailState {
   setupMaster(password: string): Promise<string | null>
   unlockMaster(password: string): Promise<void>
   saveAccount(draft: {
-    email: string; pass: string; host: string; port: string; secure: boolean
+    email: string; username?: string; pass: string; host: string; port: string; secure: boolean
     smtpHost?: string; smtpPort?: string; smtpSecure?: boolean
     authType?: 'password' | 'oauth-ms'; accessToken?: string
   }): Promise<string | null>
@@ -176,6 +179,7 @@ async function disconnectAll() {
 }
 
 async function ensureClient(account: MobileAccount): Promise<ImapLite> {
+  if (account.credentialState === 'required') throw new Error(`${account.email} 需要补充密码或重新授权，请打开邮箱设置`)
   const existing = clients.get(account.id)
   if (existing) return existing
   const creds = await Keychain.getGenericPassword({ service: 'linkto.imap.' + account.id })
@@ -185,7 +189,7 @@ async function ensureClient(account: MobileAccount): Promise<ImapLite> {
     host: account.host,
     port: account.port,
     secure: account.secure,
-    user: account.email,
+    user: account.username || account.email,
     pass: account.authType === 'oauth-ms' ? '' : creds.password,
     accessToken: account.authType === 'oauth-ms' ? await validMicrosoftToken(account.id) : undefined
   })
@@ -251,6 +255,7 @@ export const useMail = create<MailState>((set, get) => ({
     set({ guard: 'unknown', initError: '' })
     try {
       const gs = await guardState()
+      await recoverPendingRestore(gs.initialized)
       if (!gs.initialized) {
         set({ guard: 'setup' })
         return
@@ -300,6 +305,8 @@ export const useMail = create<MailState>((set, get) => ({
     const acc: MobileAccount = normalizeAccount({
       id: get().accounts.find(a => a.email === email)?.id ?? 'mob-' + Date.now().toString(36),
       email,
+      username: draft.username?.trim() || get().accounts.find(a => a.email === email)?.username || email,
+      credentialState: 'ready',
       host: draft.host.trim(),
       port: parseInt(draft.port || '993', 10) || 993,
       secure: draft.secure,
@@ -312,7 +319,7 @@ export const useMail = create<MailState>((set, get) => ({
     if (!acc.smtpHost) Object.assign(acc, guessSmtp(acc.host, email))
     const client = new ImapLite()
     try {
-      await client.connect({ host: acc.host, port: acc.port, secure: acc.secure, user: email, pass: draft.authType === 'oauth-ms' ? '' : draft.pass, accessToken: draft.accessToken })
+      await client.connect({ host: acc.host, port: acc.port, secure: acc.secure, user: acc.username || email, pass: draft.authType === 'oauth-ms' ? '' : draft.pass, accessToken: draft.accessToken })
       await client.selectMailbox('INBOX')
       await client.logout()
     } catch (e) {
@@ -618,7 +625,7 @@ export const useMail = create<MailState>((set, get) => ({
     if (!creds) { set({ sending: false, composeError: '未找到钥匙串凭据' }); return }
     const smtp = new SmtpLite()
     try {
-      await smtp.connect({ host: account.smtpHost, port: account.smtpPort, user: account.email, pass: account.authType === 'oauth-ms' ? '' : creds.password, secure: account.smtpSecure, accessToken: account.authType === 'oauth-ms' ? await validMicrosoftToken(account.id) : undefined })
+      await smtp.connect({ host: account.smtpHost, port: account.smtpPort, user: account.username || account.email, pass: account.authType === 'oauth-ms' ? '' : creds.password, secure: account.smtpSecure, accessToken: account.authType === 'oauth-ms' ? await validMicrosoftToken(account.id) : undefined })
       await smtp.send({
         from: account.email,
         to,

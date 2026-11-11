@@ -17,6 +17,7 @@ import { useAppearance } from '../ui/preferences'
 import { SearchText } from '../ui/SearchText'
 import { linkToCore } from '../native/LinkToCore'
 import { FolderSheet } from '../mail/FolderSheet'
+import { Icon } from '../ui/Icon'
 import { useAgent } from '../agent/store'
 
 function MessageRow({ m, unified, selected, compact, query, snoozeUntil, onOpen }: { m: MobileMessage; unified: boolean; selected: boolean; compact: boolean; query: string; snoozeUntil?: number; onOpen(): void }) {
@@ -143,7 +144,7 @@ export function InboxScreen() {
           <Skeleton />
         ) : (
           <View style={s.empty}>
-            <Text style={s.emptyGlyph}>{searchQuery ? '⌕' : '✉'}</Text>
+            <Icon name={searchQuery ? 'search' : 'mail'} size={40} color={T.faint} />
             <Text style={s.emptyTitle}>{searchQuery ? '没有匹配的邮件' : '收件箱是空的'}</Text>
             <Text style={s.emptyText}>{searchQuery ? '换个关键词，或清空搜索' : '下拉刷新，或去设置里添加另一个账户'}</Text>
           </View>
@@ -167,13 +168,13 @@ export function InboxScreen() {
 
   const header = (
     <View style={s.header}>
-      <Pressable accessibilityRole="button" accessibilityLabel="账户与文件夹" onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Text style={s.headerGlyph}>☰</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="账户与文件夹" onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Icon name="folder" size={21} /></Pressable>
       <View style={{ flex: 1 }}>
         <Text style={s.title} numberOfLines={1}>{showSnoozed ? '稍后处理' : unified ? '收件箱' : scope.title === 'INBOX' ? '收件箱' : scope.title}</Text>
         <Text style={s.sub} numberOfLines={1}>{subtitle}{unread ? ' · ' + unread + ' 封未读' : ''}</Text>
       </View>
       <Pressable onPress={() => { setSearchOpen(v => !v); if (searchOpen) cancelSearch() }} hitSlop={10} style={s.headerIcon}>
-        <Text style={s.headerGlyph}>⌕</Text>
+        <Icon name="search" size={21} />
       </Pressable>
       {isTablet && (
         <Pressable onPress={() => composeNew()} hitSlop={10} style={[s.headerIcon, s.composeIcon]}>
@@ -292,7 +293,7 @@ export function InboxScreen() {
             <View style={{ flex: 1 }}>
               <View style={s.readTop}>
                 <Text style={s.readTopText} numberOfLines={1}>阅读</Text>
-                <Pressable onPress={() => useMail.getState().closeReading()} hitSlop={12}><Text style={s.readClose}>✕</Text></Pressable>
+                <Pressable onPress={() => useMail.getState().closeReading()} hitSlop={12}><Icon name="close" size={21} /></Pressable>
               </View>
               <ReadScreen embedded />
             </View>

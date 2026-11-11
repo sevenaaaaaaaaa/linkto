@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { themedStyles, T } from '../theme'
@@ -14,7 +14,9 @@ import { VaultScreen } from './VaultScreen'
 import { SettingsScreen } from './SettingsScreen'
 import { ReminderSettings } from '../ui/ReminderSettings'
 import { Notice } from '../ui/Notice'
-import { Icon } from '../ui/Icon'
+import { Icon, type IconName } from '../ui/Icon'
+import { Brand, BrandMark } from '../ui/Brand'
+import { RestoreEntry } from '../backup/RestoreEntry'
 import { WorkbenchScreen } from '../workbench/WorkbenchScreen'
 import { CaptureSheet } from '../workbench/CaptureSheet'
 import { useWorkbench } from '../workbench/store'
@@ -31,11 +33,24 @@ const TABS: Array<{ id: MailTab; label: string; icon: 'mail' | 'today' | 'agent'
 ]
 
 function MoreScreen() {
-  return <ScrollView style={{ flex: 1, backgroundColor: T.paper }} contentContainerStyle={{ padding: 22, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 40 }}>
-    <Text style={s.moreTitle}>更多</Text><Text style={s.moreSubtitle}>让邮件、安排与想法，在自己的设备间流动。</Text>
-    <SyncSettings />
-    <ReminderSettings />
-    {([{ id: 'notes', title: '随手记与便签', text: '记录想法，安排时间后转为待办' }, { id: 'settings', title: '邮箱与设置', text: '账户、AI、应用锁与本机数据' }, { id: 'fly', title: '萤火密信', text: '发送一封阅后即焚的消息' }, { id: 'vault', title: '保险箱', text: '加密暂存内容与密码' }] as const).map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => useMail.getState().setTab(item.id)} style={({ pressed }) => [s.moreCard, pressed && { opacity: 0.7 }]}><Text style={s.moreCardTitle}>{item.title}</Text><Text style={s.moreSubtitle}>{item.text}</Text></Pressable>)}
+  const [sync, setSync] = useState(false), [reminders, setReminders] = useState(false)
+  const count = useMail(state => state.accounts.length)
+  const rows: Array<{ id: MailTab; title: string; detail: string; icon: IconName }> = [
+    { id: 'notes', title: '随手记与便签', detail: '想法、草稿与邮件里的下一步', icon: 'note' },
+    { id: 'settings', title: '邮箱与设置', detail: `${count} 个邮箱 · AI 接口 · 应用锁`, icon: 'settings' },
+    { id: 'fly', title: '萤火密信', detail: '为需要保密的内容留一个出口', icon: 'mail' },
+    { id: 'vault', title: '保险箱', detail: '在自己的设备上加密保存', icon: 'shield' }
+  ]
+  return <ScrollView keyboardShouldPersistTaps="always" style={{ flex: 1, backgroundColor: T.paper }} contentContainerStyle={s.moreBody}>
+    <Brand subtitle="邮件、安排与想法，在自己的设备间流动。" />
+    <View style={{ marginTop: 16, gap: 6 }}><Text style={s.moreTitle}>工作与连接</Text><Text style={s.moreSubtitle}>从电脑继续，也从这里开始。</Text></View>
+    <RestoreEntry />
+    <Text style={s.sectionLabel}>你的工作台</Text>
+    <View style={s.menuGroup}>{rows.map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => useMail.getState().setTab(item.id)} style={({ pressed }) => [s.menuRow, pressed && { backgroundColor: T.accentSoft }]}><View style={s.menuIcon}><Icon name={item.icon} size={20} /></View><View style={{ flex: 1 }}><Text style={s.moreCardTitle}>{item.title}</Text><Text style={s.moreSubtitle}>{item.detail}</Text></View><Icon name="chevron" size={15} color={T.faint} /></Pressable>)}</View>
+    <Text style={s.sectionLabel}>设备与同步</Text>
+    <View style={s.menuGroup}>{([{ title: '手机与电脑同步', detail: '用自己的邮箱承载加密内容', icon: 'restore', value: sync, action: () => setSync(!sync) }, { title: '提醒与收信', detail: '本机提醒与邮件接收状态', icon: 'today', value: reminders, action: () => setReminders(!reminders) }] as const).map(row => <Pressable key={row.title} accessibilityRole="button" accessibilityState={{ expanded: row.value }} onPress={row.action} style={s.menuRow}><View style={s.menuIcon}><Icon name={row.icon} size={20} /></View><View style={{ flex: 1 }}><Text style={s.moreCardTitle}>{row.title}</Text><Text style={s.moreSubtitle}>{row.detail}</Text></View><View style={{ transform: [{ rotate: row.value ? '90deg' : '0deg' }] }}><Icon name="chevron" size={15} color={T.faint} /></View></Pressable>)}</View>
+    {sync && <SyncSettings />}{reminders && <ReminderSettings />}
+    <Text style={s.footerBrand}>LinkTo · 留一点注意力给真正重要的事</Text>
   </ScrollView>
 }
 
@@ -91,7 +106,7 @@ export function MainShell() {
       <SafeAreaView style={s.root} edges={['top', 'left', 'right', 'bottom']}>
         <View style={s.tabletRow}>
           <View style={s.rail}>
-            <View style={s.railLogo}><Text style={s.railLogoText}>林</Text></View>
+            <View style={s.railLogo}><BrandMark size={38} /></View>
             {TABS.map(t => {
               const active = activeTab === t.id
               return (
@@ -116,15 +131,13 @@ export function MainShell() {
         <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 6) }]}>
           {TABS.map((t, index) => {
             const active = activeTab === t.id
-            return (
-              <View key={t.id} style={{ flex: index === 2 ? 2 : 1, flexDirection: 'row' }}>
-              {index === 2 && <Pressable accessibilityRole="button" accessibilityLabel="全局新建邮件或随手记" onPress={create} style={s.createButton}><Icon name="plus" color={T.accentInk} size={25} /></Pressable>}
-              <Pressable accessibilityRole="tab" accessibilityLabel={t.label} accessibilityState={{ selected: active }} onPress={() => select(t.id)} style={s.tabItem} hitSlop={2}>
-                <Icon name={t.icon} color={active ? T.accent : T.faint} />
-                <Text style={[s.tabLabel, active && s.tabLabelActive]}>{t.label}</Text>
+            return <View key={t.id} style={{ flex: index === 2 ? 2 : 1, flexDirection: 'row' }}>
+              {index === 2 && <View style={s.createSlot}><Pressable accessibilityRole="button" accessibilityLabel="全局新建邮件或随手记" onPress={create} style={({ pressed }) => [s.createButton, pressed && { opacity: 0.7 }]}><Icon name="plus" color={T.accentInk} size={22} /></Pressable></View>}
+              <Pressable accessibilityRole="tab" accessibilityLabel={t.label} accessibilityState={{ selected: active }} onPress={() => select(t.id)} style={s.tabItem}>
+                <View style={[s.tabIcon, active && s.activeTabIcon]}><Icon name={t.icon} color={active ? T.accent : T.faint} size={21} /></View>
+                <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[s.tabLabel, active && s.tabLabelActive]}>{t.label}</Text>
               </Pressable>
-              </View>
-            )
+            </View>
           })}
         </View>
       )}
@@ -136,8 +149,8 @@ const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
   content: { flex: 1 },
   tabletRow: { flex: 1, flexDirection: 'row' },
-  rail: { width: 86, backgroundColor: T.surface, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: T.hairline, paddingTop: 14, alignItems: 'center', gap: 4 },
-  railLogo: { width: 34, height: 34, borderRadius: 11, backgroundColor: T.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  rail: { width: 86, backgroundColor: T.surfaceAlt, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: T.hairline, paddingTop: 14, alignItems: 'center', gap: 4 },
+  railLogo: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#0E1116', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   railLogoText: { color: T.accentInk, fontSize: 16, fontWeight: '700' },
   railItem: { width: 70, paddingVertical: 9, borderRadius: 12, alignItems: 'center', gap: 3 },
   railItemActive: { backgroundColor: T.accentSoft },
@@ -146,11 +159,14 @@ const s = themedStyles(() => StyleSheet.create({
   railLabel: { fontSize: 10, color: T.faint },
   railLabelActive: { color: T.accent, fontWeight: '600' },
   tabletContent: { flex: 1 },
-  tabBar: { flexDirection: 'row', backgroundColor: T.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.hairline, paddingTop: 6 },
+  tabBar: { flexDirection: 'row', backgroundColor: T.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.hairline, paddingTop: 8 },
   tabItem: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 4 },
-  createButton: { flex: 1, maxWidth: 52, height: 48, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', backgroundColor: T.accent, borderRadius: 16, marginHorizontal: 8 },
+  createSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  createButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: T.accent, borderRadius: 12 },
+  tabIcon: { width: 42, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }, activeTabIcon: { backgroundColor: T.accentSoft },
   backMore: { minHeight: 44, paddingHorizontal: 20, justifyContent: 'center' }, backMoreText: { color: T.accent, fontSize: 14 },
-  moreTitle: { color: T.ink, fontSize: 30, fontWeight: '700' }, moreSubtitle: { color: T.faint, fontSize: 12, lineHeight: 20 }, moreCard: { backgroundColor: T.surface, padding: 18, borderRadius: 16, gap: 6, minHeight: 76 }, moreCardTitle: { fontSize: 15, fontWeight: '600', color: T.ink },
+  moreTitle: { color: T.ink, fontSize: 28, fontWeight: '700' }, moreSubtitle: { color: T.faint, fontSize: 12, lineHeight: 20 }, moreCard: { backgroundColor: T.surface, padding: 18, borderRadius: 16, gap: 6, minHeight: 76 }, moreCardTitle: { fontSize: 15, fontWeight: '600', color: T.ink },
+  moreBody: { padding: 24, gap: 14, maxWidth: 720, width: '100%', alignSelf: 'center', paddingBottom: 40 }, sectionLabel: { color: T.faint, fontSize: 11, fontWeight: '600', letterSpacing: 1, marginTop: 12 }, menuGroup: { borderRadius: 14, backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, overflow: 'hidden' }, menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 76, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline }, menuIcon: { width: 34, alignItems: 'center' }, footerBrand: { color: T.faint, fontSize: 11, textAlign: 'center', marginTop: 16 },
   tabGlyph: { fontSize: 21, color: T.faint },
   tabGlyphActive: { color: T.accent },
   tabLabel: { fontSize: 10, color: T.faint },

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { themedStyles, T, accountInitial } from '../theme'
 import { useMail } from '../store/mail'
+import { Icon } from '../ui/Icon'
 import { linkToCore } from '../native/LinkToCore'
 import { DEFAULT_RELAY, getRelayUrl, setRelayUrl } from '../fly/relay'
 import { getAIConfig, saveAIConfig } from '../ai/client'
@@ -69,7 +70,7 @@ export function SettingsScreen() {
               <Pressable hitSlop={10} onPress={() => confirmDelete(a.id, a.email)}>
                 <Text style={s.delete}>删除</Text>
               </Pressable>
-              <Text style={s.chevron}>›</Text>
+              <Icon name="chevron" size={16} color={T.faint} />
             </Pressable>
           ))}
           {!accounts.length && <Text style={s.empty}>还没有账户</Text>}
@@ -133,7 +134,7 @@ export function SettingsScreen() {
               <Text style={s.email}>立即锁定</Text>
               <Text style={s.server}>断开 IMAP/SMTP 连接，回到主密码解锁页</Text>
             </View>
-            <Text style={s.chevron}>›</Text>
+            <Icon name="chevron" size={16} color={T.faint} />
           </Pressable>
         </View>
 
@@ -152,7 +153,7 @@ export function SettingsScreen() {
             </View>
           </View>
         </View>
-        <Text style={s.footnote}>移动版与 Mac 版独立编号；当前版本把多账户、文件夹、搜索、HTML 阅读与发信补齐。</Text>
+        <Text style={s.footnote}>LinkTo Mobile · 0.8.0 · 邮件、今日与随手记</Text>
       </ScrollView>
     </View>
   )

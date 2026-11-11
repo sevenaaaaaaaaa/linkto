@@ -26,6 +26,17 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UTImportedTypeDeclarations</key>
+	<array><dict>
+		<key>UTTypeIdentifier</key><string>com.linkto.backup</string>
+		<key>UTTypeDescription</key><string>LinkTo Backup</string>
+		<key>UTTypeConformsTo</key><array><string>public.json</string></array>
+		<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>lkbak</string></array></dict>
+	</dict></array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

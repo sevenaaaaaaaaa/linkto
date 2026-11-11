@@ -17,6 +17,8 @@ export async function burnExtraSecrets(): Promise<void> {
     Keychain.resetGenericPassword({ service: 'linkto.vault.key' }),
     Keychain.resetGenericPassword({ service: 'linkto.ai.key' }),
     Keychain.resetGenericPassword({ service: 'linkto.workbench.key' }),
+    Keychain.resetGenericPassword({ service: 'linkto.restore-journal.key' }),
+    AsyncStorage.removeItem('linkto.restore-journal.v1'),
     Keychain.resetGenericPassword({ service: 'linkto.planning.key' }),
     Keychain.resetGenericPassword({ service: 'linkto.mail-cache.key' }),
     Keychain.resetGenericPassword({ service: 'linkto.workbench.sync' }),

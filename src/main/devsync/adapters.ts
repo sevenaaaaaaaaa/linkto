@@ -485,6 +485,7 @@ export function buildAdapters(deps: AdapterDeps): Adapter[] {
   out.push(insightAdapter('reading', 'reading', true))
   // 待办 / 留痕：同步走各自的旧文件夹，这里只用于备份与恢复
   out.push(insightAdapter('todo', 'todo', false))
+  out.push(insightAdapter('memo', 'todo', false))
   out.push(insightAdapter('trace', 'trace', false))
 
   // ================= 订阅源与 AI 搜索主题 =================

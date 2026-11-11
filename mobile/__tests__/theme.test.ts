@@ -6,11 +6,11 @@ test('Android styles change with system appearance without replacing editor comp
   const scheme = jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('light')
   try {
     const styles = themedStyles(() => StyleSheet.create({ card: { backgroundColor: T.paper, color: T.ink } }))
-    expect(styles.card.backgroundColor).toBe('#F5F1E8')
+    expect(styles.card.backgroundColor).toBe('#F4F5F7')
     scheme.mockReturnValue('dark')
-    expect(styles.card.backgroundColor).toBe('#14181B')
-    expect(styles.card.color).toBe('#F0EEE8')
+    expect(styles.card.backgroundColor).toBe('#0E1116')
+    expect(styles.card.color).toBe('#F0F1F4')
     scheme.mockReturnValue('light')
-    expect(styles.card.backgroundColor).toBe('#F5F1E8')
+    expect(styles.card.backgroundColor).toBe('#F4F5F7')
   } finally { scheme.mockRestore(); Object.defineProperty(Platform, 'OS', descriptor) }
 })

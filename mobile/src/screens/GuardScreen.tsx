@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { themedStyles, T } from '../theme'
+import { Brand } from '../ui/Brand'
 import { useMail } from '../store/mail'
 
 /**
@@ -50,7 +51,7 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
   if (initError) return <SafeAreaView style={s.root}><Text style={s.title}>暂时无法打开本机钥匙串</Text><Text accessibilityRole="alert" style={s.sub}>尚未进入密码验证。请重试；如果刚更新应用，检查系统签名与钥匙串权限。</Text><Text selectable style={s.err}>{initError}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="重试初始化" style={s.btn} onPress={() => void init()}><Text style={s.btnText}>重试</Text></TouchableOpacity></SafeAreaView>
 
   return (
-    <SafeAreaView style={s.root}>
+    <SafeAreaView style={[s.root, { paddingHorizontal: 0 }]}><ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 32, flexGrow: 1 }}>
       {burnReason ? (
         <View style={s.burnBanner}>
           <Text style={s.burnText}>☠ {burnReason}</Text>
@@ -59,6 +60,7 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
           </TouchableOpacity>
         </View>
       ) : null}
+      <View style={{ paddingTop: 36, paddingBottom: 12 }}><Brand large subtitle="邮件、安排与想法，留在自己的掌握里。" /></View>
       <Text style={s.title}>{mode === 'setup' ? '设置主密码' : '林可兔已锁定'}</Text>
       <Text style={s.sub}>
         {mode === 'setup'
@@ -97,7 +99,7 @@ export function GuardScreen({ mode }: { mode: 'setup' | 'locked' }) {
       <Text style={s.note}>
         凭据存于系统钥匙串（Keychain / Keystore）。TLS 证书校验失败（中间人）将立即焚毁全部本地数据。
       </Text>
-    </SafeAreaView>
+    </ScrollView></SafeAreaView>
   )
 }
 
@@ -107,8 +109,8 @@ const s = themedStyles(() => StyleSheet.create({
   burnText: { color: '#fff', fontSize: 13, fontWeight: '600', lineHeight: 19 },
   restartBtn: { marginTop: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   restartText: { color: '#fff', fontSize: 12 },
-  title: { fontSize: 22, fontWeight: '700', color: T.ink, marginTop: 40 },
-  sub: { fontSize: 12, color: T.faint, marginTop: 8, lineHeight: 18, marginBottom: 20 },
+  title: { fontSize: 28, fontWeight: '700', color: T.ink, marginTop: 28 },
+  sub: { fontSize: 13, color: T.faint, marginTop: 8, lineHeight: 18, marginBottom: 20 },
   input: { minHeight: 48, backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, marginBottom: 12 },
   err: { fontSize: 12, color: T.danger, marginBottom: 10, lineHeight: 17 },
   btn: { minHeight: 48, backgroundColor: T.accent, borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 4 },

@@ -13,6 +13,7 @@
 #import <UIKit/UIKit.h>
 #import <UserNotifications/UserNotifications.h>
 #import <QuickLook/QuickLook.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
   NSMutableString *out = [NSMutableString stringWithCapacity:len * 2];
@@ -28,12 +29,70 @@ static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
 - (id<QLPreviewItem>)previewController:(QLPreviewController *)controller previewItemAtIndex:(NSInteger)index { return self.attachmentURL; }
 @end
 
+@interface LinkToBackupPicker : NSObject <UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate>
+@property(nonatomic, copy) RCTPromiseResolveBlock resolve;
+@property(nonatomic, copy) RCTPromiseRejectBlock reject;
+@property(nonatomic) BOOL completed;
+@end
+static LinkToBackupPicker *activeBackupPicker;
+@implementation LinkToBackupPicker
+- (void)finish:(id)value error:(NSString *)error {
+  if (self.completed) return;
+  self.completed = YES;
+  if (error) self.reject(@"BACKUP_READ", error, nil); else self.resolve(value);
+  self.resolve = nil; self.reject = nil;
+  if (activeBackupPicker == self) activeBackupPicker = nil;
+}
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller { [self finish:[NSNull null] error:nil]; }
+- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController { [self finish:[NSNull null] error:nil]; }
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+  NSURL *url = urls.firstObject;
+  if (!url) { [self finish:[NSNull null] error:nil]; return; }
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    BOOL scoped = [url startAccessingSecurityScopedResource];
+    __block NSData *data = nil; __block NSError *readError = nil;
+    NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+    NSError *coordinateError = nil;
+    [coordinator coordinateReadingItemAtURL:url options:0 error:&coordinateError byAccessor:^(NSURL *readURL) {
+      NSNumber *size = nil; [readURL getResourceValue:&size forKey:NSURLFileSizeKey error:&readError];
+      if (size.unsignedLongLongValue > 32 * 1024 * 1024) { readError = [NSError errorWithDomain:@"LinkToBackup" code:1 userInfo:@{NSLocalizedDescriptionKey:@"备份超过 32 MB，请在电脑按类别重新导出"}]; return; }
+      data = [NSData dataWithContentsOfURL:readURL options:NSDataReadingMappedIfSafe error:&readError];
+    }];
+    if (scoped) [url stopAccessingSecurityScopedResource];
+    NSString *text = data && data.length <= 32 * 1024 * 1024 ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+    if (!text) { [self finish:nil error:readError.localizedDescription ?: coordinateError.localizedDescription ?: @"无法读取备份，请确认文件已从云端下载且小于 32 MB"]; return; }
+    [self finish:@{@"name":url.lastPathComponent, @"text":text} error:nil];
+  });
+}
+@end
+
 @interface LinkToCore : NSObject <RCTBridgeModule>
 @end
 
 @implementation LinkToCore
 
 RCT_EXPORT_MODULE(LinkToCore)
+
+RCT_EXPORT_METHOD(pickBackup:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (activeBackupPicker) { reject(@"BACKUP_BUSY", @"请先完成当前文件选择", nil); return; }
+    UIViewController *presenter = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+      if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) if (window.isKeyWindow) { presenter = window.rootViewController; break; }
+      }
+      if (presenter) break;
+    }
+    while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+    if (!presenter) { reject(@"BACKUP_VIEW", @"请回到应用后重试", nil); return; }
+    LinkToBackupPicker *handler = [LinkToBackupPicker new]; handler.resolve = resolve; handler.reject = reject; activeBackupPicker = handler;
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
+    picker.allowsMultipleSelection = NO; picker.delegate = handler;
+    picker.presentationController.delegate = handler;
+    [presenter presentViewController:picker animated:YES completion:^{ picker.presentationController.delegate = handler; }];
+  });
+}
 
 RCT_EXPORT_METHOD(clearAttachments:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {

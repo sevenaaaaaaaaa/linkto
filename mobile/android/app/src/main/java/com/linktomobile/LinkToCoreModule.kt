@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.ClipData
 import android.app.AlarmManager
+import android.app.Activity
+import android.provider.OpenableColumns
+import com.facebook.react.bridge.BaseActivityEventListener
 import android.app.NotificationManager
 import android.os.Build
 import android.net.Uri
@@ -41,6 +44,49 @@ class LinkToCoreModule(private val ctx: ReactApplicationContext) : ReactContextB
   override fun getName(): String = "LinkToCore"
 
   private val mainHandler = Handler(Looper.getMainLooper())
+  private var backupPromise: Promise? = null
+  private val backupRequest = 42671
+  init {
+    ctx.addActivityEventListener(object : BaseActivityEventListener() {
+      override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != backupRequest) return
+        val pending = backupPromise ?: return
+        backupPromise = null
+        if (resultCode != Activity.RESULT_OK || data?.data == null) { pending.resolve(null); return }
+        val uri = data.data!!
+        Thread {
+          try {
+            var name = "LinkTo.lkbak"
+            ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+              if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) name = cursor.getString(nameIndex) ?: name
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex) && cursor.getLong(sizeIndex) > 32 * 1024 * 1024) error("备份超过 32 MB，请在电脑按类别重新导出")
+              }
+            }
+            val bytes = ctx.contentResolver.openInputStream(uri)?.use { stream ->
+              val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
+              while (true) { val n = stream.read(buffer); if (n < 0) break; if (output.size() + n > 32 * 1024 * 1024) error("备份超过 32 MB"); output.write(buffer, 0, n) }
+              output.toByteArray()
+            } ?: error("无法读取所选备份")
+            pending.resolve(Arguments.createMap().apply { putString("name", name); putString("text", bytes.toString(Charsets.UTF_8)) })
+          } catch (e: Exception) { pending.reject("BACKUP_READ", e.message, e) }
+        }.start()
+      }
+    })
+  }
+  @ReactMethod
+  fun pickBackup(promise: Promise) {
+    mainHandler.post {
+      if (backupPromise != null) { promise.reject("BACKUP_BUSY", "请先完成当前文件选择"); return@post }
+      val activity = ctx.currentActivity
+      if (activity == null) { promise.reject("BACKUP_VIEW", "请回到应用后重试"); return@post }
+      backupPromise = promise
+      try { activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, backupRequest) }
+      catch (e: Exception) { backupPromise = null; promise.reject("BACKUP_PICK", e.message, e) }
+    }
+  }
 
   @ReactMethod
   fun scheduleReminder(id: String, title: String, at: Double, promise: Promise) {

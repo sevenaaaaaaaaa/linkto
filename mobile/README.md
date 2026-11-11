@@ -1,8 +1,8 @@
 # 林可兔移动版（LinkTo Mobile）
 
-React Native 0.87，移动版独立版本 **0.7.2（build 9）**，共享 iOS / Android 业务代码。鸿蒙适配沿用 `harmony/README.md`，本轮未验证。
+React Native 0.87，移动版独立版本 **0.8.0（build 10）**，共享 iOS / Android 业务代码。鸿蒙适配沿用 `harmony/README.md`，本轮未验证。
 
-iOS 27 请使用 0.7.2 或更新版本：0.7.1 的旧窗口生命周期不符合 SDK 27 的启动要求，0.7.2 已迁移到 UIScene。此补丁提供新的 iOS IPA，Android 已发布的 Preview APK 仍为 0.7.1。第三方重签时需要对应用及三个内嵌框架一并签名，并保留有效描述文件；覆盖安装应沿用相同 Bundle ID 与签名身份。
+0.8.0 沿用桌面现行黑白 / 荧光品牌、冷白与墨色主题及同源 SVG 图标。iOS 27 启动仍使用 0.7.2 引入的 UIScene 修复。第三方重签应保留三个内嵌框架，并使用有效证书与描述文件对其一并签名；覆盖安装沿用相同 Bundle ID 与签名身份。
 
 ## 邮件、今日和随手记
 
@@ -49,6 +49,14 @@ iOS 27 请使用 0.7.2 或更新版本：0.7.1 的旧窗口生命周期不符合
 
 AI 工作流在读取正文前先检查 Key 配置，缺少配置时给出直达设置入口；运行中拒绝悄悄替换输入选择。AI 默认处理当前已加载范围的未读邮件，也可使用手动选择。AI 两项工作流会将选定正文发送到用户配置的 OpenAI 兼容接口；仅用模拟响应验证了编排，未使用真实邮件调用 AI 验收。模型只返回受验证的摘要 / 行动数据，不能直接调用发信或删除工具。取消会停止后续步骤，正在进行的服务器操作需要结束；锁屏后清理内存中的输入和结果。工作流的撤销绑定本次改动，后续已有其他改动时会拒绝撤销。
 
+## 从桌面备份恢复
+
+首次添加邮箱页面，或「更多 → 从桌面备份恢复」，选择「文件」中的 `.lkbak`，输入**导出时的备份口令**，解密预览后按类别合并恢复。iOS 使用系统文件选择器访问 iCloud Drive / 本机文件，Android 使用系统文档选择器；不用粘贴 JSON 或重新逐项填写服务器。
+
+支持桌面 v1 / v2 中的邮箱、应用密码、待办、随手记 / 知识库文本笔记，以及可选的 AI 配置。相同邮箱跳过，已有任务和便签保留较新的修改；AI 配置默认不勾选，导入的系统提醒默认关闭。密码留在钥匙串，工作台和恢复日志加密存储；写入失败回滚，中断后下次启动恢复原状态。错误口令不写入数据，文件上限 32 MB。
+
+OAuth 邮箱需要在手机重新授权；Proton Bridge / 本机服务账户无法在手机直连。预览和完成页会列出这些账户及桌面专属内容。旧备份未包含的内容无法恢复；桌面代码已补充随手记备份适配，原设备需使用包含该修复的桌面构建重新导出，或沿用邮箱加密同步。备份不携带整箱邮件，正文连接邮箱后重新接收。
+
 ## 用自己的邮箱加密同步
 
 1. 电脑和手机都添加同一个支持 IMAP 的同步邮箱。
@@ -81,6 +89,11 @@ cd .. && bash scripts/test-mobile-ios.sh
 LINKTO_IOS_SIM_DEVICE=com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max \
 LINKTO_IOS_SIM_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-5 \
 bash scripts/test-mobile-ios.sh
+# 只验证系统文件选择与桌面备份恢复
+LINKTO_QA_TEST_ONLY=LinkToQA/WorkbenchUITests/testRestoreFromDesktopBackup bash scripts/test-mobile-ios.sh
+# 使用预构建的 Release 模拟器 .app，检查小屏深色大字 / iPad 横屏
+LINKTO_IOS_APP=/absolute/path/LinkToMobile.app bash scripts/audit-mobile-ios.sh phone
+LINKTO_IOS_APP=/absolute/path/LinkToMobile.app bash scripts/audit-mobile-ios.sh tablet
 ```
 
 iPhone 用 Xcode 个人团队安装：用 Xcode 打开 `ios/LinkToMobile.xcworkspace`，连接并信任 iPhone，开启开发者模式，选择 LinkToMobile target 的 Signing & Capabilities → Automatically manage signing → Personal Team，然后把运行目标选为真实 iPhone。

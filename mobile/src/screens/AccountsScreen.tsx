@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { themedStyles, T, accountInitial } from '../theme'
 import { useMail } from '../store/mail'
+import { Brand } from '../ui/Brand'
+import { RestoreEntry } from '../backup/RestoreEntry'
 import { useTablet } from '../hooks/useTablet'
 import { ACCOUNT_PROVIDER_CHOICES, PROVIDER_PRESETS, microsoftProviderFor, presetFor } from '../providers'
 import { authorizeMicrosoft, msClientId, saveMsClientId } from '../oauth/microsoft'
@@ -69,8 +71,7 @@ export function AccountsScreen() {
     <View style={s.root}>
       <View style={s.headRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[s.title, isTablet && s.padWide]}>林可兔 LinkTo</Text>
-          <Text style={[s.subtitle, isTablet && s.padWide]}>邮件、今日安排与随手记 · 邮箱凭据留在自己的设备</Text>
+          <Brand subtitle="邮件，和由此开始的一切。" />
         </View>
         {accounts.length > 0 && (
           <TouchableOpacity onPress={() => void openUnified()} hitSlop={10}>
@@ -79,7 +80,9 @@ export function AccountsScreen() {
         )}
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={[s.scrollPad, isTablet && s.scrollWide]} keyboardShouldPersistTaps="handled">
+      <ScrollView style={s.scroll} contentContainerStyle={[s.scrollPad, isTablet && s.scrollWide]} keyboardShouldPersistTaps="always">
+        <RestoreEntry onboarding />
+        {accounts.length === 0 && <View style={{ marginTop: 28, gap: 8 }}><Text style={s.title}>让邮箱成为工作台</Text><Text style={s.subtitle}>接收邮件，记下下一步，把今天排清楚。</Text></View>}
         {accounts.length > 0 && (
           <View style={s.section}>
             <Text style={s.sectionTitle}>账户</Text>
@@ -88,10 +91,10 @@ export function AccountsScreen() {
                 <View style={[s.avatar, { backgroundColor: a.color }]}><Text style={s.avatarText}>{accountInitial(a.email)}</Text></View>
                 <View style={s.cardBody}>
                   <Text style={s.accountEmail} numberOfLines={1}>{a.email}</Text>
-                  <Text style={s.accountHost} numberOfLines={1}>{a.host}:{a.port} · SMTP {a.smtpHost}:{a.smtpPort}</Text>
+                  <Text style={s.accountHost} numberOfLines={2}>{a.credentialState === 'required' ? '需要补充密码或重新授权' : a.displayName || a.host}</Text>
                 </View>
-                <TouchableOpacity style={[s.btn, s.btnPrimary]} onPress={() => void openAccount(a)}>
-                  <Text style={s.btnPrimaryText}>打开</Text>
+                <TouchableOpacity style={[s.btn, s.btnPrimary]} onPress={() => { if (a.credentialState === 'required') { onEmailChange(a.email); setHost(a.host); setPort(String(a.port)); setSmtpHost(a.smtpHost); setSmtpPort(String(a.smtpPort)); setSecure(a.secure); setSmtpSecure(a.smtpSecure); setProvider(a.authType === 'oauth-ms' ? 'outlook' : null); setErr('请补充登录信息后验证') } else void openAccount(a) }}>
+                  <Text style={s.btnPrimaryText}>{a.credentialState === 'required' ? '补全' : '打开'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.btn, s.btnGhost]}
@@ -108,7 +111,7 @@ export function AccountsScreen() {
         )}
 
         <View style={s.section}>
-          <Text style={s.sectionTitle}>{accounts.length ? '添加另一个账户' : '添加 IMAP 账户'}</Text>
+          <Text style={s.sectionTitle}>{accounts.length ? '添加另一个账户' : '连接一个邮箱'}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>{ACCOUNT_PROVIDER_CHOICES.map(p => <Pressable accessibilityRole="button" key={p.key} onPress={() => { setProvider(p.key); if (p.imap) { setHost(p.imap.host); setPort(String(p.imap.port)); setSecure(p.imap.secure) } else setHost(''); if (p.smtp) { setSmtpHost(p.smtp.host); setSmtpPort(String(p.smtp.port)); setSmtpSecure(p.smtp.secure) } else setSmtpHost('') }} style={[s.providerChip, preset.key === p.key && { borderColor: T.accent, backgroundColor: T.accentSoft }]}><Text style={s.checkText}>{p.label}</Text></Pressable>)}</ScrollView>
           <Pressable accessibilityRole="button" onPress={() => { setProvider(null); setErr('') }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={s.advancedText}>按邮箱地址自动识别</Text></Pressable>
           <Text style={s.hint}>{preset.hint}</Text>
@@ -120,6 +123,8 @@ export function AccountsScreen() {
           </View> : <>
           <TextInput style={s.input} placeholder="邮箱地址" placeholderTextColor={T.faint} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={onEmailChange} />
           <TextInput style={s.input} placeholder={preset.passwordLabel ?? '密码 / 授权码'} placeholderTextColor={T.faint} secureTextEntry value={pass} onChangeText={setPass} />
+          <TouchableOpacity accessibilityRole="button" style={[s.advancedToggle, { minHeight: 44, justifyContent: 'center' }]} onPress={() => setAdvanced(v => !v)}><Text style={s.advancedText}>服务器与高级设置 {advanced ? '−' : '+'}</Text></TouchableOpacity>
+          {advanced && <>
           <View style={s.row}>
             <TextInput style={[s.input, s.grow]} placeholder="IMAP 服务器" placeholderTextColor={T.faint} autoCapitalize="none" autoCorrect={false} value={host} onChangeText={setHost} />
             <TextInput style={[s.input, s.port]} placeholder="993" placeholderTextColor={T.faint} keyboardType="number-pad" value={port} onChangeText={setPort} />
@@ -129,11 +134,7 @@ export function AccountsScreen() {
             <Text style={s.checkText}>IMAP SSL/TLS（993）</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.advancedToggle} onPress={() => setAdvanced(v => !v)}>
-            <Text style={s.advancedText}>发信服务器（SMTP）{advanced ? '▾' : '▸'}</Text>
-          </TouchableOpacity>
-          {advanced && (
-            <>
+          <Text style={s.hint}>发信服务器 SMTP</Text>
               <View style={s.row}>
                 <TextInput style={[s.input, s.grow]} placeholder="SMTP 服务器" placeholderTextColor={T.faint} autoCapitalize="none" value={smtpHost} onChangeText={setSmtpHost} />
                 <TextInput style={[s.input, s.port]} placeholder="465" placeholderTextColor={T.faint} keyboardType="number-pad" value={smtpPort} onChangeText={setSmtpPort} />
@@ -142,8 +143,7 @@ export function AccountsScreen() {
                 <View style={[s.checkbox, smtpSecure && s.checkboxOn]} />
                 <Text style={s.checkText}>SMTP 隐式 TLS（465）</Text>
               </TouchableOpacity>
-            </>
-          )}
+          </>}
 
           <TouchableOpacity style={[s.btn, s.btnPrimary, s.btnBig, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => void submit()}>
             <Text style={s.btnPrimaryText}>{busy ? '验证连接中…' : '验证并添加'}</Text>
@@ -159,7 +159,7 @@ export function AccountsScreen() {
 
 const s = themedStyles(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.paper },
-  headRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 16 },
+  headRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
   title: { fontSize: 24, fontWeight: '700', color: T.ink },
   subtitle: { fontSize: 12, color: T.faint, marginTop: 4, lineHeight: 17 },
   topAction: { fontSize: 13, color: T.accent, fontWeight: '600', paddingBottom: 4 },
