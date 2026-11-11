@@ -84,5 +84,17 @@ final class WorkbenchUITests: XCTestCase {
     XCTAssertTrue(folder.waitForExistence(timeout: 5)); folder.tap(); folder.typeText("Projects")
     tap("新建并移动"); tap("待办与随手记文件夹")
     XCTAssertTrue(app.buttons["选择待办文件夹 Projects"].waitForExistence(timeout: 5)); capture("collections-light"); tap("全部文件夹")
+    // Verify scene foregrounding and a fresh process using the same local data.
+    XCUIDevice.shared.press(.home)
+    app.activate()
+    XCTAssertTrue(app.buttons["全局新建邮件或随手记"].waitForExistence(timeout: 10))
+    app.terminate()
+    app.launch()
+    XCTAssertTrue(app.secureTextFields.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertEqual(app.secureTextFields.count, 1, "Relaunch must unlock the existing profile, not recreate it")
+    app.secureTextFields.firstMatch.tap(); app.secureTextFields.firstMatch.typeText("LinkToQADemo9!")
+    tap("解锁"); tap("今日")
+    XCTAssertTrue(app.buttons["展开待办：Review customer reply"].waitForExistence(timeout: 10))
+    capture("scene-relaunch-preserved-data")
   }
 }

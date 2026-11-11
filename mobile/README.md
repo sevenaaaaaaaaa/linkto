@@ -1,6 +1,8 @@
 # 林可兔移动版（LinkTo Mobile）
 
-React Native 0.87，移动版独立版本 **0.7.1（build 8）**，共享 iOS / Android 业务代码。鸿蒙适配沿用 `harmony/README.md`，本轮未验证。
+React Native 0.87，移动版独立版本 **0.7.2（build 9）**，共享 iOS / Android 业务代码。鸿蒙适配沿用 `harmony/README.md`，本轮未验证。
+
+iOS 27 请使用 0.7.2 或更新版本：0.7.1 的旧窗口生命周期不符合 SDK 27 的启动要求，0.7.2 已迁移到 UIScene。此补丁提供新的 iOS IPA，Android 已发布的 Preview APK 仍为 0.7.1。第三方重签时需要对应用及三个内嵌框架一并签名，并保留有效描述文件；覆盖安装应沿用相同 Bundle ID 与签名身份。
 
 ## 邮件、今日和随手记
 
@@ -75,6 +77,10 @@ npm run android
 npm run android:preview
 # 原生 iOS UI 冒烟（需要 XcodeGen；自动创建并清理独立模拟器）
 cd .. && bash scripts/test-mobile-ios.sh
+# 指定机型与已安装运行时（仍只创建、清理独立 QA 模拟器）
+LINKTO_IOS_SIM_DEVICE=com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max \
+LINKTO_IOS_SIM_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-5 \
+bash scripts/test-mobile-ios.sh
 ```
 
 iPhone 用 Xcode 个人团队安装：用 Xcode 打开 `ios/LinkToMobile.xcworkspace`，连接并信任 iPhone，开启开发者模式，选择 LinkToMobile target 的 Signing & Capabilities → Automatically manage signing → Personal Team，然后把运行目标选为真实 iPhone。

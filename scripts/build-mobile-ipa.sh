@@ -32,6 +32,12 @@ APP="$ARCHIVE/Products/Applications/LinkToMobile.app"
 test -f "$APP/main.jsbundle"
 test "$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$APP/Info.plist")" = iphoneos
 xcrun lipo -verify_arch arm64 "$APP/LinkToMobile"
+# iOS 27 rejects SDK 27 apps without a configured scene before JS can start.
+SCENE_CLASS="$(/usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName' "$APP/Info.plist")"
+if [ "$SCENE_CLASS" != LinkToMobile.SceneDelegate ]; then
+  echo "Invalid iOS scene delegate in archive: $SCENE_CLASS" >&2
+  exit 1
+fi
 STAGING="$(mktemp -d "$OUTPUT/.ipa-XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
 if [ "$MODE" = unsigned ]; then

@@ -6,7 +6,7 @@ cd "$ROOT"
 command -v xcodegen >/dev/null || { echo 'Install XcodeGen to run native UI tests.' >&2; exit 1; }
 mkdir -p .build/ios-ui-tests
 xcodegen generate --spec mobile/e2e/project.yml --project .build/ios-ui-tests
-LINKTO_QA_SIM="$(xcrun simctl create 'LinkTo isolated QA' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro)"
+LINKTO_QA_SIM="$(xcrun simctl create 'LinkTo isolated QA' "${LINKTO_IOS_SIM_DEVICE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro}" ${LINKTO_IOS_SIM_RUNTIME:+"$LINKTO_IOS_SIM_RUNTIME"})"
 cleanup() { xcrun simctl shutdown "$LINKTO_QA_SIM" >/dev/null 2>&1 || true; xcrun simctl delete "$LINKTO_QA_SIM" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 xcrun simctl boot "$LINKTO_QA_SIM"
