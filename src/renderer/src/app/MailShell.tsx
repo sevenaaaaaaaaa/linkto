@@ -136,9 +136,7 @@ export function MailShell() {
         input?.select()
       }
       if (e.type === 'native-refresh') {
-        void useMail.getState().loadAccounts()
-        void useMail.getState().loadFolders()
-        void useMail.getState().loadMessages()
+        void useMail.getState().receiveMail()
       }
       // 托盘 / ⌥⌘T「新建待办」、待办提醒点击：切到待办页再交给 TodoView（等它挂载）
       if (e.type === 'quick-add-todo' || e.type === 'open-todo') {
@@ -245,9 +243,7 @@ export function MailShell() {
       }
       if (meta && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault()
-        void useMail.getState().loadAccounts()
-        void useMail.getState().loadFolders()
-        void useMail.getState().loadMessages()
+        void useMail.getState().receiveMail()
         return
       }
       if (typing) return

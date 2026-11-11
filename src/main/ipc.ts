@@ -43,7 +43,7 @@ import { installUserConnector, listUserConnectorFiles, loadUserConnectors, remov
 import { driveTest, listDrives, removeDrive, saveDrive, syncEmlMirror, uploadAttachment, uploadEml } from './cloud-drive'
 import { detectProtonDriveFolders, PROTON_DRIVE_DOWNLOAD_URL } from './cloud-drive/proton'
 import { detectTerminalApps, defaultTerminalId, openTerminalAt } from './terminal'
-import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS } from './mail/presets'
+import { presetFor, ACCOUNT_COLORS, PROVIDER_PRESETS, isMicrosoftProvider, microsoftProviderFor } from './mail/presets'
 import { searchTerms, rankByTerms } from './search-terms'
 import { todoFromMessage } from './todo-collect'
 import { classifyAccountError } from '@shared/errors'
@@ -550,7 +550,7 @@ export function registerIpc(ctx: AppContext) {
       const current = accountById(id)
       if (!current) return
       store.upsertAccount({ ...current, enabled })
-      if (enabled) engine.startAccount(current)
+      if (enabled) engine.startAccount({ ...current, enabled })
       else engine.stopAccount(id)
     },
 
@@ -572,6 +572,19 @@ export function registerIpc(ctx: AppContext) {
       const worker = engine.getWorker(id)
       if (worker) worker.syncNow()
       else engine.startAccount(current)
+    },
+
+    receiveMail: async ([accountId]: [string | null]) => {
+      const accounts = store.listAccounts().filter(a => a.enabled && (!accountId || a.id === accountId))
+      return Promise.all(accounts.map(async account => {
+        try {
+          if (!engine.getWorker(account.id)) engine.startAccount(account)
+          await engine.getWorker(account.id)!.receiveNow()
+          return { accountId: account.id, ok: true }
+        } catch (err) {
+          return { accountId: account.id, ok: false, error: err instanceof Error ? err.message : String(err) }
+        }
+      }))
     },
 
     // ================= OAuth（Gmail / Outlook 一键授权） =================
@@ -622,6 +635,7 @@ export function registerIpc(ctx: AppContext) {
       try {
         let tokens: { accessToken: string; refreshToken?: string; expiresAt: number; email?: string } | undefined
         let email = ''
+        let resolvedProvider = provider
         if (provider === 'gmail') {
           const res = await oauth.authorizeGoogle()
           if (!res.ok || !res.tokens) return { ok: false, error: res.error }
@@ -634,24 +648,31 @@ export function registerIpc(ctx: AppContext) {
           if (!res.ok || !res.tokens) return { ok: false, error: res.error }
           tokens = res.tokens
           email = res.email ?? ''
+          resolvedProvider = microsoftProviderFor(email, res.tenantId)
         } else {
           return { ok: false, error: '该服务商不支持 OAuth，请使用授权码/应用专用密码添加' }
         }
         if (!email) return { ok: false, error: '授权成功但未能获取邮箱地址' }
 
         // 同邮箱重新授权：更新已有账户的 token 并重启同步
-        const existing = store.listAccounts().find(a => a.provider === provider && a.email.toLowerCase() === email.toLowerCase())
+        const existing = store.listAccounts().find(a =>
+          (a.provider === resolvedProvider || (isMicrosoftProvider(a.provider) && isMicrosoftProvider(resolvedProvider))) &&
+          a.email.toLowerCase() === email.toLowerCase()
+        )
         if (existing && tokens) {
+          const preset = PROVIDER_PRESETS.find(p => p.key === resolvedProvider)!
+          const next = { ...existing, provider: resolvedProvider, authType: 'oauth' as const, imap: preset.imap!, smtp: preset.smtp! }
+          store.upsertAccount(next)
           oauth.saveTokens(existing.id, tokens)
           sender.drop(existing.id)
-          engine.startAccount({ ...existing, authType: 'oauth' })
+          engine.startAccount(next)
           return { ok: true, email, accountId: existing.id, reauthorized: true }
         }
 
-        const preset = PROVIDER_PRESETS.find(p => p.key === provider)!
+        const preset = PROVIDER_PRESETS.find(p => p.key === resolvedProvider)!
         if (!preset.imap || !preset.smtp) return { ok: false, error: '预设缺少服务器配置' }
         const draft: AccountDraft = {
-          provider,
+          provider: resolvedProvider,
           name: `${preset.label}`,
           email,
           color: preset.color,
@@ -1451,11 +1472,11 @@ export function registerIpc(ctx: AppContext) {
     screenerPendingCount: () => store.screenerPendingCount(),
 
     /** 收件箱里被 Screener 暂缓的邮件数（让「静默吞信」可见） */
-    screenerHeldCount: () => store.screenerHeldMailCount(),
+    screenerHeldCount: ([accountId]: [(string | null)?]) => store.screenerHeldMailCount(accountId),
 
     /** 一键放行全部待审发件人，返回放行条数 */
-    approveAllPendingSenders: () => {
-      const n = store.approveAllPending()
+    approveAllPendingSenders: ([accountId]: [(string | null)?]) => {
+      const n = store.approveAllPending(accountId)
       ctx.event(null as never, { type: 'messages-changed' })
       return n
     },

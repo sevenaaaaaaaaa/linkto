@@ -58,6 +58,7 @@ interface MailState {
   selectedIds: Set<string>
   searchQuery: string
   loading: boolean
+  receiving: boolean
   sort: ListSort
   groupThreads: boolean
   lastClickedId: string | null
@@ -78,6 +79,7 @@ interface MailState {
   loadFolders(): Promise<void>
   setScope(scope: Scope): void
   loadMessages(): Promise<void>
+  receiveMail(): Promise<void>
   /** 加载下一页（收件箱列表 / 搜索结果共用） */
   loadMore(): Promise<void>
   select(id: string | null): void
@@ -119,10 +121,34 @@ export const useMail = create<MailState>((set, get) => ({
   selectedIds: new Set(),
   searchQuery: '',
   loading: false,
+  receiving: false,
   sort: loadSort(),
   groupThreads: loadThreads(),
   lastClickedId: null,
   syncProgress: {},
+  receiveMail: async () => {
+    if (get().receiving) return
+    const state = get()
+    const accountId = state.scope.accountId ?? state.folders.find(f => f.id === state.scope.folderId)?.accountId ?? state.accountCtx
+    set({ receiving: true })
+    const toast = (text: string, danger = false) => window.dispatchEvent(new CustomEvent('ms:toast', {
+      detail: { text, tone: danger ? 'danger' : undefined, duration: danger ? 7000 : 3500 }
+    }))
+    try {
+      const results = await api.receiveMail(accountId)
+      await Promise.all([get().loadAccounts(), get().loadFolders(), get().loadMessages()])
+      const failed = results.filter(r => !r.ok)
+      if (!results.length) toast('没有可收取的启用账户，请先添加或启用邮箱')
+      else if (failed.length) {
+        const names = failed.map(r => `${get().accounts.find(a => a.id === r.accountId)?.name ?? '邮箱'}：${r.error ?? '收取失败'}`)
+        toast(`${results.length - failed.length}/${results.length} 个邮箱收取完成；${names.join('；')}`, true)
+      } else toast('新邮件已收取并按现有分类与规则整理；自动 AI 分类开启时会继续在后台处理')
+    } catch (err) {
+      toast(`收取失败：${err instanceof Error ? err.message : String(err)}`, true)
+    } finally {
+      set({ receiving: false })
+    }
+  },
   nlResults: null,
   searchSpec: null,
   accountCtx: null,

@@ -140,12 +140,10 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
         }
       },
       {
-        id: 'act-refresh', group: '操作', label: '刷新', hint: '⌘R', icon: <IconRefresh width={14} height={14} />,
+        id: 'act-refresh', group: '操作', label: '收取并整理新邮件', keywords: 'refresh receive sync 刷新 收信 收取 同步', hint: '⌘R', icon: <IconRefresh width={14} height={14} />,
         run: () => {
           props.onClose()
-          void useMail.getState().loadAccounts()
-          void useMail.getState().loadFolders()
-          void useMail.getState().loadMessages()
+          void useMail.getState().receiveMail()
         }
       },
       {

@@ -161,6 +161,9 @@ export class AccountWorker {
   private backfillDone = new Set<string>()
   /** All Mail 路径（不同步，但 Gmail 归档 = 移入 All Mail） */
   private allMailPath: string | null = null
+  private lastInboxSync = 0
+  /** 多个窗口的手动收取合并成同一轮；只有服务器同步完成后才返回成功。 */
+  private receiving: { promise: Promise<void>; resolve(): void; reject(err: Error): void; timer: NodeJS.Timeout } | null = null
 
   constructor(
     public readonly account: { id: string; name: string; email: string; user: string },
@@ -191,6 +194,7 @@ export class AccountWorker {
 
   stop() {
     this.running = false
+    this.finishReceive(new Error('账户已停用或配置已更新，请重试'))
     this.stopWatchdog()
     this.client?.close()
   }
@@ -198,7 +202,33 @@ export class AccountWorker {
   /** 立即完整同步（手动刷新）：已连接则直接跑一轮，退避等待中则马上重连 */
   syncNow() {
     this.lastFullSync = 0
-    this.kickSync()
+    if (this.client && Date.now() - this.lastActivity > POLL_MS) this.reconnect()
+    else this.kickSync()
+  }
+
+  /** 快速收取：优先收件箱，不等所有历史文件夹回填。 */
+  receiveNow(): Promise<void> {
+    if (!this.running) return Promise.reject(new Error('账户已停用'))
+    if (this.receiving) return this.receiving.promise
+    let resolve!: () => void
+    let reject!: (err: Error) => void
+    const promise = new Promise<void>((ok, fail) => { resolve = ok; reject = fail })
+    const timer = setTimeout(() => this.finishReceive(new Error('收取超时，请检查网络或本机 Bridge 后重试')), 90_000)
+    this.receiving = { promise, resolve, reject, timer }
+    this.events.progress(this.account.id, '正在收取新邮件…')
+    // 半死连接不应再等旧 socket 的长超时。
+    if (this.client && Date.now() - this.lastActivity > POLL_MS) this.reconnect()
+    else this.kickSync()
+    return promise
+  }
+
+  private finishReceive(err?: Error) {
+    const pending = this.receiving
+    if (!pending) return
+    this.receiving = null
+    clearTimeout(pending.timer)
+    if (err) pending.reject(err)
+    else pending.resolve()
   }
 
   /** 丢弃当前连接并立刻重连（系统唤醒/网络切换后旧 socket 多半已半死，等超时太久） */
@@ -247,6 +277,7 @@ export class AccountWorker {
           continue
         }
         const msg = err instanceof Error ? err.message : String(err)
+        this.finishReceive(new Error(this.describeError(err)))
         // 服务器 NO/BAD 的原话（responseText）与执行过的命令落日志，否则 UI 只剩 "Command failed" 无从排查；
         // 认证类命令可能带凭据（base64 SASL），绝不落日志
         const resp = err as { responseText?: unknown; responseStatus?: unknown; executedCommand?: unknown }
@@ -278,6 +309,7 @@ export class AccountWorker {
     if (full) {
       await this.syncAllFolders()
       this.lastFullSync = Date.now()
+      if (this.receiving || Date.now() - this.lastInboxSync >= POLL_MS) await this.syncInbox(false)
     } else {
       const reconcile = this.expungeSeen
       this.expungeSeen = false
@@ -323,9 +355,9 @@ export class AccountWorker {
       tls: { rejectUnauthorized: false },
       connectionTimeout: 20_000,
       greetingTimeout: 20_000,
-      // IDLE 每 4 分钟重发一次（保活 NAT/防服务器踢 IDLE），所以 10 分钟无数据即可判定 socket 已死
-      socketTimeout: 10 * 60_000,
-      maxIdleTime: 4 * 60_000,
+      // 每分钟重发 IDLE 保活；死连接至多 90 秒即交给重连，不再静默卡住十分钟。
+      socketTimeout: 90_000,
+      maxIdleTime: 60_000,
       // RFC 2971 ID：163/126 等 Coremail 不识别客户端会拒绝 SELECT（Unsafe Login）
       clientInfo: { name: 'LinkTo', vendor: 'LinkTo', version: app.getVersion() }
     })
@@ -352,8 +384,8 @@ export class AccountWorker {
     client.on('error', () => {
       try { client.close() } catch { /* ignore */ }
     })
-    await client.connect()
     this.client = client
+    await client.connect()
   }
 
   private kickRequested = false
@@ -374,7 +406,7 @@ export class AccountWorker {
     this.lastActivity = Date.now()
     this.busy = true
     this.watchdogTimer = setInterval(() => {
-      if (this.busy && Date.now() - this.lastActivity > STALL_MS) {
+      if (this.busy && Date.now() - this.lastActivity > (this.receiving ? POLL_MS : STALL_MS)) {
         try { this.client?.close() } catch { /* ignore */ }
       }
     }, 30_000)
@@ -477,6 +509,10 @@ export class AccountWorker {
       if (f.flags?.has('\\Noselect') || f.flags?.has('\\NonExistent')) continue
       // 用户关闭同步的文件夹：保留文件夹行，跳过拉取（收件箱不可关闭）
       if (special !== 'inbox' && prefs[id]?.sync === false) continue
+      // 收件箱错误必须交给主循环重连，不能当作普通文件夹错误吞掉。
+      if (special !== 'inbox' && (this.receiving || Date.now() - this.lastInboxSync >= POLL_MS)) {
+        await this.syncInbox(false)
+      }
       try {
         await this.syncFolder(f.path, special, true)
       } catch (err) {
@@ -504,6 +540,7 @@ export class AccountWorker {
     const client = this.client
     if (!client) return
     const fid = folderIdOf(this.account.id, path)
+    const receiving = special === 'inbox' ? this.receiving : null
     const lock = await client.getMailboxLock(path)
     try {
       const mailbox = client.mailbox
@@ -536,16 +573,22 @@ export class AccountWorker {
         await this.fetchEnvelopes(path, special, newUids, true)
       }
 
-      if (full) {
-        serverUids ??= await this.searchUids({ all: true })
-        this.reconcileExpunged(path, fid, serverUids, Number(mailbox.exists ?? 0))
-        await this.backfill(path, special, fid, serverUids)
-      }
       // 性能：旗标刷新开销大，非收件箱文件夹仅在完整轮次执行
       if (full || special === 'inbox') await this.refreshFlags(path)
       const total = Number(mailbox.exists ?? 0)
       const unseen = await this.searchUids({ seen: false })
       this.store.updateFolderCounters(fid, total, unseen.length)
+      if (special === 'inbox') {
+        this.lastInboxSync = Date.now()
+        this.events.changed(this.account.id)
+        // 只完成本次开始前的请求；同步过程中点击的收取留给下一轮。
+        if (receiving && this.receiving === receiving) this.finishReceive()
+      }
+      if (full) {
+        serverUids ??= await this.searchUids({ all: true })
+        this.reconcileExpunged(path, fid, serverUids, Number(mailbox.exists ?? 0))
+        await this.backfill(path, special, fid, serverUids)
+      }
     } finally {
       lock.release()
     }

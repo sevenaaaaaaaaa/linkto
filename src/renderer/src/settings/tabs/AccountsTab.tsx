@@ -3,7 +3,7 @@ import { api, useMailEvent } from '../../lib/api'
 import { IconPlus, IconMinus, IconRefresh, IconCheck, IconClose, IconKey, IconSparkles } from '../../components/icons'
 import { SectionTitle } from './GeneralTab'
 import { DevSyncAccountNotice } from './DevSyncAccountNotice'
-import { PROVIDER_PRESETS, presetFor } from '@shared/presets'
+import { PROVIDER_PRESETS, ACCOUNT_PROVIDER_CHOICES, isMicrosoftProvider, presetFor } from '@shared/presets'
 import { ACCOUNT_COLORS } from '@shared/presets'
 import type { ProviderPreset } from '@shared/presets'
 import { takeAccountFocus, type AccountFocus } from '../account-focus'
@@ -355,7 +355,8 @@ function QuickPick(props: {
             value={quick}
             onChange={e => { setQuick(e.target.value); setErr('') }}
             onKeyDown={e => e.key === 'Enter' && quickGo()}
-            placeholder="you@qq.com · you@gmail.com · …"
+            aria-label="要添加的邮箱地址"
+            placeholder="you@proton.me · you@gmail.com · …"
             className="flex-1 text-sm bg-zinc-50 rounded-xl px-3 py-2.5 outline-none border border-ink/[0.05] focus:border-blue-400 focus:bg-white transition"
           />
           <button
@@ -371,13 +372,15 @@ function QuickPick(props: {
 
       <div className="text-2xs font-semibold tracking-[0.06em] uppercase text-zinc-400 mb-2">或选择服务商</div>
       <div className="grid grid-cols-3 gap-2.5 max-w-[560px]">
-        {PROVIDER_PRESETS.map(p => {
+        {ACCOUNT_PROVIDER_CHOICES.map(p => {
           const kind = oauthKindOf(p.key)
+          const badge = kind ? '浏览器授权' : p.key === 'proton' ? '本机 Bridge' : p.key === 'agentmail' ? 'API Key' : ['custom', 'agent'].includes(p.key) ? 'IMAP / SMTP' : '授权码 / 密码'
+          const detail = p.key === 'outlook' ? 'Outlook · Hotmail · Live · 365' : p.key === '163' ? '163 · 126 · Yeah' : p.key === 'qq' ? 'QQ · Foxmail' : p.key === 'yahoo' ? '全球版 · 日本版' : ''
           return (
             <button
               key={p.key}
               onClick={() => props.onPickKey(p.key)}
-              className="relative flex flex-col items-center gap-2 py-4 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] hover:border-blue-300 transition"
+              className="relative flex flex-col items-center gap-2 pt-8 pb-3 px-1 rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] hover:border-blue-300 transition"
             >
               <span
                 className={`absolute top-2 right-2 text-2xs px-1.5 py-px rounded-full font-medium inline-flex items-center gap-0.5 ${
@@ -385,15 +388,16 @@ function QuickPick(props: {
                 }`}
               >
                 {kind ? (
-                  <><IconSparkles width={9} height={9} /> 一键授权</>
+                  <><IconSparkles width={9} height={9} /> {badge}</>
                 ) : (
-                  <><IconKey width={9} height={9} /> 授权码</>
+                  <><IconKey width={9} height={9} /> {badge}</>
                 )}
               </span>
               <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-base font-medium" style={{ background: p.color }}>
                 {p.label[0]}
               </span>
               <span className="text-sm text-zinc-700">{p.label}</span>
+              {detail && <span className="text-2xs text-zinc-400">{detail}</span>}
             </button>
           )
         })}
@@ -495,12 +499,12 @@ const OAUTH_SETUP: Record<
   },
   'oauth-ms': {
     title: '先在 Azure 注册应用（一次性，约 3 分钟）',
-    lead: '同一套凭据可用于 Hotmail / Outlook / Microsoft 365；个人账户与工作账户都能授权。',
+    lead: '只配置一次，Outlook / Hotmail / Live / Microsoft 365 共用；无需客户端密钥。组织限制第三方登录时需管理员批准。',
     steps: [
       '打开 Azure 门户 →「应用注册」→「新注册」',
       '受支持的账户类型选「任何组织目录中的账户和个人 Microsoft 账户」',
       '「身份验证」→ 打开「允许公共客户端流」',
-      '「API 权限」→ 添加委托权限：IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid、profile、email',
+      '「API 权限」→「Office 365 Exchange Online」→「委托的权限」→ 添加 IMAP.AccessAsUser.All、SMTP.Send；openid、profile、email、offline_access 由授权请求申请',
       '复制「应用程序(客户端) ID」，填入下方并保存（工作账户可能需要管理员同意）',
       '点「使用 Microsoft 账号授权登录」，输入设备码完成授权'
     ],
@@ -567,7 +571,7 @@ function OAuthStep(props: {
   // 未配置凭据时直接展开准备步骤与表单，不让用户停在「一键授权」的禁用按钮前
   const [showCreds, setShowCreds] = useState(!configured)
   const preset = PROVIDER_PRESETS.find(p => p.key === provider)
-  const label = preset?.label ?? provider
+  const label = isMicrosoftProvider(provider) ? 'Microsoft 邮箱' : preset?.label ?? provider
 
   useMailEvent(ev => {
     const e = ev as { type: string; userCode?: string; verificationUri?: string }
@@ -581,11 +585,13 @@ function OAuthStep(props: {
     setPhase('working')
     setError('')
     setDevice(null)
-    const res = await api.oauthAuthorize(provider)
-    if (res.ok) {
-      props.onDone()
-    } else {
-      setError(res.error ?? '授权失败')
+    try {
+      const res = await api.oauthAuthorize(provider)
+      if (res.ok) props.onDone()
+      else setError(res.error ?? '授权失败')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
       setPhase('idle')
       setDevice(null)
     }
@@ -630,6 +636,13 @@ function OAuthStep(props: {
             <p className="text-sm text-zinc-700 leading-relaxed mb-4">
               点击下方按钮，将在浏览器打开 {kind === 'oauth-google' ? 'Google' : 'Microsoft'} 授权页面，确认后自动完成添加——无需手动输入密码。
             </p>
+            {kind === 'oauth-ms' && (
+              <div className="mb-4 text-xs text-zinc-500 leading-relaxed">
+                Outlook、Hotmail、Live、MSN、Microsoft 365 与工作 / 学校邮箱统一登录，授权后自动识别账户类型并配置服务器。
+                个人邮箱需先在 Outlook 网页版「设置 → 邮件 → 转发和 IMAP」开启 IMAP；工作 / 学校邮箱由组织管理员开启 IMAP 与所需发信权限。本地 Exchange 请选择自定义邮箱。
+                <button onClick={() => void api.openExternal('https://outlook.live.com/mail/0/options/mail/forwarding')} className="ml-1 underline">打开 Outlook 设置 ↗</button>
+              </div>
+            )}
             <button
               onClick={() => void start()}
               disabled={phase === 'working' || !configured}
@@ -652,9 +665,7 @@ function OAuthStep(props: {
               {showCreds ? '收起应用凭据与配置步骤' : `${configured ? '高级：更新 OAuth 应用凭据' : '配置 OAuth 应用凭据'} ▾`}
             </button>
             <div className="flex-1" />
-            <button onClick={props.onFallback} className="text-xs text-zinc-500 hover:text-zinc-700">
-              {kind === 'oauth-ms' ? '手动配置 IMAP（多数账户会被拒绝）' : '改用应用专用密码添加'}
-            </button>
+            {kind !== 'oauth-ms' && <button onClick={props.onFallback} className="text-xs text-zinc-500 hover:text-zinc-700">改用应用专用密码添加</button>}
           </div>
 
           {showCreds && <OAuthSetupGuide kind={kind} />}
@@ -727,9 +738,12 @@ function PasswordForm(props: {
   onBack(): void
   onDone(): void
 }) {
-  const { preset } = props
   const [email, setEmail] = useState(props.presetEmail ?? '')
+  const detected = presetFor(email)
+  const family = (key: ProviderKey) => ['163', '126', 'yeah'].includes(key) ? 'netease' : ['yahoo', 'yahoo-jp'].includes(key) ? 'yahoo' : key
+  const preset = family(detected.key) === family(props.provider) ? detected : props.preset
   const [password, setPassword] = useState('')
+  const [user, setUser] = useState('')
   const [name, setName] = useState('')
   const [imap, setImap] = useState(preset.imap ?? { host: '', port: 993, secure: true })
   const [smtp, setSmtp] = useState(preset.smtp ?? { host: '', port: 465, secure: true })
@@ -756,15 +770,11 @@ function PasswordForm(props: {
     else set({ ...cur, secure: enc === 'ssl' })
   }
 
-  const detectPreset = (mail: string) => {
-    setEmail(mail)
-    const p = PROVIDER_PRESETS.find(x => x.key !== 'custom' && x.domains.includes(mail.split('@')[1]?.toLowerCase() ?? ''))
-    if (p) {
-      if (p.imap) setImap(p.imap)
-      if (p.smtp) setSmtp(p.smtp)
-      if (!name) setName(`${p.label}`)
-    }
-  }
+  useEffect(() => {
+    // 只在同家族变体切换时更新服务器，输入地址不会覆盖用户选择的自定义或企业服务器。
+    if (preset.imap) { setImap(preset.imap); setImapEnc(preset.imap.secure ? 'ssl' : 'starttls') }
+    if (preset.smtp) { setSmtp(preset.smtp); setSmtpEnc(preset.smtp.secure ? 'ssl' : 'starttls') }
+  }, [preset.key])
 
   // 粘贴智能识别：根据格式动态提示（QQ/163 的 16 位授权码、Apple 的分组密码等）
   const pasteFeedback = (() => {
@@ -789,20 +799,25 @@ function PasswordForm(props: {
     setBusy(true)
     setError('')
     const draft: AccountDraft = {
-      provider: props.provider,
+      provider: preset.key,
       name: name || email,
-      email,
-      color: '#3b82f6', // 账户色是持久化数据（侧栏圆点），非主题色，豁免 token 规则
+      email: email.trim(),
+      color: preset.color,
       imap: { ...imap, secure: imapEnc === 'ssl' },
       smtp: { ...smtp, secure: smtpEnc === 'ssl' },
-      user: email,
+      user: user.trim() || email.trim(),
       password,
       authType: 'password'
     }
-    const res = await api.addAccount(draft)
-    setBusy(false)
-    if (res.ok) props.onDone()
-    else setError(res.error ?? '添加失败')
+    try {
+      const res = await api.addAccount(draft)
+      if (res.ok) props.onDone()
+      else setError(res.error ?? '添加失败')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -877,7 +892,11 @@ function PasswordForm(props: {
       )}
 
       <div className="rounded-2xl bg-white border border-ink/[0.06] shadow-[var(--shadow-sm)] px-4 py-1">
-        <Field label="邮箱地址" value={email} onChange={v => detectPreset(v)} placeholder="you@example.com" />
+        <Field label="邮箱地址" value={email} onChange={setEmail} placeholder="you@example.com" />
+        {(['163', '126', 'yeah', 'yahoo', 'yahoo-jp'] as ProviderKey[]).includes(props.provider) && (
+          <div className="py-2 text-xs text-zinc-500">根据邮箱后缀自动选择：{preset.label}</div>
+        )}
+        <Field label={preset.key === 'proton' ? 'Bridge 用户名' : '登录用户名'} value={user} onChange={setUser} placeholder={preset.key === 'proton' ? 'Bridge Mailbox details 中的用户名（留空使用邮箱）' : '留空使用邮箱地址'} />
         <Field
           label={preset.passwordLabel ?? '密码 / 授权码'}
           value={password}

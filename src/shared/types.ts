@@ -22,6 +22,12 @@ export type ProviderKey =
   | 'feishu'
   | 'lark'
   | 'proton'
+  | 'yeah'
+  | 'yahoo-jp'
+  | 'naver'
+  | 'aol'
+  | 'agentmail'
+  | 'agent'
   | 'custom'
 
 export interface ImapConfig {

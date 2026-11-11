@@ -435,16 +435,17 @@ export class MailStore {
     ).c as number
   }
 
-  /** 收件箱里被 Screener 暂缓（发件人待审 / 已拒）的邮件数：用于收件箱提示，避免静默吞信 */
-  screenerHeldMailCount(): number {
+  /** 待审邮件数与「查看 / 全部放行」一致；已明确拒绝的发件人不计入待审提示。 */
+  screenerHeldMailCount(accountId?: string | null): number {
     return (
       this.db
         .prepare(
           `SELECT COUNT(*) AS c FROM messages m WHERE m.folder_path = 'INBOX'
              AND (m.snoozed_until IS NULL OR m.snoozed_until <= ?)
-             AND EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status IN ('pending','deny'))`
+             AND (? IS NULL OR m.account_id = ?)
+             AND EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status = 'pending')`
         )
-        .get(Date.now()) as any
+        .get(Date.now(), accountId ?? null, accountId ?? null) as any
     ).c as number
   }
 
@@ -466,10 +467,14 @@ export class MailStore {
   }
 
   /** 一键放行全部待审发件人，返回放行条数 */
-  approveAllPending(): number {
+  approveAllPending(accountId?: string | null): number {
     const info = this.db
-      .prepare(`UPDATE sender_screening SET status = 'allow', reason = '一键放行全部待审', decided_at = ? WHERE status = 'pending'`)
-      .run(Date.now())
+      .prepare(`UPDATE sender_screening SET status = 'allow', reason = '一键放行全部待审', decided_at = ?
+        WHERE status = 'pending' AND (? IS NULL OR EXISTS (
+          SELECT 1 FROM messages m WHERE m.account_id = ? AND m.folder_path = 'INBOX'
+            AND lower(m.from_addr) = sender_screening.addr
+        ))`)
+      .run(Date.now(), accountId ?? null, accountId ?? null)
     return Number(info.changes ?? 0)
   }
 
@@ -633,6 +638,10 @@ export class MailStore {
     } else if (query.scope === 'screener') {
       where.push("EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(m.from_addr) AND ss.status = 'pending')")
       where.push("m.folder_path = 'INBOX'")
+      if (query.accountId) {
+        where.push('m.account_id = ?')
+        params.push(query.accountId)
+      }
     } else if (query.scope === 'followup') {
       // 我发出后对方一直没回：sent 邮件，且线程内没有更晚的「非我方」来信
       where.push(`EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.special = 'sent')`)
@@ -894,7 +903,7 @@ export class MailStore {
         `SELECT account_id, COUNT(*) AS unread FROM messages
          WHERE folder_path = 'INBOX' AND flags NOT LIKE '%\\Seen%'
            AND (snoozed_until IS NULL OR snoozed_until <= ${now})
-           AND NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = from_addr AND ss.status IN ('pending','deny'))
+           AND NOT EXISTS (SELECT 1 FROM sender_screening ss WHERE ss.addr = lower(from_addr) AND ss.status IN ('pending','deny'))
          GROUP BY account_id`
       )
       .all() as any[]

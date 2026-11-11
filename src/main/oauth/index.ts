@@ -51,7 +51,14 @@ export class OAuthService {
 
   /** 生效的 OAuth 客户端配置（设置覆盖 + 环境变量兜底） */
   clients(): OAuthClientConfig {
-    return this.appStore.get<OAuthClientConfig>('oauthClients', DEFAULT_CLIENTS)
+    const saved = this.appStore.get<OAuthClientConfig>('oauthClients', {})
+    return {
+      google: {
+        clientId: saved.google?.clientId || DEFAULT_CLIENTS.google?.clientId || '',
+        clientSecret: saved.google?.clientSecret || DEFAULT_CLIENTS.google?.clientSecret || ''
+      },
+      ms: { clientId: saved.ms?.clientId || DEFAULT_CLIENTS.ms?.clientId || '' }
+    }
   }
 
   saveClients(cfg: OAuthClientConfig) {
@@ -272,7 +279,7 @@ export class OAuthService {
     onDevice: (info: { userCode: string; verificationUri: string }) => void,
     /** 增量授权：额外申请的 scope（如 Graph Tasks.ReadWrite）；不传 = 邮件 scope */
     scope?: string
-  ): Promise<{ ok: boolean; error?: string; email?: string; tokens?: OAuthTokens }> {
+  ): Promise<{ ok: boolean; error?: string; email?: string; tokens?: OAuthTokens; tenantId?: string }> {
     const cfg = this.clients().ms
     if (!cfg?.clientId) return { ok: false, error: '未配置 Microsoft OAuth 客户端（设置 → 账户 → OAuth 应用凭据）' }
     if (this.msBusy) return { ok: false, error: '已有授权在进行中' }
@@ -318,10 +325,11 @@ export class OAuthService {
         }
         if (data.access_token) {
           const payload = data.id_token ? decodeJwtPayload(data.id_token) : {}
-          const email = (payload.preferred_username as string) ?? ''
+          const email = (payload.email as string) || (payload.preferred_username as string) || ''
           return {
             ok: true,
             email,
+            tenantId: typeof payload.tid === 'string' ? payload.tid : undefined,
             tokens: {
               accessToken: data.access_token,
               refreshToken: data.refresh_token,

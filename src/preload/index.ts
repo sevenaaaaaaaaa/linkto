@@ -11,7 +11,7 @@ ipcRenderer.on('event', (_e, payload) => {
 // 因此用显式方法表（而非 Proxy）构建 API。
 const METHOD_NAMES = [
   'listAccounts', 'addAccount', 'verifyAccount', 'updateAccount', 'setAccountEnabled',
-  'deleteAccount', 'syncAccountNow',
+  'deleteAccount', 'syncAccountNow', 'receiveMail',
   'getOAuthClientConfig', 'setOAuthClientConfig', 'oauthAuthorize',
   'listBackupTargets', 'createBackup', 'restoreBackupPick', 'restoreBackupApply',
   'listFolders', 'getMessages', 'getMessage', 'markRead', 'markFlagged', 'markAnswered',

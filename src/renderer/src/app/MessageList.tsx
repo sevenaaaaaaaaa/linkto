@@ -368,7 +368,8 @@ export function MessageList() {
   const { scope, messages, total, rawTotal, fetched, selectedId, selectedIds, select, toggleSelect, selectAll, searchQuery, loading, sort, setSort, groupThreads, setGroupThreads, setPinned, syncProgress } = useMail()
   /** 还有未加载的邮件时，筛选计数只是「已加载范围内」的数量，用 + 标注避免误导 */
   const partial = fetched > 0 && fetched < rawTotal
-  const { accounts, folders } = useMail()
+  const { accounts, folders, accountCtx } = useMail()
+  const receiving = useMail(st => st.receiving)
   const [classifying, setClassifying] = useState(false)
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [moveMenu, setMoveMenu] = useState(false)
@@ -397,21 +398,43 @@ export function MessageList() {
 
   // Screener 静默吞信可见化：收件箱里有多少封被暂缓（发件人待审）的邮件没有显示出来
   const [heldCount, setHeldCount] = useState(0)
+  const [releasingHeld, setReleasingHeld] = useState(false)
+  const heldAccountId = scope.accountId ?? accountCtx
   useEffect(() => {
     let alive = true
-    void api
-      .screenerHeldCount()
-      .then(n => { if (alive) setHeldCount(n) })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [scope.kind, total, messages.length])
+    let request = 0
+    let timer = 0
+    const reload = () => {
+      const current = ++request
+      void api.screenerHeldCount(heldAccountId)
+        .then(n => { if (alive && current === request) setHeldCount(n) })
+        .catch(() => {})
+    }
+    reload()
+    // 待审来信不会改变可见列表条数，必须监听入库事件，不能只依赖 total / length。
+    const off = api.onEvent(ev => {
+      const e = ev as { type: string; accountId?: string }
+      if (e.type !== 'messages-changed') return
+      if (heldAccountId && e.accountId && e.accountId !== heldAccountId) return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(reload, 150)
+    })
+    return () => { alive = false; window.clearTimeout(timer); off() }
+  }, [heldAccountId, scope.kind, total, messages.length, receiving])
 
   /** 一键放行全部待审发件人：让被暂缓的邮件立刻回到收件箱 */
   const releaseAllHeld = async () => {
-    const n = await api.approveAllPendingSenders()
-    setHeldCount(0)
-    window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已放行 ${n} 位发件人，邮件已回到收件箱` }))
-    await useMail.getState().loadMessages()
+    if (releasingHeld) return
+    setReleasingHeld(true)
+    try {
+      const n = await api.approveAllPendingSenders(heldAccountId)
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `已放行 ${n} 位发件人，正在刷新收件箱` }))
+      await Promise.all([useMail.getState().loadMessages(), useMail.getState().loadAccounts()])
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('ms:toast', { detail: `放行失败：${err instanceof Error ? err.message : String(err)}` }))
+    } finally {
+      setReleasingHeld(false)
+    }
   }
 
   /** View Transitions：让重排 / 过滤像液体一样流动到新位置 */
@@ -922,6 +945,17 @@ export function MessageList() {
           <IconFilter width={15} height={15} />
         </MenuButton>
 
+        <button
+          onClick={() => void useMail.getState().receiveMail()}
+          disabled={receiving}
+          aria-label={receiving ? '正在收取并整理邮件' : '收取并整理新邮件'}
+          aria-busy={receiving}
+          title={receiving ? '正在向服务器收取新邮件…' : '收取并整理新邮件（⌘R）· 当前账户或全部启用账户'}
+          className="no-drag icon-btn h-7 w-7 shrink-0 inline-flex items-center justify-center disabled:opacity-50"
+          style={{ color: receiving ? 'var(--accent-ink)' : 'var(--muted)' }}
+        >
+          <IconRefresh width={15} height={15} className={receiving ? 'spinning motion-reduce:animate-none' : ''} aria-hidden="true" />
+        </button>
         {scope.kind === 'followup' && messages.length > 0 && (
           <button
             onClick={() => void runJudgeFollowups()}
@@ -1126,7 +1160,7 @@ export function MessageList() {
           </div>
           <div className="mt-1.5 flex items-center justify-end gap-1.5">
             <button
-              onClick={() => useMail.getState().setScope({ kind: 'screener', title: '待审批发件人' })}
+              onClick={() => useMail.getState().setScope({ kind: 'screener', title: '待审批发件人', accountId: heldAccountId ?? undefined })}
               className="text-2xs px-2 h-6 rounded-[var(--r-xs)] border hover:bg-[var(--hover)]"
               style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}
             >
@@ -1134,10 +1168,11 @@ export function MessageList() {
             </button>
             <button
               onClick={() => void releaseAllHeld()}
-              className="text-2xs px-2 h-6 rounded-[var(--r-xs)] font-medium"
+              disabled={releasingHeld}
+              className="text-2xs px-2 h-6 rounded-[var(--r-xs)] font-medium disabled:opacity-50"
               style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
             >
-              全部放行
+              {releasingHeld ? '放行中…' : '全部放行'}
             </button>
           </div>
         </div>
@@ -1187,11 +1222,12 @@ export function MessageList() {
               )}
               <button
                 onClick={() => void releaseAllHeld()}
-                className="text-2xs shrink-0 whitespace-nowrap font-medium px-2.5 py-1 rounded-full border"
+                disabled={releasingHeld}
+                className="text-2xs shrink-0 whitespace-nowrap font-medium px-2.5 py-1 rounded-full border disabled:opacity-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}
                 title="放行全部待审发件人，被暂缓的邮件立刻回到收件箱"
               >
-                全部放行
+                {releasingHeld ? '放行中…' : '全部放行'}
               </button>
               <button
                 onClick={() => void runBatchScreen()}

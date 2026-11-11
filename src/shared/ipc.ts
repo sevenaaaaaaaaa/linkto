@@ -76,6 +76,8 @@ export interface LinkToApi {
   setAccountEnabled(id: string, enabled: boolean): Promise<void>
   deleteAccount(id: string): Promise<void>
   syncAccountNow(id: string): Promise<void>
+  /** null = 全部启用账户；结果在服务器收取完成后返回，新邮件沿用分类与规则流程。 */
+  receiveMail(accountId: string | null): Promise<{ accountId: string; ok: boolean; error?: string }[]>
 
   // ---------- OAuth 一键授权（Gmail / Outlook） ----------
   /** OAuth 应用凭据（Google client id/secret、Microsoft client id） */
@@ -218,9 +220,9 @@ export interface LinkToApi {
   setSenderStatus(addr: string, status: 'allow' | 'deny' | 'pending', reason?: string): Promise<void>
   screenerPendingCount(): Promise<number>
   /** 收件箱里被 Screener 暂缓的邮件数（收件箱顶部提示用） */
-  screenerHeldCount(): Promise<number>
+  screenerHeldCount(accountId?: string | null): Promise<number>
   /** 一键放行全部待审发件人，返回放行条数 */
-  approveAllPendingSenders(): Promise<number>
+  approveAllPendingSenders(accountId?: string | null): Promise<number>
   aiScreenSuggest(addr: string): Promise<{ ok: boolean; error?: string; verdict: 'allow' | 'deny'; reason: string }>
   getSplitSignals(): Promise<{ known: string[] }>
   listSmartViews(): Promise<SmartView[]>

@@ -73,8 +73,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: 'Outlook',
     hint: '微软已关闭 IMAP 的密码登录，请用「一键授权」（设备码）。首次使用需在 Azure 注册一个 OAuth 应用（一次性，约 3 分钟）。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
-    smtp: { host: 'smtp.office365.com', port: 587, secure: false },
-    domains: ['outlook.com', 'live.com', 'live.cn'],
+    smtp: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+    domains: ['outlook.com', 'outlook.cn', 'outlook.com.cn', 'hotmail.com', 'hotmail.co.uk', 'hotmail.fr', 'hotmail.de', 'hotmail.co.jp', 'live.com', 'live.cn', 'live.co.uk', 'live.fr', 'live.jp', 'msn.com', 'passport.com'],
     color: '#0ea5e9',
     auth: 'oauth-ms',
     guideUrl: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040',
@@ -110,8 +110,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: 'Hotmail',
     hint: '同 Outlook：微软已关闭 IMAP 的密码登录，请用「一键授权」（设备码），首次需在 Azure 注册 OAuth 应用。',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
-    smtp: { host: 'smtp.office365.com', port: 587, secure: false },
-    domains: ['hotmail.com'],
+    smtp: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+    domains: [], // 旧账户 key 保留；新增 Hotmail 统一走 Microsoft 入口
     color: '#6366f1',
     auth: 'oauth-ms',
     guideUrl: 'https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040',
@@ -339,7 +339,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     hint: '需要生成「应用密码」（账户安全 → 生成应用密码），不能用登录密码。',
     imap: { host: 'imap.mail.yahoo.com', port: 993, secure: true },
     smtp: { host: 'smtp.mail.yahoo.com', port: 465, secure: true },
-    domains: ['yahoo.com', 'yahoo.co.jp'],
+    domains: ['yahoo.com', 'ymail.com', 'rocketmail.com', 'yahoo.co.uk', 'yahoo.fr', 'yahoo.de', 'yahoo.ca', 'yahoo.com.au', 'yahoo.com.tw', 'yahoo.com.hk', 'yahoo.co.in'],
     color: '#7c3aed',
     guideUrl: 'https://login.yahoo.com/account/security',
     steps: [
@@ -372,6 +372,79 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     guideLinks: [{ label: 'IMAP 帮助文档', url: 'https://www.zoho.com/mail/help/imap-access.html' }]
   },
   {
+    key: 'yeah',
+    label: '网易 Yeah',
+    hint: '与网易 163 / 126 一样，先开启 IMAP/SMTP，再生成客户端授权密码。',
+    imap: { host: 'imap.yeah.net', port: 993, secure: true },
+    smtp: { host: 'smtp.yeah.net', port: 465, secure: true },
+    domains: ['yeah.net'],
+    color: '#ef4444',
+    guideUrl: 'https://mail.yeah.net',
+    steps: ['登录 Yeah 邮箱网页版 → 设置 → POP3/SMTP/IMAP', '开启 IMAP/SMTP 服务，完成验证并生成客户端授权密码', '复制授权密码到下方，不要使用网页登录密码'],
+    passwordLabel: '授权密码',
+    passwordPlaceholder: '网易生成的客户端授权密码'
+  },
+  {
+    key: 'yahoo-jp',
+    label: 'Yahoo! JAPAN',
+    hint: '日本 Yahoo 使用独立服务器；先在网页设置中允许 IMAP/SMTP 与第三方客户端访问。',
+    imap: { host: 'imap.mail.yahoo.co.jp', port: 993, secure: true },
+    smtp: { host: 'smtp.mail.yahoo.co.jp', port: 465, secure: true },
+    domains: ['yahoo.co.jp', 'ymail.ne.jp'],
+    color: '#7c3aed',
+    guideUrl: 'https://support.yahoo-net.jp/PccMail/s/article/H000007321',
+    passwordLabel: 'Yahoo! JAPAN 密码',
+    passwordPlaceholder: '日本 Yahoo 账户的客户端登录密码'
+  },
+  {
+    key: 'naver',
+    label: 'NAVER 邮箱',
+    hint: '在网页设置开启 IMAP/SMTP，启用两步验证并生成应用密码。',
+    imap: { host: 'imap.naver.com', port: 993, secure: true },
+    smtp: { host: 'smtp.naver.com', port: 587, secure: false },
+    domains: ['naver.com'],
+    color: '#03a94d',
+    guideUrl: 'https://help.naver.com/service/30029/contents/21344?osType=COMMONOS',
+    steps: ['登录 NAVER Mail → 设置 → POP3/IMAP → 开启 IMAP/SMTP', '在 NAVER 账户安全设置开启两步验证，生成应用密码', '粘贴生成的应用密码；服务器与加密方式已自动填好'],
+    passwordLabel: '应用密码',
+    passwordPlaceholder: 'NAVER 两步验证设置中生成的应用密码'
+  },
+  {
+    key: 'aol',
+    label: 'AOL Mail',
+    hint: '在 AOL 账户安全设置生成第三方应用密码，使用完整邮箱地址登录。',
+    imap: { host: 'imap.aol.com', port: 993, secure: true },
+    smtp: { host: 'smtp.aol.com', port: 465, secure: true },
+    domains: ['aol.com', 'aim.com'],
+    color: '#222222',
+    guideUrl: 'https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail',
+    guideLinks: [{ label: 'AOL 账户安全', url: 'https://login.aol.com/account/security' }],
+    passwordLabel: '应用密码',
+    passwordPlaceholder: 'AOL 生成的第三方应用密码'
+  },
+  {
+    key: 'agentmail',
+    label: 'AgentMail',
+    hint: '使用 Inbox 邮箱地址和 API Key，通过标准 IMAP/SMTP 收发。自定义域名也可选此入口。',
+    imap: { host: 'imap.agentmail.to', port: 993, secure: true },
+    smtp: { host: 'smtp.agentmail.to', port: 465, secure: true },
+    domains: ['agentmail.to'],
+    color: '#6366f1',
+    guideUrl: 'https://docs.agentmail.to/imap-smtp',
+    steps: ['在 AgentMail Console → Inboxes 复制要接入的 Inbox 邮箱地址', '在 API Keys 生成或复制此 Inbox 可用的 API Key', '受限 Key 需包含 inbox_read、message_read、message_update、message_send 及全部 label_*_read 权限；详见官方文档', '邮箱填 Inbox 地址，密码填 API Key，服务器已预填'],
+    passwordLabel: 'API Key',
+    passwordPlaceholder: 'AgentMail API Key'
+  },
+  {
+    key: 'agent',
+    label: '其他 Agent 邮箱',
+    hint: '接入服务商提供的 IMAP/SMTP 或本机协议桥。只有 REST API / Webhook 的服务暂不能直接连接，请使用服务商的协议桥或转发到已接入邮箱。',
+    domains: [],
+    color: '#8b5cf6',
+    passwordLabel: '客户端密码 / 协议访问令牌',
+    passwordPlaceholder: '服务商用于 IMAP/SMTP 的凭据'
+  },
+  {
     key: 'custom',
     label: '其他账户（IMAP）',
     hint: '填写服务商提供的 IMAP / SMTP 服务器信息。',
@@ -383,12 +456,28 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 ]
 
 export function presetFor(email: string): ProviderPreset {
-  const domain = email.split('@')[1]?.toLowerCase() ?? ''
+  const domain = email.trim().split('@')[1]?.toLowerCase() ?? ''
   return (
     PROVIDER_PRESETS.find(p => p.key !== 'custom' && p.domains.includes(domain)) ??
-    PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1]
+    (domain.endsWith('.onmicrosoft.com') ? PROVIDER_PRESETS.find(p => p.key === 'office365') : undefined) ??
+    PROVIDER_PRESETS.find(p => p.key === 'custom')!
   )
 }
+
+export const isMicrosoftProvider = (key: ProviderKey): boolean => ['outlook', 'hotmail', 'office365'].includes(key)
+
+/** common 租户授权后根据微软返回的租户选择个人 / 组织服务器，不需要用户区分品牌。 */
+export function microsoftProviderFor(email: string, tenantId?: string): 'outlook' | 'office365' {
+  if (tenantId) return tenantId === '9188040d-6c67-4c5b-b112-36a304b66dad' ? 'outlook' : 'office365'
+  return presetFor(email).key === 'outlook' ? 'outlook' : 'office365'
+}
+
+/** 展示优先级独立于旧 key，已有账户与备份继续兼容。 */
+const PICK_ORDER: ProviderKey[] = ['proton', 'gmail', 'outlook', 'icloud', 'custom', '163', 'qq', 'yahoo', 'naver', 'aol', 'exmail', 'agentmail', 'agent', '139', 'sina', 'aliyun', 'aliyun-ent', 'feishu', 'lark', 'zoho']
+export const ACCOUNT_PROVIDER_CHOICES = PICK_ORDER.map(key => {
+  const p = PROVIDER_PRESETS.find(p => p.key === key)!
+  return { ...p, label: key === 'outlook' ? 'Microsoft 邮箱' : key === '163' ? '网易邮箱' : key === 'custom' ? '自定义邮箱' : p.label }
+})
 
 export const ACCOUNT_COLORS = [
   '#3b82f6', '#22c55e', '#a855f7', '#38bdf8', '#0d9488',
