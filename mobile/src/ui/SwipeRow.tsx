@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { T } from '../theme'
 import { linkToCore } from '../native/LinkToCore'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 
 const ACTIONS_W = 84
 
@@ -26,10 +27,15 @@ export function SwipeRow({
   const translate = useRef(new Animated.Value(0)).current
   const base = useRef(0)
   const [open, setOpen] = useState(false)
+  const reduced = useReducedMotion()
+  const reducedRef = useRef(reduced); reducedRef.current = reduced
+  const openRef = useRef(open); openRef.current = open
 
   const snapTo = (v: number, openNext: boolean) => {
     base.current = v
     setOpen(openNext)
+    openRef.current = openNext
+    if (reducedRef.current) { translate.setValue(v); return }
     Animated.spring(translate, {
       toValue: v,
       speed: 24,
@@ -50,7 +56,7 @@ export function SwipeRow({
       onPanResponderRelease: (_, g) => {
         const x = base.current + g.dx
         if (x < -ACTIONS_W / 2 || g.vx < -0.4) {
-          if (!open) void linkToCore.haptic('light')
+          if (!openRef.current) void linkToCore.haptic('light')
           snapTo(-ACTIONS_W, true)
         } else {
           snapTo(0, false)
@@ -80,7 +86,6 @@ export function SwipeRow({
           onPress={() => (open ? snapTo(0, false) : onPress())}
           onLongPress={onLongPress}
           delayLongPress={350}
-          disabled={open}
           android_ripple={{ color: T.hairline }}
           style={s.content}
         >

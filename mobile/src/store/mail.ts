@@ -14,6 +14,11 @@ import {
   BURN_AT_FAILS
 } from '../security/guard'
 import { burnExtraSecrets } from '../security/burn-extra'
+import { forgetCachedAccount, messageKey, readMailCache, saveMailBody, saveMailList } from '../mail-cache'
+import type { MailSource } from '../workbench/model'
+import { isSyncFolder } from '../workbench/sync-codec'
+import { validMicrosoftToken } from '../oauth/microsoft'
+import { presetFor } from '../providers'
 
 export interface MobileAccount {
   id: string
@@ -26,9 +31,10 @@ export interface MobileAccount {
   smtpSecure: boolean
   color: string
   displayName?: string
+  authType?: 'password' | 'oauth-ms'
 }
 
-export type MailTab = 'mail' | 'fly' | 'vault' | 'settings'
+export type MailTab = 'mail' | 'today' | 'notes' | 'more' | 'fly' | 'vault' | 'settings'
 export type MailScreen = 'accounts' | 'inbox' | 'read' | 'compose'
 
 export interface MobileMessage extends MailEnvelope {
@@ -71,18 +77,9 @@ function colorFor(email: string): string {
 }
 
 function guessSmtp(host: string, email: string): Pick<MobileAccount, 'smtpHost' | 'smtpPort' | 'smtpSecure'> {
-  const h = host.toLowerCase()
-  const domain = email.split('@')[1]?.toLowerCase() ?? ''
-  if (h.includes('gmail') || domain.includes('gmail')) return { smtpHost: 'smtp.gmail.com', smtpPort: 465, smtpSecure: true }
-  if (h.includes('qq') || domain.includes('qq')) return { smtpHost: 'smtp.qq.com', smtpPort: 465, smtpSecure: true }
-  if (h.includes('163') || domain.includes('163')) return { smtpHost: 'smtp.163.com', smtpPort: 465, smtpSecure: true }
-  if (h.includes('outlook') || h.includes('office365') || domain.includes('outlook') || domain.includes('hotmail')) {
-    return { smtpHost: 'smtp.office365.com', smtpPort: 587, smtpSecure: false }
-  }
-  if (h.includes('icloud') || h.includes('me.com') || domain.includes('icloud') || domain.includes('me.com')) {
-    return { smtpHost: 'smtp.mail.me.com', smtpPort: 587, smtpSecure: false }
-  }
-  return { smtpHost: h.replace(/^imap\./, 'smtp.'), smtpPort: 465, smtpSecure: true }
+  const preset = presetFor(email)
+  if (preset.smtp) return { smtpHost: preset.smtp.host, smtpPort: preset.smtp.port, smtpSecure: preset.smtp.secure }
+  return { smtpHost: host.toLowerCase().replace(/^imap\./, 'smtp.'), smtpPort: 465, smtpSecure: true }
 }
 
 function normalizeAccount(a: MobileAccount): MobileAccount {
@@ -137,6 +134,7 @@ interface MailState {
   saveAccount(draft: {
     email: string; pass: string; host: string; port: string; secure: boolean
     smtpHost?: string; smtpPort?: string; smtpSecure?: boolean
+    authType?: 'password' | 'oauth-ms'; accessToken?: string
   }): Promise<string | null>
   deleteAccount(id: string): Promise<void>
   openUnified(): Promise<void>
@@ -146,6 +144,7 @@ interface MailState {
   refresh(): Promise<void>
   search(query: string): Promise<void>
   openMessage(m: MobileMessage, opts?: { stay?: boolean }): Promise<void>
+  openSource(source: MailSource): Promise<void>
   toggleSeen(m: MobileMessage): Promise<void>
   stepReading(dir: 1 | -1): Promise<void>
   backToInbox(): void
@@ -159,11 +158,12 @@ interface MailState {
 }
 
 const clients = new Map<string, ImapLite>()
+const clientQueues = new Map<string, Promise<unknown>>()
+let fetchSequence = 0
+let readingSequence = 0
 
 async function disconnectAll() {
-  for (const c of clients.values()) {
-    try { await c.logout() } catch { /* ignore */ }
-  }
+  for (const c of clients.values()) c.disconnect()
   clients.clear()
 }
 
@@ -178,24 +178,30 @@ async function ensureClient(account: MobileAccount): Promise<ImapLite> {
     port: account.port,
     secure: account.secure,
     user: account.email,
-    pass: creds.password
+    pass: account.authType === 'oauth-ms' ? '' : creds.password,
+    accessToken: account.authType === 'oauth-ms' ? await validMicrosoftToken(account.id) : undefined
   })
   clients.set(account.id, client)
   return client
 }
 
-async function withClient<T>(account: MobileAccount, fn: (c: ImapLite) => Promise<T>): Promise<T> {
-  const client = await ensureClient(account)
-  try {
-    return await fn(client)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (/未连接|网络错误|响应超时|连接超时/.test(msg)) {
-      await client.reconnect()
-      return fn(client)
+export function withClient<T>(account: MobileAccount, fn: (c: ImapLite) => Promise<T>): Promise<T> {
+  const execute = async () => {
+    if (useMail.getState().guard !== 'ready') throw new Error('应用已锁定')
+    const client = await ensureClient(account)
+    try { return await fn(client) }
+    catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/未连接|网络错误|响应超时|连接超时/.test(msg) && useMail.getState().guard === 'ready') {
+        if (account.authType === 'oauth-ms') { client.disconnect(); clients.delete(account.id); return fn(await ensureClient(account)) }
+        await client.reconnect(); return fn(client)
+      }
+      throw err
     }
-    throw err
   }
+  const next = (clientQueues.get(account.id) ?? Promise.resolve()).then(execute, execute)
+  clientQueues.set(account.id, next.catch(() => undefined))
+  return next
 }
 
 function isMitmMessage(msg: string): boolean {
@@ -282,11 +288,12 @@ export const useMail = create<MailState>((set, get) => ({
     const email = draft.email.trim().toLowerCase()
     if (!email || !draft.host.trim() || !draft.pass) return '请填写完整：邮箱 / 服务器 / 密码（授权码）'
     const acc: MobileAccount = normalizeAccount({
-      id: 'mob-' + Date.now().toString(36),
+      id: get().accounts.find(a => a.email === email)?.id ?? 'mob-' + Date.now().toString(36),
       email,
       host: draft.host.trim(),
       port: parseInt(draft.port || '993', 10) || 993,
       secure: draft.secure,
+      authType: draft.authType ?? 'password',
       smtpHost: draft.smtpHost?.trim() || '',
       smtpPort: parseInt(draft.smtpPort || '', 10) || 0,
       smtpSecure: draft.smtpSecure ?? true,
@@ -295,7 +302,8 @@ export const useMail = create<MailState>((set, get) => ({
     if (!acc.smtpHost) Object.assign(acc, guessSmtp(acc.host, email))
     const client = new ImapLite()
     try {
-      await client.connect({ host: acc.host, port: acc.port, secure: acc.secure, user: email, pass: draft.pass })
+      await client.connect({ host: acc.host, port: acc.port, secure: acc.secure, user: email, pass: draft.authType === 'oauth-ms' ? '' : draft.pass, accessToken: draft.accessToken })
+      await client.selectMailbox('INBOX')
       await client.logout()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -308,6 +316,8 @@ export const useMail = create<MailState>((set, get) => ({
       return msg
     }
     await Keychain.setGenericPassword(email, draft.pass, { service: 'linkto.imap.' + acc.id })
+    try { await clients.get(acc.id)?.logout() } catch { /* new credentials replace old connection */ }
+    clients.delete(acc.id)
     const list = [...(await loadAccounts()).filter(a => a.email !== email), acc]
     await persistAccounts(list)
     set({ accounts: list })
@@ -318,6 +328,7 @@ export const useMail = create<MailState>((set, get) => ({
     try { await clients.get(id)?.logout() } catch { /* ignore */ }
     clients.delete(id)
     await Keychain.resetGenericPassword({ service: 'linkto.imap.' + id })
+    await forgetCachedAccount(id)
     const list = (await loadAccounts()).filter(a => a.id !== id)
     await persistAccounts(list)
     const { active, scope } = get()
@@ -391,20 +402,26 @@ export const useMail = create<MailState>((set, get) => ({
   openMessage: async (m, opts) => {
     const account = get().accounts.find(a => a.id === m.accountId)
     if (!account) return
-    set(opts?.stay ? { reading: m, body: null, bodyLoading: true } : { screen: 'read', reading: m, body: null, bodyLoading: true })
+    const sequence = ++readingSequence
+    const cached = await readMailCache().catch(() => null)
+    if (sequence !== readingSequence || get().guard !== 'ready') return
+    set(opts?.stay ? { reading: m, body: cached?.bodies[messageKey(m)] ?? null, bodyLoading: true } : { screen: 'read', reading: m, body: cached?.bodies[messageKey(m)] ?? null, bodyLoading: true })
     try {
       const raw = await withClient(account, c => c.fetchRaw(m.mailbox, m.uid))
       const parsed = parseMime(raw)
+      if (sequence !== readingSequence || get().guard !== 'ready') return
       set({ body: { html: parsed.html, text: parsed.text, attachments: parsed.attachments }, bodyLoading: false })
+      void saveMailBody(m, { html: parsed.html, text: parsed.text, attachments: parsed.attachments }).catch(() => {})
       void withClient(account, c => c.markSeen(m.mailbox, m.uid)).then(() => {
         set(s => ({
-          messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId ? { ...x, flags: [...new Set([...x.flags, '\\Seen'])] } : x),
-          reading: s.reading && s.reading.uid === m.uid && s.reading.accountId === m.accountId
+          messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId && x.mailbox === m.mailbox ? { ...x, flags: [...new Set([...x.flags, '\\Seen'])] } : x),
+          reading: s.reading && s.reading.uid === m.uid && s.reading.accountId === m.accountId && s.reading.mailbox === m.mailbox
             ? { ...s.reading, flags: [...new Set([...s.reading.flags, '\\Seen'])] }
             : s.reading
         }))
       }).catch(() => {})
     } catch (e) {
+      if (sequence !== readingSequence || get().guard !== 'ready') return
       const msg = e instanceof Error ? e.message : String(e)
       if (isMitmMessage(msg)) {
         await burnAll('mitm')
@@ -413,35 +430,51 @@ export const useMail = create<MailState>((set, get) => ({
         set({ guard: 'burned', burnReason: 'TLS 证书校验失败，检测到中间人，本地数据已焚毁', accounts: [], screen: 'accounts' })
         return
       }
-      set({ body: { html: null, text: '正文加载失败：' + msg, attachments: [] }, bodyLoading: false })
+      set({ body: cached?.bodies[messageKey(m)] ?? { html: null, text: '正文加载失败：' + msg, attachments: [] }, bodyLoading: false, statusText: cached?.bodies[messageKey(m)] ? '离线 · 正在显示已缓存的正文' : msg })
     }
+  },
+
+  openSource: async source => {
+    const account = get().accounts.find(a => a.email.toLowerCase() === source.accountEmail.toLowerCase())
+    if (!account) throw new Error('请先添加原邮件所属的邮箱：' + source.accountEmail)
+    let message = get().messages.find(m => m.accountId === account.id && source.messageId && m.messageId === source.messageId)
+    if (!message && source.messageId) {
+      try { const found = await withClient(account, c => c.findMessage(source.mailbox, source.messageId!)); if (found) message = withAccount(found, account, source.mailbox) } catch { /* use cache below */ }
+    }
+    if (!message) {
+      const cache = await readMailCache()
+      message = cache.messages.find(m => m.accountId === account.id && (source.messageId ? m.messageId === source.messageId : m.mailbox === source.mailbox && m.uid === source.uid))
+    }
+    if (!message) throw new Error('原邮件暂不可用；待办中保留了邮件标题和来源，请联网后重试')
+    set({ tab: 'mail' })
+    await get().openMessage(message)
   },
 
   toggleSeen: async m => {
     const wasSeen = m.flags.includes('\\Seen')
     const patch = (list: MobileMessage[]) =>
       list.map(x => {
-        if (x.uid !== m.uid || x.accountId !== m.accountId) return x
+        if (x.uid !== m.uid || x.accountId !== m.accountId || x.mailbox !== m.mailbox) return x
         const flags = x.flags.filter(f => f !== '\\Seen')
         return { ...x, flags: wasSeen ? flags : [...flags, '\\Seen'] }
       })
     set(s => ({
       messages: patch(s.messages),
-      reading: s.reading && s.reading.uid === m.uid && s.reading.accountId === m.accountId ? patch([s.reading])[0] : s.reading
+      reading: s.reading && s.reading.uid === m.uid && s.reading.accountId === m.accountId && s.reading.mailbox === m.mailbox ? patch([s.reading])[0] : s.reading
     }))
     const account = get().accounts.find(a => a.id === m.accountId)
     if (!account) return
     try {
       await withClient(account, c => wasSeen ? c.markUnseen(m.mailbox, m.uid) : c.markSeen(m.mailbox, m.uid))
     } catch {
-      set(s => ({ messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId ? { ...x, flags: m.flags } : x), statusText: '标记失败，请稍后重试' }))
+      set(s => ({ messages: s.messages.map(x => x.uid === m.uid && x.accountId === m.accountId && x.mailbox === m.mailbox ? { ...x, flags: m.flags } : x), statusText: '标记失败，请稍后重试' }))
     }
   },
 
   stepReading: async dir => {
     const { messages, reading } = get()
     if (!reading || !messages.length) return
-    const i = messages.findIndex(m => m.uid === reading.uid && m.accountId === reading.accountId)
+    const i = messages.findIndex(m => m.uid === reading.uid && m.accountId === reading.accountId && m.mailbox === reading.mailbox)
     const next = messages[i + dir]
     if (!next) return
     await get().openMessage(next, { stay: true })
@@ -495,6 +528,7 @@ export const useMail = create<MailState>((set, get) => ({
   closeCompose: () => set({ compose: null, composeError: '', screen: 'inbox' }),
 
   lockNow: async () => {
+    fetchSequence++; readingSequence++
     await disconnectAll()
     set({ guard: 'locked', tab: 'mail', screen: 'accounts', messages: [], reading: null, body: null, compose: null, status: 'idle', statusText: '' })
   },
@@ -504,23 +538,19 @@ export const useMail = create<MailState>((set, get) => ({
     if (!compose) return
     const account = accounts.find(a => a.id === compose.accountId)
     if (!account) { set({ composeError: '没有找到发信账户' }); return }
-    const to = compose.to.split(/[,;\\s]+/).map(s => s.trim()).filter(Boolean)
+    const to = compose.to.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean)
     if (!to.length) { set({ composeError: '请填写收件人' }); return }
     if (!compose.subject.trim() && !compose.body.trim()) { set({ composeError: '主题和正文都是空的' }); return }
-    if (!account.smtpSecure) {
-      set({ composeError: '当前移动版只支持 465 隐式 TLS 发信；这个账户配置为 587 STARTTLS，请改用桌面端发送。' })
-      return
-    }
     set({ sending: true, composeError: '' })
     const creds = await Keychain.getGenericPassword({ service: 'linkto.imap.' + account.id })
     if (!creds) { set({ sending: false, composeError: '未找到钥匙串凭据' }); return }
     const smtp = new SmtpLite()
     try {
-      await smtp.connect({ host: account.smtpHost, port: account.smtpPort, user: account.email, pass: creds.password })
+      await smtp.connect({ host: account.smtpHost, port: account.smtpPort, user: account.email, pass: account.authType === 'oauth-ms' ? '' : creds.password, secure: account.smtpSecure, accessToken: account.authType === 'oauth-ms' ? await validMicrosoftToken(account.id) : undefined })
       await smtp.send({
         from: account.email,
         to,
-        cc: compose.cc ? compose.cc.split(/[,;\\s]+/).map(s => s.trim()).filter(Boolean) : [],
+        cc: compose.cc ? compose.cc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean) : [],
         subject: compose.subject || '(无主题)',
         text: compose.body,
         inReplyTo: compose.inReplyTo,
@@ -540,7 +570,7 @@ type Get = () => MailState
 
 async function loadFolders(set: Set, get: Get, account: MobileAccount): Promise<void> {
   try {
-    const list = await withClient(account, c => c.listMailboxes())
+    const list = (await withClient(account, c => c.listMailboxes())).filter(f => !isSyncFolder(f.name) && !f.flags.includes('\\Noselect'))
     set({ folders: { ...get().folders, [account.id]: list } })
   } catch {
     /* 文件夹加载失败不阻塞收件箱 */
@@ -548,6 +578,7 @@ async function loadFolders(set: Set, get: Get, account: MobileAccount): Promise<
 }
 
 async function fetchScope(set: Set, get: Get, scope: MailScope, searching: boolean): Promise<void> {
+  const sequence = ++fetchSequence
   const accounts = scope.kind === 'unified'
     ? get().accounts
     : get().accounts.filter(a => a.id === scope.accountId)
@@ -557,21 +588,29 @@ async function fetchScope(set: Set, get: Get, scope: MailScope, searching: boole
   }
   set({ status: 'syncing', statusText: searching ? '搜索中…' : '同步中…' })
   const query = get().searchQuery
+  const cached = await readMailCache().catch(() => null)
+  if (sequence !== fetchSequence || get().guard !== 'ready') return
+  const cachedScope = (cached?.messages ?? []).filter(m => accounts.some(a => a.id === m.accountId) && m.mailbox === scope.folder)
+  if (!searching && cachedScope.length) set({ messages: sortMessages(cachedScope) })
   const results = await Promise.allSettled(accounts.map(async a => {
     const list = await withClient(a, c => searching && query
       ? c.searchEnvelopes(scope.kind === 'unified' ? 'INBOX' : scope.folder, query, 40)
       : c.fetchEnvelopes(scope.kind === 'unified' ? 'INBOX' : scope.folder, 40))
-    return list.map(m => withAccount(m, a, scope.kind === 'unified' ? 'INBOX' : scope.folder))
+    const messages = list.map(m => withAccount(m, a, scope.kind === 'unified' ? 'INBOX' : scope.folder))
+    if (!searching && sequence === fetchSequence && get().guard === 'ready') await saveMailList(a.id, scope.folder, messages)
+    return messages
   }))
+  if (sequence !== fetchSequence || get().guard !== 'ready') return
   const merged: MobileMessage[] = []
   let failed = 0
   let mitm = false
-  for (const r of results) {
+  for (const [index, r] of results.entries()) {
     if (r.status === 'fulfilled') merged.push(...r.value)
     else {
       failed++
       const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
       if (isMitmMessage(msg)) mitm = true
+      merged.push(...cachedScope.filter(m => m.accountId === accounts[index].id && (!searching || `${m.subject} ${m.from}`.toLowerCase().includes(query.toLowerCase()))))
     }
   }
   if (mitm) {
@@ -584,6 +623,6 @@ async function fetchScope(set: Set, get: Get, scope: MailScope, searching: boole
   set({
     messages: sortMessages(merged),
     status: failed === results.length ? 'error' : 'ready',
-    statusText: failed ? String(results.length - failed) + '/' + results.length + ' 个账户已同步' : ''
+    statusText: failed ? String(results.length - failed) + '/' + results.length + ' 个账户已同步 · 其余显示本机缓存' : '刚刚更新'
   })
 }

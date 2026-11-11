@@ -11,6 +11,7 @@
 #import <CommonCrypto/CommonKeyDerivation.h>
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 
 static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
   NSMutableString *out = [NSMutableString stringWithCapacity:len * 2];
@@ -24,6 +25,59 @@ static NSString *hexFromBytes(const uint8_t *bytes, size_t len) {
 @implementation LinkToCore
 
 RCT_EXPORT_MODULE(LinkToCore)
+
+RCT_EXPORT_METHOD(takeReminder:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSString *identifier = [[NSUserDefaults standardUserDefaults] stringForKey:@"linkto.pendingWorkItem"];
+  [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"linkto.pendingWorkItem"];
+  resolve(identifier ?: (id)[NSNull null]);
+}
+
+RCT_EXPORT_METHOD(scheduleReminder:(NSString *)identifier
+                  title:(NSString *)title
+                  at:(double)at
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+  [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge)
+                       completionHandler:^(BOOL granted, NSError *error) {
+    if (error || !granted) {
+      reject(@"REMINDER_PERMISSION", @"请在系统设置中允许 LinkTo 通知，内容已经保存", error);
+      return;
+    }
+    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    content.title = title;
+    content.body = @"你安排的待办到时间了";
+    content.sound = [UNNotificationSound defaultSound];
+    content.userInfo = @{ @"workItemId": identifier };
+    NSTimeInterval delay = MAX(1.0, at / 1000.0 - [[NSDate date] timeIntervalSince1970]);
+    UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:delay repeats:NO];
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:[@"linkto-work-" stringByAppendingString:identifier] content:content trigger:trigger];
+    [center addNotificationRequest:request withCompletionHandler:^(NSError *addError) {
+      if (addError) reject(@"REMINDER_ERR", addError.localizedDescription, addError);
+      else resolve(@YES);
+    }];
+  }];
+}
+
+RCT_EXPORT_METHOD(cancelReminder:(NSString *)identifier
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  [[UNUserNotificationCenter currentNotificationCenter] removePendingNotificationRequestsWithIdentifiers:@[[@"linkto-work-" stringByAppendingString:identifier]]];
+  resolve(@YES);
+}
+
+RCT_EXPORT_METHOD(cancelAllReminders:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+  [center removeAllPendingNotificationRequests];
+  [center removeAllDeliveredNotifications];
+  [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"linkto.pendingWorkItem"];
+  resolve(@YES);
+}
 
 RCT_EXPORT_METHOD(sha256Hex:(NSString *)msg
                   resolver:(RCTPromiseResolveBlock)resolve

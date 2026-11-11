@@ -11,6 +11,7 @@ import {
 } from '@shared/devsync'
 import { SectionTitle, SettingRow, Toggle, Select } from './GeneralTab'
 import { takeSyncPair } from '../account-focus'
+import { MobileSyncCard } from './MobileSyncCard'
 
 type Target = { id: string; label: string; path: string; available: boolean; hint?: string; downloadUrl?: string }
 
@@ -45,6 +46,7 @@ export function SyncBackupTab() {
   return (
     <div className="max-w-[680px]">
       <DevSyncSection />
+      <MobileSyncCard />
       <BackupSection />
     </div>
   )

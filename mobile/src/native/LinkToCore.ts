@@ -18,11 +18,22 @@ interface LinkToCoreNative {
   randomB64(len: number): Promise<string>
   pbkdf2Hex(password: string, salt: string, iterations: number): Promise<string>
   haptic(kind: 'light' | 'medium' | 'heavy' | 'warn'): Promise<boolean>
+  scheduleReminder?(id: string, title: string, at: number): Promise<boolean>
+  cancelReminder?(id: string): Promise<boolean>
+  cancelAllReminders?(): Promise<boolean>
+  takeReminder?(): Promise<string | null>
 }
 
 const native = NativeModules.LinkToCore as LinkToCoreNative | undefined
 
 export const linkToCore = {
+  cancelAllReminders: async (): Promise<void> => { await native?.cancelAllReminders?.() },
+  takeReminder: async (): Promise<string | null> => await native?.takeReminder?.() ?? null,
+  scheduleReminder: async (id: string, title: string, at: number): Promise<void> => {
+    if (!native?.scheduleReminder) throw new Error('此设备暂不支持本机提醒')
+    await native.scheduleReminder(id, title, at)
+  },
+  cancelReminder: async (id: string): Promise<void> => { await native?.cancelReminder?.(id) },
   /** 原生 SHA-256；无原生模块时退回 JS 实现 */
   sha256Hex: (msg: string): Promise<string> =>
     native ? native.sha256Hex(msg) : Promise.resolve(jsSha256Hex(msg)),

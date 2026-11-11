@@ -39,6 +39,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/mailparser": "^3.9.0",
     "@types/node": "^26.6.4",

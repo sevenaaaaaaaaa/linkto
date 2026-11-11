@@ -67,7 +67,7 @@ export async function syncRound(opts: {
   const indexKey = keyring ? await keyring.indexKey() : null
 
   const folder = await tx.ensureFolder(opts.folder ?? SYNC_FOLDER_NAME)
-  const remote: RemoteHeader[] = (await tx.fetchHeaders(folder, ['X-LinkTo-Todo', 'X-LinkTo-Updated', 'X-LinkTo-Encrypted']))
+  const remote: RemoteHeader[] = (await tx.fetchHeaders(folder, ['X-LinkTo-Todo', 'X-LinkTo-Memo', 'X-LinkTo-Updated', 'X-LinkTo-Encrypted']))
     .map(m => headerMeta(m.uid, m.headers))
     .filter((h): h is RemoteHeader => !!h)
 
@@ -98,6 +98,7 @@ export async function syncRound(opts: {
     if (purge) toDelete.add(h.uid)
     if (action === 'skip') continue
     db.upsert({
+      kind: wire.kind,
       id: wire.id,
       title: wire.title,
       status: wire.status,
@@ -117,7 +118,7 @@ export async function syncRound(opts: {
     local = db.list()
     groups = groupRemote(remote, wireMap(local))
   }
-  const push = planPush(local, groups, now)
+  const push = planPush(local, groups, now, !!keyring)
   push.purge.forEach(u => toDelete.add(u))
   if (push.push.length > limit) stats.more = true
   for (const { todo, supersedes } of push.push.slice(0, limit)) {

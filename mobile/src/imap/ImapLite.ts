@@ -16,6 +16,7 @@ export interface ImapAccount {
   secure: boolean
   user: string
   pass: string
+  accessToken?: string
 }
 
 export interface MailBoxInfo {
@@ -194,7 +195,9 @@ export class ImapLite {
     })
     await this.greeting
     // 登录
-    const res = await this.cmd(`LOGIN ${ImapLite.quote(acc.user)} ${ImapLite.quote(acc.pass)}`)
+    const res = acc.accessToken
+      ? await this.cmd(`AUTHENTICATE XOAUTH2 ${btoa(`user=${acc.user}\x01auth=Bearer ${acc.accessToken}\x01\x01`)}`, undefined, 30000, () => this.sock?.write('\r\n'))
+      : await this.cmd(`LOGIN ${ImapLite.quote(acc.user)} ${ImapLite.quote(acc.pass)}`)
     if (!res.ok) throw new Error(res.lines.find(l => /AUTHENTICATIONFAILED|invalid|failed/i.test(l))?.slice(2).trim() ?? '登录失败：请检查用户名与授权码/应用专用密码')
     // 登录成功 → 清除空闲超时，让连接保持长活（命令级超时 readLine/cmd 继续兜底）
     sock.setTimeout(0)
@@ -216,6 +219,12 @@ export class ImapLite {
   }
 
   private pendingReject: ((e: Error) => void) | null = null
+
+  private emitLine(line: string) {
+    const waiter = this.lineWaiters.shift()
+    if (waiter) waiter(line)
+    else this.lines.push(line)
+  }
 
   private feed(chunk: string) {
     this.buffer += chunk
@@ -243,12 +252,12 @@ export class ImapLite {
       this.buffer = this.buffer.slice(idx + 2)
       const lit = line.match(/\{(\d+)\}$/)
       if (lit) {
-        this.lines.push(line)
+        this.emitLine(line)
         this.literals.waiting = parseInt(lit[1], 10)
         // 链式保留调用方 sink（如正文收集器），同时把 literal 以 LIT 行喂给解析层
         const prev = this.literals.sink
         this.literals.sink = data => {
-          this.lines.push(LIT_MARK + data)
+          this.emitLine(LIT_MARK + data)
           prev?.(data)
         }
         continue
@@ -278,7 +287,7 @@ export class ImapLite {
   }
 
   /** 执行一条命令，收集所有未 tag 行，返回 { ok, lines } */
-  private async cmd(command: string, sinkLiteral?: (chunk: string) => void, timeoutMs = 30000): Promise<{ ok: boolean; lines: string[] }> {
+  private async cmd(command: string, sinkLiteral?: (chunk: string) => void, timeoutMs = 30000, continuation?: () => void): Promise<{ ok: boolean; lines: string[] }> {
     if (!this.sock) throw new Error('未连接')
     const tag = `A${++this.tagSeq}`
     const collected: string[] = []
@@ -297,6 +306,8 @@ export class ImapLite {
         return { ok, lines: collected }
       }
       if (line.startsWith('+')) {
+        continuation?.()
+        continuation = undefined
         collected.push(line)
         continue
       }
@@ -305,10 +316,11 @@ export class ImapLite {
   }
 
   async listMailboxes(): Promise<MailBoxInfo[]> {
-    const r = await this.cmd('LSUB "" "*"')
+    const r = await this.cmd('LIST "" "*"')
+    if (!r.ok) throw new Error('文件夹列表获取失败')
     const out: MailBoxInfo[] = []
     for (const line of r.lines) {
-      const m = line.match(/^\* LSUB \(([^)]*)\)\s+"?([^"]*)"? "?"?([^"]*)"?"?$/)
+      const m = line.match(/^\* (?:LIST|LSUB) \(([^)]*)\)\s+"?([^"]*)"? "?"?([^"]*)"?"?$/)
       if (m) out.push({ flags: m[1].trim().split(/\s+/).filter(Boolean), delimiter: unquote(m[2]), name: unquote(m[3]) })
     }
     return out
@@ -329,19 +341,21 @@ export class ImapLite {
     if (!uids.length) return []
     const range = uids.join(',')
     const r = await this.cmd(
-      `FETCH ${range} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID)])`
+      `UID FETCH ${range} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID)])`
     )
+    if (!r.ok) throw new Error('邮件信封获取失败')
     return ImapLite.parseEnvelopes(r.lines)
   }
 
   /** 收件箱列表：SEARCH ALL 取最大 uid 往回拉 max 封 */
   async fetchEnvelopes(mailbox: string, max = 50): Promise<MailEnvelope[]> {
     await this.selectMailbox(mailbox)
-    const s = await this.cmd('SEARCH ALL')
+    const s = await this.cmd('UID SEARCH ALL')
+    if (!s.ok) throw new Error('邮件列表获取失败')
     const uids = s.lines
       .filter(l => l.startsWith('* SEARCH'))
       .flatMap(l => l.slice(8).trim().split(/\s+/).map(Number))
-      .filter(n => !isNaN(n))
+      .filter(n => Number.isInteger(n) && n > 0)
       .sort((a, b) => b - a)
       .slice(0, max)
     return this.fetchEnvelopesByUids(uids)
@@ -351,11 +365,12 @@ export class ImapLite {
   async searchEnvelopes(mailbox: string, query: string, max = 50): Promise<MailEnvelope[]> {
     await this.selectMailbox(mailbox)
     const q = ImapLite.quote(query.replace(/[\r\n]+/g, ' ').slice(0, 200))
-    const s = await this.cmd(`SEARCH TEXT ${q}`)
+    const s = await this.cmd(`UID SEARCH TEXT ${q}`)
+    if (!s.ok) throw new Error('邮件搜索失败')
     const uids = s.lines
       .filter(l => l.startsWith('* SEARCH'))
       .flatMap(l => l.slice(8).trim().split(/\s+/).map(Number))
-      .filter(n => !isNaN(n))
+      .filter(n => Number.isInteger(n) && n > 0)
       .sort((a, b) => a - b)
       .slice(-max)
     return this.fetchEnvelopesByUids(uids)
@@ -365,9 +380,59 @@ export class ImapLite {
   async fetchRaw(mailbox: string, uid: number): Promise<string> {
     await this.selectMailbox(mailbox)
     const parts: string[] = []
-    const r = await this.cmd(`FETCH ${uid} (BODY.PEEK[])`, chunk => parts.push(chunk), 60000)
+    const r = await this.cmd(`UID FETCH ${uid} (BODY.PEEK[])`, chunk => parts.push(chunk), 60000)
     if (!r.ok) throw new Error('正文获取失败')
     return parts.join('')
+  }
+
+  async ensureSyncFolder(): Promise<string> {
+    const folders = await this.listMailboxes()
+    const existing = folders.find(f => /(?:^|[/.])LinkTo-Sync$/i.test(f.name))
+    if (existing) return existing.name
+    for (const path of ['LinkTo-Sync', 'INBOX.LinkTo-Sync', 'Folders/LinkTo-Sync']) {
+      const made = await this.cmd(`CREATE ${ImapLite.quote(path)}`)
+      if (made.ok) { await this.cmd(`SUBSCRIBE ${ImapLite.quote(path)}`); return path }
+    }
+    throw new Error('无法创建同步文件夹，请检查邮箱权限')
+  }
+
+  async syncHeaders(folder: string): Promise<{ uid: number; headers: Record<string, string> }[]> {
+    await this.selectMailbox(folder)
+    const response = await this.cmd('UID FETCH 1:* (UID BODY.PEEK[HEADER.FIELDS (X-LinkTo-Todo X-LinkTo-Memo X-LinkTo-Updated X-LinkTo-Encrypted)])')
+    if (!response.ok) throw new Error('读取同步记录失败')
+    const result: { uid: number; headers: Record<string, string> }[] = []
+    let current: { uid: number; raw: string } | null = null
+    const flush = () => {
+      if (!current) return
+      const headers: Record<string, string> = {}
+      for (const line of current.raw.replace(/\r?\n[ \t]+/g, ' ').split(/\r?\n/)) {
+        const index = line.indexOf(':')
+        if (index > 0) headers[line.slice(0, index).toLowerCase()] = line.slice(index + 1).trim()
+      }
+      if (headers['x-linkto-todo'] || headers['x-linkto-memo']) result.push({ uid: current.uid, headers })
+    }
+    for (const line of response.lines) {
+      const uid = line.match(/^\* \d+ FETCH .*\bUID (\d+)/)
+      if (uid) { flush(); current = { uid: Number(uid[1]), raw: '' } }
+      if (current && line.startsWith(LIT_MARK)) current.raw += line.slice(LIT_MARK.length)
+    }
+    flush()
+    return result
+  }
+
+  async appendSync(folder: string, raw: string): Promise<void> {
+    // Sync messages are ASCII headers + base64 body; literal byte length equals string length.
+    if (/[^\x00-\x7f]/.test(raw)) throw new Error('同步邮件必须使用 base64 正文')
+    const response = await this.cmd(`APPEND ${ImapLite.quote(folder)} (\\Seen) {${raw.length}}`, undefined, 60000, () => this.sock?.write(raw + '\r\n'))
+    if (!response.ok) throw new Error('写入同步文件夹失败')
+  }
+
+  async findMessage(mailbox: string, messageId: string): Promise<MailEnvelope | null> {
+    await this.selectMailbox(mailbox)
+    const response = await this.cmd(`UID SEARCH HEADER Message-ID ${ImapLite.quote(messageId.replace(/[\r\n]/g, ''))}`)
+    if (!response.ok) throw new Error('查找原邮件失败')
+    const ids = response.lines.filter(l => l.startsWith('* SEARCH')).flatMap(l => l.slice(8).trim().split(/\s+/).map(Number)).filter(n => n > 0)
+    return ids.length ? (await this.fetchEnvelopesByUids([ids[0]]))[0] ?? null : null
   }
 
   /** 解析 FETCH 响应（literal 以 \u0000LIT\u0000 前缀行嵌入） */
@@ -422,11 +487,11 @@ export class ImapLite {
     await this.selectMailbox(mailbox)
     const parts: string[] = []
     const sink = (chunk: string) => parts.push(chunk)
-    let r = await this.cmd(`FETCH ${uid} (BODY.PEEK[1])`, sink, 45000)
+    let r = await this.cmd(`UID FETCH ${uid} (BODY.PEEK[1])`, sink, 45000)
     let text = parts.join('').replace(/\u0000LIT\u0000/g, '')
     if (!text.trim() || /NIL/.test(text)) {
       parts.length = 0
-      r = await this.cmd(`FETCH ${uid} (BODY.PEEK[TEXT])`, sink, 45000)
+      r = await this.cmd(`UID FETCH ${uid} (BODY.PEEK[TEXT])`, sink, 45000)
       text = parts.join('').replace(/\u0000LIT\u0000/g, '')
     }
     if (!r.ok) throw new Error('正文获取失败')
@@ -437,11 +502,15 @@ export class ImapLite {
   }
 
   async markSeen(mailbox: string, uid: number): Promise<void> {
-    await this.cmd(`STORE ${uid} +FLAGS (\\Seen)`)
+    await this.selectMailbox(mailbox)
+    const r = await this.cmd(`UID STORE ${uid} +FLAGS.SILENT (\\Seen)`)
+    if (!r.ok) throw new Error('已读状态更新失败')
   }
 
   async markUnseen(mailbox: string, uid: number): Promise<void> {
-    await this.cmd(`STORE ${uid} -FLAGS (\\Seen)`)
+    await this.selectMailbox(mailbox)
+    const r = await this.cmd(`UID STORE ${uid} -FLAGS.SILENT (\\Seen)`)
+    if (!r.ok) throw new Error('未读状态更新失败')
   }
 
   logout(): Promise<void> {
@@ -453,4 +522,5 @@ export class ImapLite {
       this.sock = null
     })
   }
+  disconnect(): void { this.destroy(new Error('连接已关闭')) }
 }

@@ -1428,7 +1428,7 @@ export function registerIpc(ctx: AppContext) {
 
     setInsightStatus: ([id, status]: [string, string]) => {
       // 待办走 updateInsight 刷新 updatedAt：跨设备同步与外部同步都按它判断本地改动
-      if (store.getInsight(id)?.kind === 'todo') {
+      if (['todo', 'memo'].includes(store.getInsight(id)?.kind ?? '')) {
         store.updateInsight(id, { status })
         notifyLocalChange(id)
       } else store.setInsightStatus(id, status)
@@ -1437,7 +1437,7 @@ export function registerIpc(ctx: AppContext) {
     deleteInsight: ([id]: [string]) => {
       todoIntegrations.noteLocalDelete(id)
       // 待办同步开启时删除待办 = 写墓碑（dismissed），硬删会被其他设备的副本同步回来
-      if (isTodoSyncEnabled() && store.listTodosForSync().some(t => t.id === id)) {
+      if (isTodoSyncEnabled() && store.listTodosForSync(true).some(t => t.id === id)) {
         store.updateInsight(id, { status: 'dismissed' })
         notifyLocalChange(id)
       } else {
@@ -1446,15 +1446,17 @@ export function registerIpc(ctx: AppContext) {
       }
     },
 
-    saveMemo: ([title, content]: [string, string]) => {
-      const id = 'memo-today'
+    saveMemo: ([title, content, itemId]: [string, string, string?]) => {
+      const id = itemId || 'memo-today'
       store.insertInsight({
         id,
         kind: 'memo',
         title: title || '备忘录',
-        data: { content },
+        data: { ...store.getInsight(id)?.data, content, updatedAt: Math.max(Date.now(), Number(store.getInsight(id)?.data.updatedAt ?? 0) + 1) },
         period: new Date().toISOString().slice(0, 10)
       })
+      notifySyncChange(id)
+      ctx.event(null as never, { type: 'insights-changed' })
     },
 
     // ================= 收件箱纪律 =================

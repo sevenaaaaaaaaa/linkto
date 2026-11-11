@@ -62,6 +62,7 @@ export type TodoStatus = 'open' | 'done' | 'dismissed'
 
 /** 线上传输的待办（明文正文） */
 export interface WireTodo {
+  kind?: 'todo' | 'memo'
   v: number
   id: string
   title: string
@@ -77,6 +78,7 @@ export interface WireTodo {
 
 /** 本地待办行（insights 表 kind='todo'） */
 export interface LocalTodo {
+  kind?: 'todo' | 'memo'
   id: string
   title: string
   status: string
@@ -116,6 +118,7 @@ export function isExpiredTombstone(status: string, updatedAt: number, now: numbe
 export function toWire(t: LocalTodo, device?: string): WireTodo {
   return {
     v: PROTO_VERSION,
+    ...(t.kind === 'memo' ? { kind: 'memo' as const } : {}),
     id: t.id,
     title: t.title,
     status: t.status,
@@ -252,7 +255,7 @@ export async function encodeMessage(
     `Message-ID: <${msgIdLocal}@linkto.sync>`,
     `Subject: ${SUBJECT_PREFIX}${wireId}`,
     'MIME-Version: 1.0',
-    `X-LinkTo-Todo: ${wireId}`,
+    `${todo.kind === 'memo' ? 'X-LinkTo-Memo' : 'X-LinkTo-Todo'}: ${wireId}`,
     `X-LinkTo-Updated: ${Math.floor(todo.updatedAt)}`,
     `X-LinkTo-Encrypted: ${opts.keyring ? 1 : 0}`,
     `X-LinkTo-Proto: ${PROTO_VERSION}`,
@@ -282,7 +285,7 @@ export function parseHeaderBlock(text: string): Record<string, string> {
 
 /** 从头信息取远端元数据；不是同步邮件返回 null */
 export function headerMeta(uid: number, headers: Record<string, string>): RemoteHeader | null {
-  const wireId = (headers['x-linkto-todo'] ?? '').trim()
+  const wireId = (headers['x-linkto-todo'] ?? headers['x-linkto-memo'] ?? '').trim()
   const updatedAt = Number((headers['x-linkto-updated'] ?? '').trim())
   if (!wireId || !Number.isFinite(updatedAt)) return null
   return { uid, wireId, updatedAt, encrypted: (headers['x-linkto-encrypted'] ?? '').trim() === '1' || wireId.startsWith('h:') }
@@ -294,7 +297,7 @@ export async function decodeMessage(raw: Buffer, keyring: KeyRing | null): Promi
   const sep = text.search(/\r?\n\r?\n/)
   if (sep < 0) throw new TodoSyncError('format', '同步邮件格式错误')
   const headers = parseHeaderBlock(text.slice(0, sep))
-  const wireId = (headers['x-linkto-todo'] ?? '').trim()
+  const wireId = (headers['x-linkto-todo'] ?? headers['x-linkto-memo'] ?? '').trim()
   if (!wireId) throw new TodoSyncError('format', '同步邮件缺少 X-LinkTo-Todo')
   const bodyText = text.slice(sep).replace(/^\r?\n\r?\n/, '')
   const cte = (headers['content-transfer-encoding'] ?? '').toLowerCase()
@@ -306,6 +309,8 @@ export async function decodeMessage(raw: Buffer, keyring: KeyRing | null): Promi
     throw new TodoSyncError('format', '同步邮件正文不是 JSON')
   }
   let todo: unknown = parsed
+  if ((wireId.startsWith('h:') || headers['x-linkto-encrypted'] === '1') && (!parsed || typeof parsed !== 'object' || !('ct' in parsed)))
+    throw new TodoSyncError('format', '同步邮件缺少加密正文')
   if (parsed && typeof parsed === 'object' && 'ct' in parsed) {
     if (!keyring) throw new TodoSyncError('need-passphrase', '同步文件夹中的待办已加密，需要同步口令')
     const plain = await decryptBody(parsed as EncEnvelope, keyring, wireId)
@@ -318,8 +323,10 @@ export async function decodeMessage(raw: Buffer, keyring: KeyRing | null): Promi
   const t = todo as Partial<WireTodo>
   if (!t || typeof t.id !== 'string' || typeof t.title !== 'string' || !Number.isFinite(Number(t.updatedAt)))
     throw new TodoSyncError('format', '同步邮件缺少必要字段')
+  if ((t.kind ?? 'todo') !== (headers['x-linkto-memo'] ? 'memo' : 'todo')) throw new TodoSyncError('format', '同步记录类型与正文不匹配')
   return {
     v: Number(t.v) || PROTO_VERSION,
+    ...(headers['x-linkto-memo'] ? { kind: 'memo' as const } : {}),
     id: t.id,
     title: t.title,
     status: ['open', 'done', 'dismissed'].includes(String(t.status)) ? String(t.status) : 'open',
@@ -393,7 +400,7 @@ export interface PushPlan {
   purge: number[]
 }
 
-export function planPush(local: LocalTodo[], groups: Map<string, RemoteGroup>, now: number): PushPlan {
+export function planPush(local: LocalTodo[], groups: Map<string, RemoteGroup>, now: number, requireEncryption = false): PushPlan {
   const byId = new Map<string, RemoteGroup>()
   for (const g of groups.values()) if (g.id !== null) byId.set(g.id, g)
   const push: PushPlan['push'] = []
@@ -405,7 +412,7 @@ export function planPush(local: LocalTodo[], groups: Map<string, RemoteGroup>, n
       if (g && g.best.updatedAt <= v) purge.push(...g.all.map(h => h.uid))
       continue
     }
-    if (!g || v > g.best.updatedAt) push.push({ todo: t, supersedes: g ? g.all.map(h => h.uid) : [] })
+    if (!g || v > g.best.updatedAt || (requireEncryption && !g.best.encrypted && v >= g.best.updatedAt)) push.push({ todo: t, supersedes: g ? g.all.map(h => h.uid) : [] })
   }
   return { push, purge }
 }

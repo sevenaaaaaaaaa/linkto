@@ -89,6 +89,7 @@ export function CommandPalette(props: { open: boolean; onClose(): void }) {
       { id: 'nav-noise', group: '前往', label: '噪声', keywords: '分类', run: go({ kind: 'category', category: 'noise' }, '噪声') },
       { id: 'nav-todo', group: '前往', label: '待办', keywords: 'todo task 任务 清单 今天', run: () => { goView('todo'); props.onClose() } },
       { id: 'nav-insights', group: '前往', label: '洞察（商情 / 待办 / 阅读清单 / 公司分析）', keywords: '今日简报 brief daily 简报', run: () => { goView('insights'); props.onClose() } },
+      { id: 'nav-notes', group: '前往', label: '随手记（手机与电脑的邮件摘记 / 便签）', keywords: 'note memo notes 备忘录 便签 随手记 手机 笔记', icon: <IconCompose width={14} height={14} />, run: () => { localStorage.setItem('ms_insights_tab', 'memo'); goView('insights'); window.dispatchEvent(new CustomEvent('ms:insights-tab', { detail: 'memo' })); props.onClose() } },
       { id: 'nav-kb', group: '前往', label: '知识库', run: () => { goView('kb'); props.onClose() } },
       { id: 'nav-attachments', group: '前往', label: '附件（整理 / 归档到网盘 / 释放空间）', keywords: 'attachments 附件中心 网盘 Proton Dropbox 发票 合同 存储 空间', run: () => { goView('attachments'); props.onClose() } },
       { id: 'nav-finance', group: '前往', label: '财务（账单 / 订阅 / 订单 / 对账）', keywords: 'finance bill subscription order invoice 账单 订阅 订单 发票 对账 付款 续费', run: () => { goView('finance'); props.onClose() } },

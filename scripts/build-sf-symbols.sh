@@ -4,5 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .build/swift-module-cache packaging/macos
-xcrun swiftc -O -target arm64-apple-macos12.0 -module-cache-path .build/swift-module-cache packaging/macos/sf-symbols.swift -o packaging/macos/sf-symbols
+LINKTO_TARGET_ARCH="${LINKTO_TARGET_ARCH:-arm64}"
+case "$LINKTO_TARGET_ARCH" in arm64) LINKTO_SWIFT_ARCH=arm64 ;; x64) LINKTO_SWIFT_ARCH=x86_64 ;; *) echo "Unsupported architecture: $LINKTO_TARGET_ARCH" >&2; exit 1 ;; esac
+xcrun swiftc -O -target "$LINKTO_SWIFT_ARCH-apple-macos12.0" -module-cache-path .build/swift-module-cache packaging/macos/sf-symbols.swift -o packaging/macos/sf-symbols
 echo "built packaging/macos/sf-symbols"

@@ -10,11 +10,12 @@ import { Markdown } from '../components/Markdown'
 import { AIErrorNote } from '../components/AIErrorNote'
 import { openAISettings } from '../lib/ai-error'
 
-type Tab = 'daily' | 'todo' | 'reading' | 'company'
+type Tab = 'daily' | 'todo' | 'reading' | 'company' | 'memo'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'daily', label: '今日商情', icon: <IconSunrise width={13} height={13} /> },
   { id: 'todo', label: '待办', icon: <IconCheckSquare width={13} height={13} /> },
+  { id: 'memo', label: '随手记', icon: <IconFileText width={13} height={13} /> },
   { id: 'reading', label: '阅读清单', icon: <IconBook width={13} height={13} /> },
   { id: 'company', label: '公司洞察', icon: <IconBuilding width={13} height={13} /> }
 ]
@@ -27,7 +28,15 @@ function openMessage(messageId: string | null) {
 }
 
 export function InsightsView() {
-  const [tab, setTab] = useState<Tab>('daily')
+  const [tab, setTab] = useState<Tab>(() => {
+    const previous = localStorage.getItem('ms_insights_tab')
+    return TABS.some(t => t.id === previous) ? previous as Tab : 'daily'
+  })
+  useEffect(() => {
+    const change = (event: Event) => { const next = (event as CustomEvent<Tab>).detail; if (TABS.some(t => t.id === next)) setTab(next) }
+    window.addEventListener('ms:insights-tab', change)
+    return () => window.removeEventListener('ms:insights-tab', change)
+  }, [])
 
   return (
     <div className="flex-1 h-full flex flex-col">
@@ -44,7 +53,7 @@ export function InsightsView() {
           {TABS.map(t => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setTab(t.id); localStorage.setItem('ms_insights_tab', t.id) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
               style={tab === t.id
                 ? { background: 'var(--surface-strong)', color: 'var(--accent-strong)', boxShadow: 'var(--shadow-sm)', fontWeight: 600 }
@@ -60,6 +69,7 @@ export function InsightsView() {
       <div className="flex-1 overflow-y-auto px-6 pb-8">
         {tab === 'daily' && <DailyTab />}
         {tab === 'todo' && <TodoTab />}
+        {tab === 'memo' && <MemoTab />}
         {tab === 'reading' && <ReadingTab />}
         {tab === 'company' && <CompanyTab />}
       </div>
@@ -68,6 +78,29 @@ export function InsightsView() {
 }
 
 // ================= 今日商情 =================
+
+function MemoTab() {
+  const [items, setItems] = useState<InsightRecord[]>([])
+  const [editing, setEditing] = useState<string | null>(null), [title, setTitle] = useState(''), [content, setContent] = useState('')
+  const [query, setQuery] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false)
+  const load = () => void api.listInsights('memo').then(list => setItems(list.filter(i => i.status !== ('dismissed' as string)))).catch(e => setError(String(e)))
+  useEffect(load, [])
+  useMailEvent(ev => { if (ev.type === 'insights-changed') load() })
+  const save = async () => {
+    if (saving || !editing || (!title.trim() && !content.trim())) return
+    setSaving(true); setError('')
+    try { await api.saveMemo(title.trim() || content.split('\n')[0].slice(0, 120), content, editing); setEditing(null); load() }
+    catch (e) { setError(String(e)) } finally { setSaving(false) }
+  }
+  return <div className="max-w-[760px] mx-auto space-y-4">
+    <div className="flex items-center gap-3"><input aria-label="搜索随手记" value={query} onChange={e => setQuery(e.target.value)} placeholder="查找想法、邮件摘记…" className="flex-1 rounded-xl px-3 py-2 bg-hover text-ink outline-none" /><button className="rounded-xl px-4 py-2 bg-ink text-app text-sm" onClick={() => { setEditing(crypto.randomUUID()); setTitle(''); setContent('') }}>新建随手记</button></div>
+    <p className="text-xs text-ink-3">与手机共用随手记；在手机填上时间即可转为待办。加密同步可在“设置 → 同步与备份”开启。</p>
+    {!!error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+    {editing && <div className="rounded-2xl p-4 bg-panel border border-line space-y-3"><input aria-label="随手记标题" value={title} onChange={e => setTitle(e.target.value)} placeholder="标题" className="w-full rounded-lg px-3 py-2 text-lg bg-hover text-ink outline-none" /><textarea aria-label="随手记正文" value={content} onChange={e => setContent(e.target.value)} rows={7} className="w-full rounded-lg p-3 bg-hover text-ink outline-none resize-y" placeholder="写下一段想法…" /><div className="flex gap-2"><button disabled={saving} onClick={() => void save()} className="rounded-lg px-3 py-2 bg-ink text-app text-sm">{saving ? '保存中…' : '保存'}</button><button onClick={() => setEditing(null)} className="px-3 py-2 text-sm text-ink-3">取消</button></div></div>}
+    {items.filter(item => `${item.title} ${item.data.content ?? ''}`.toLowerCase().includes(query.toLowerCase())).map(item => <article key={item.id} className="rounded-2xl border border-line bg-panel p-5 space-y-3"><div className="flex items-start gap-3"><h2 className="flex-1 text-base font-semibold text-ink">{item.title}</h2><button className="text-xs text-ink-3" onClick={() => { setEditing(item.id); setTitle(item.title); setContent(String(item.data.content ?? item.data.notes ?? '')) }}>编辑</button><button className="text-xs text-ink-3" onClick={() => void api.deleteInsight(item.id).then(load).catch(e => setError(String(e)))}>移除</button></div><p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-2">{String(item.data.content ?? item.data.notes ?? '')}</p><div className="text-xs text-ink-3">{new Date(Number(item.data.updatedAt) || item.createdAt).toLocaleString('zh-CN')}{item.data.source ? ' · 关联邮件' : ''}</div></article>)}
+    {!items.length && !editing && <div className="py-16 text-center text-sm text-ink-3">从手机或这里记下第一个想法。</div>}
+  </div>
+}
 
 function DailyTab() {
   const [digest, setDigest] = useState<DailyDigest | null>(null)
@@ -90,7 +123,8 @@ function DailyTab() {
     setDigest(d ?? null)
     if (!memoLoaded) {
       const memos = (await api.listInsights('memo')) as InsightRecord[]
-      if (memos[0]) setMemoText(String((memos[0].data as { content?: string }).content ?? ''))
+      const dailyMemo = memos.find(m => m.id === 'memo-today')
+      if (dailyMemo) setMemoText(String((dailyMemo.data as { content?: string }).content ?? ''))
       setMemoLoaded(true)
     }
   }

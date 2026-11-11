@@ -1,0 +1,96 @@
+name: Friends preview builds
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: friends-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:mail
+      - if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          LINKTO_TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          bash scripts/build-native-shell.sh
+          bash scripts/build-sf-symbols.sh
+      - run: npm run build
+      - env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LinkTo-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run typecheck && npm test -- --runInBand
+        working-directory: mobile
+      - run: ./gradlew assemblePreview
+        working-directory: mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LinkTo-Android-preview
+          path: mobile/android/app/build/outputs/apk/preview/*.apk
+          if-no-files-found: error
+  ios-simulator:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - run: pod install
+        working-directory: mobile/ios
+      - run: xcodebuild -workspace mobile/ios/LinkToMobile.xcworkspace -scheme LinkToMobile -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/mobile-ios CODE_SIGNING_ALLOWED=NO
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LinkTo-iOS-simulator
+          path: .build/mobile-ios/Build/Products/Release-iphonesimulator/LinkToMobile.app
+          if-no-files-found: error

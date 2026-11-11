@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
-import { ActivityIndicator, View } from 'react-native'
+import { ActivityIndicator, Platform, StatusBar, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useMail } from './src/store/mail'
 import { GuardScreen } from './src/screens/GuardScreen'
 import { MainShell } from './src/screens/MainShell'
+import { T } from './src/theme'
 
 /** 林可兔移动版 v0.4：守卫 → 多账户邮件 / 加密 / 保险箱 / 设置 */
 export default function App() {
+  const dark = useColorScheme() === 'dark' && Platform.OS === 'ios'
   const { guard, init } = useMail()
 
   useEffect(() => {
@@ -15,9 +17,10 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
       {guard === 'unknown' ? (
-        <View style={{ flex: 1, backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color="#007C78" />
+        <View style={{ flex: 1, backgroundColor: T.paper, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={T.accent} />
         </View>
       ) : guard === 'setup' ? (
         <GuardScreen mode="setup" />

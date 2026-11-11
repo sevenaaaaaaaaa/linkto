@@ -1,90 +1,64 @@
 # 林可兔移动版（LinkTo Mobile）
 
-React Native 0.87 · 一套代码三平台：**Android / iOS / 鸿蒙（RNOH）**
+React Native 0.87，移动版独立版本 **0.5.0（build 5）**，共享 iOS / Android 业务代码。鸿蒙适配沿用 `harmony/README.md`，本轮未验证。
 
-> 版本：移动版独立编号，与桌面版（仓库根 `package.json`）不同步，也不随桌面版的 Nightly / 正式 Release 发包。当前 0.4.0，
-> 以下三处须保持一致：`mobile/package.json`、Android `android/app/build.gradle` 的 `versionName`（`versionCode` 递增）、
-> iOS 工程的 `MARKETING_VERSION`。
+## 邮件、今日和随手记
 
-```
-mobile/
-├── src/
-│   ├── imap/ImapLite.ts     # 原生 TLS socket 上的极简 IMAP 客户端
-│   ├── store/mail.ts        # zustand 状态层（账户/收件箱/阅读）
-│   ├── screens/             # 账户 / 收件箱 / 阅读三屏
-│   └── theme.ts             # 对齐桌面端「石墨纸 + 铜绿」token
-├── ios/                     # Xcode 工程（CocoaPods）
-├── android/                 # Gradle 工程
-└── harmony/                 # 鸿蒙（RNOH）接入，见 harmony/README.md
-```
+- 主导航：邮件 / 今日 / 随手记 / 更多。全局「＋」选择写邮件或随手记；阅读邮件可直接「记下 / 转待办」，保留来源并返回原邮件。
+- 随手记支持编辑、置顶、搜索。填入日期时间即成为待办；清除时间可回到随手记。
+- 今日时间轴支持优先级、时长、完成 / 重新打开、固定时间，以及自动填入空档。时长按内容关键词建议 15 / 30 / 45 分钟，用户可修改；不是 AI 推断。
+- 自动排程从当前时间向后安排至当日 20:00，保留固定时段，跳过未来日期任务；排不下的任务保留在待安排中。
+- iOS 本机待办提醒：明确打开提醒开关后申请系统通知权限；完成 / 移除时取消提醒，排程或跨设备变更时更新。Android 本机任务提醒尚未实现。
+- iOS 跟随系统深色模式；主要新增控件触控目标至少 44pt，支持读屏标签；捕获页和滑动组件尊重「减少动态效果」。
 
-## v0.1 功能
+## 邮件能力与账户
 
-- IMAP 账户添加（凭据入系统钥匙串：iOS Keychain / Android Keystore / 鸿蒙 Asset 待接）
-- 收件箱列表（最近 50 封 envelope）+ 正文阅读（text/plain）+ 已读回写
-- 常用服务商服务器自动猜测（Gmail/QQ/163/Outlook/iCloud）
+统一收件箱、文件夹、服务端搜索、下拉刷新、前台每分钟收信、HTML / 纯文本阅读、回复和纯文本发信、已读 / 未读、AI 摘要与起草、萤火密信、保险箱保留。
 
-## 安全（v0.2 守卫层）
+服务商入口与桌面共享顺序：Proton、Gmail、微软、iCloud、自定义、网易、QQ、Yahoo、NAVER、AOL、腾讯企业邮箱、AgentMail / 自定义 Agent 邮箱。提供商按准确域名匹配，避免把相似域名误识别为已知服务商。
 
-- **主密码**：首次启动设置，每次启动需解锁；验证器存系统钥匙串（未 root 不可导出）
-- **阶梯焚毁**（密码）：错 5 次锁 15 分钟（每 5 次翻倍：15m→30m→60m…），累计 15 次 → 焚毁钥匙串主密钥/全部账户凭据/本地账户索引，并清保险箱密钥、保险箱密文与 AI Key，物理不可恢复
-- **中间人即焚**：IMAP TLS 证书校验开启（自签/劫持/抓包工具）→ 判定确证中间人 → 立即焚毁本地数据
-- 单测覆盖：`npx jest`（阶梯锁定/翻倍/焚毁/中间人判定/SHA-256 向量）
-- 诚实边界：焚毁只作用于本地；服务器上的邮件与离线拷贝的密文不在焚毁范围
+- 微软：Outlook / Hotmail / Live / Microsoft 365 合并为一个入口，使用设备代码浏览器授权与 XOAUTH2；按授权结果选择服务器。首次需要自己的 Microsoft 公共客户端 ID，注册应用需允许个人及组织账户、公共客户端流及 Exchange IMAP / SMTP 委派权限。组织管理员仍可限制 IMAP / SMTP，不会绕过租户策略。
+- Gmail / iCloud / 网易 / QQ 等使用服务商要求的应用专用密码或授权码。Gmail 移动端本轮未接 Google OAuth。
+- SMTP 支持 465 隐式 TLS 和 587 STARTTLS；未提供 STARTTLS 时取消登录。原生证书验证保持开启。
+- Proton Bridge 仅在电脑运行，手机暂不能直接接入 Proton；手机同步应选择另一支持 IMAP 的邮箱。见 [Proton 官方说明](https://proton.me/support/imap-smtp-and-pop3-setup)。
+- 收信命令统一使用 UID，并按账户串行访问连接；断线可重连，Microsoft 重连会刷新访问令牌。不能把服务器失败显示成空收件箱。
 
-## 平板适配（iPad / Android 平板 / 鸿蒙 MatePad）
+本机缓存使用 AES-GCM + 系统钥匙串随机密钥：最多 1200 条信封和最近 40 封正文。联网失败时显示已缓存内容；缓存不包含完整附件文件，也不代表整箱离线。
 
-- 断点：`src/hooks/useTablet.ts`，短边 ≥ 600 判定为平板（手机横屏不误判）
-- 收件箱双栏：左列表（380pt，选中铜绿淡底高亮）+ 右阅读（ReadScreen embedded 嵌入，✕ 关闭）
-- 账户页：内容限宽 640 居中
-- 手机保持单栏压栈导航不变
+## 用自己的邮箱加密同步
 
-## 开发
+1. 电脑和手机都添加同一个支持 IMAP 的同步邮箱。
+2. 电脑「设置 → 同步与备份 → 手机与电脑」，手机「更多 → 加密同步」，选择同一邮箱与同一口令。
+3. 保存并开启。手机解锁后、回到前台、前台每分钟、编辑后防抖自动同步；电脑沿用现有同步服务，并提供立即同步入口。
+
+待办、随手记及其邮件来源放入 `LinkTo-Sync` 文件夹。它只是从本应用普通文件夹视图隐藏，在其他邮件客户端仍可能看见。新上传记录采用与桌面兼容的 scrypt + AES-256-GCM，标题和内容在加密正文中，口令保存在各设备系统凭据存储；服务商仍能看到记录数量和更新时间。
+
+合并采用 `updatedAt` 后写者胜，移除使用墓碑传播。遇到错误口令，手机在上传前终止，保留本机数据。手机追加新版本，电脑同步时清理旧版本；仅用手机长期同步会积累历史记录。旧版电脑会忽略随手记，请同时更新电脑。旧版明文记录会补传加密版本；更新后的电脑会在同步轮次中替换并清理旧明文版本。仅用手机时，旧历史需等电脑同步后清理。
+
+应用在后台被系统暂停时不会持续拉信或同步；没有 APNs / FCM 新邮件推送。已登记的 iOS 本机待办提醒可由系统触发。
+
+## 开发与验证
 
 ```bash
-npm install
-# iOS（需 Xcode + CocoaPods）
-cd ios && pod install && cd .. && npm run ios
-# Android（需 JDK 17 + Android SDK；JAVA_HOME 指向 JDK17）
+cd mobile
+npm ci
+npm run typecheck
+npm test -- --runInBand
+# iOS
+cd ios && pod install && cd ..
+npm run ios
+# Android：JDK 17 + Android SDK
 npm run android
+# 无需 Metro 的 Android 试用包（独立 .preview 应用 ID）
+npm run android:preview
 ```
 
-## v0.4.0 追加（本轮三轮回补）
+iPhone 用 Xcode 个人团队安装：用 Xcode 打开 `ios/LinkToMobile.xcworkspace`，连接并信任 iPhone，开启开发者模式，选择 LinkToMobile target 的 Signing & Capabilities → Automatically manage signing → Personal Team，然后把运行目标选为真实 iPhone。
 
-**第一轮：邮件客户端本体**
+初次开发可 Debug + Metro；日常独立使用在 Product → Scheme → Edit Scheme → Run 里选 Release，再运行，JS 会打进应用，不依赖 Metro。Bundle ID 如被占用需改为自己的唯一值。个人团队只用于自己的设备测试，须周期性重新部署，不提供朋友 TestFlight 分发。参见 [Apple 设备运行说明](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices) 与 [账户说明](https://developer.apple.com/help/account/basics/about-your-developer-account)。
 
-- 底部四入口：邮件 / 加密 / 保险箱 / 设置；iPad 左侧 Rail + 列表 + 阅读三栏
-- 统一收件箱：多 IMAP 账户合并，账户色标；账户 / 文件夹切换（LSUB）
-- IMAP SEARCH 搜索发件人 / 主题 / 正文；下拉刷新、骨架屏、空状态
-- HTML 阅读：完整 MIME 解析（multipart/alternative、base64、quoted-printable），WebView 禁 JS；默认 CSP 拦截远程图片，可手动放行
-- SMTP 发信：465 隐式 TLS，AUTH LOGIN 失败降级 PLAIN；写信 / 回复（In-Reply-To / References），纯文本 UTF-8 base64
-- 附件元数据（文件名 / 类型 / 大小）；目前只展示，不下载
-- 已读回写、标为未读、横滑切换上一封/下一封
+## 当前边界
 
-**第二轮：萤火密信 + 保险箱**
+仍未补齐附件下载 / 预览、富文本与图片发信、邮件归档 / 删除 / 稍后处理、后台新邮件推送、离线发件队列、日历双向同步和完整 Sorted³ 拖拽交互。保险箱仍是本机数据，不包含在待办 / 随手记同步中。Android 深色模式及原生任务提醒待补齐。因此 0.5 是邮件工作台试用版，还不能承诺完整替代 Canary 与 Sorted³。
 
-- 萤火密信 v2 与桌面端字节级兼容：链接 / 链接+口令 / 纯口令三种模式，AES-256-GCM + AAD + 固定档位填充，6 词 BIP39 口令（66 bit），PBKDF2-SHA256 600k
-- 写：生成后复制链接 / 口令、系统分享；读：粘贴链接或 6 词，打开成功即请求中继焚毁；缺口令不焚毁
-- 保险箱：系统 Keychain 只存 32B 密钥，条目整表 AES-GCM 加密后放 AsyncStorage；暂存与密码分栏，列表不返回密码正文；复制 45 秒后清剪贴板
-- 密信 / 邮件阅读页可直接「暂存」「存入保险箱」；可分享 Markdown
-
-**第三轮：AI 与打磨**
-
-- 设置里配置任意 OpenAI 兼容接口（base URL / model / Key 入钥匙串）
-- 阅读页 AI 摘要、AI 起草回复；写信页 AI 起草
-- 平板内容限宽、嵌套 SafeArea 修正、短日期、账户色标、触感反馈、错误态
-- Fly 中继地址可在设置里覆盖（默认本机部署的 Cloudflare Worker）
-
-## 限制（v0.4 诚实清单）
-
-- SMTP 只支持 465 隐式 TLS；Outlook / iCloud 这类只开 587 STARTTLS 的账户，发信请用 Mac 版
-- 附件只显示元数据，不能下载 / 预览；写信只能纯文本，不支持富文本和内嵌图片
-- HTML 阅读默认拦截远程图片；正文里的 cid: 内嵌图暂不还原
-- Fly 的 link-code 在随机字节 salt 上走纯 JS PBKDF2（约 1–3 秒）；code 模式优先原生，明显更快
-- 保险箱是本机的，不同步 Mac，也不直接写 Litmus；只能分享 Markdown
-- 没有推送通知、离线缓存、后台同步；没有深色模式
-- RFC2047 头覆盖 utf-8/latin1；GBK 头仍可能回退 latin1 显示
-- 鸿蒙接入沿用 harmony/README.md，本轮未做专门验证
-## 真机安装
-
-用 Xcode 打开 ios/LinkToMobile.xcworkspace，在 Signing & Capabilities 选择你的 Team；当前工程未写死 DEVELOPMENT_TEAM。TARGETED_DEVICE_FAMILY 已是 1,2，同一份 app 覆盖 iPhone 与 iPad。本机已验证 arm64 Release 编译通过；生成可安装包需要你的 Apple ID / 描述文件，命令行环境没有账号，无法代签。
+原有主密码、阶梯锁定 / 本地焚毁策略沿用；新增缓存、笔记密钥和同步口令纳入本地清理，iOS 已登记提醒也会清理。测试覆盖协议分包、UID、STARTTLS、加密存储并发、排程与实际组件新建路径；根目录 `npm run test:mail` 额外覆盖手机与电脑的加密互通及 SQLite 同步落库。

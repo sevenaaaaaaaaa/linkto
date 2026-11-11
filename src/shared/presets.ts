@@ -1,4 +1,4 @@
-import type { ProviderKey } from '@shared/types'
+import type { ProviderKey } from './types'
 
 export interface ProviderPreset {
   key: ProviderKey

@@ -3,6 +3,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { AccountWorker, folderIdOf } from '../src/main/mail/sync-engine'
 import { MailStore } from '../src/main/db'
 import { OAuthService } from '../src/main/oauth'
+import { SyncCodec } from '../mobile/src/workbench/sync-codec'
+import { KeyRing, encodeMessage, decodeMessage, parseHeaderBlock } from '../src/main/todo-sync/protocol'
+import { syncRound } from '../src/main/todo-sync/engine'
+import { randomBytes } from 'node:crypto'
 import { ACCOUNT_PROVIDER_CHOICES, PROVIDER_PRESETS, microsoftProviderFor, presetFor } from '../src/shared/presets'
 import { FakeImapFlow, setServer, mkMailbox, addMsg, server } from './restore-repro/imap-stub.cjs'
 
@@ -261,7 +265,81 @@ async function main() {
       assert.equal(f.store.repairBackfilledScreening(), 0)
     } finally { f.cleanup() }
   })
-  console.log('All mail regression checks passed')
+  await test('desktop ↔ mobile encrypted task/note codecs interoperate and reject tampering', async () => {
+    const ring = new KeyRing('a-shared-test-passphrase')
+    const codec = new SyncCodec('a-shared-test-passphrase', async n => new Uint8Array(randomBytes(n)))
+    try {
+      const desktop = { v: 1, id: 'desktop-todo', title: '从邮件整理报告', status: 'open', dueAt: null, createdAt: 1, updatedAt: 10, data: { minutes: 45, updatedAt: 10 } }
+      const encoded = await encodeMessage(desktop, { keyring: ring })
+      assert.equal(await codec.wireId(desktop.id), encoded.wireId)
+      const received = await codec.decode(encoded.raw.toString('utf8'))
+      assert.equal(received.title, desktop.title)
+      assert.equal(received.kind, 'todo')
+      const mobile = { ...received, id: 'mobile-note', kind: 'memo' as const, title: '手机随手记', data: { updatedAt: 20, content: '想法与邮件放在一起' } }
+      const raw = await codec.encode(mobile)
+      const decoded = await decodeMessage(Buffer.from(raw), ring)
+      assert.equal(decoded.kind, 'memo')
+      assert.equal(decoded.data.content, mobile.data.content)
+      await assert.rejects(decodeMessage(Buffer.from(raw.replace('X-LinkTo-Memo:', 'X-LinkTo-Todo:')), ring), /类型/)
+      const wrong = new SyncCodec('incorrect-passphrase', async n => new Uint8Array(randomBytes(n)))
+      try { await assert.rejects(wrong.decode(raw), /口令|损坏/) } finally { await wrong.clear() }
+    } finally { await codec.clear() }
+  })
+  await test('real sync engine and SQLite receive mobile memo edits and preserve removal tombstones', async () => {
+    const f = fixture()
+    const ring = new KeyRing('shared-mailbox-test')
+    const codec = new SyncCodec('shared-mailbox-test', async n => new Uint8Array(randomBytes(n)))
+    try {
+      const remote = new Map<number, Buffer>()
+      let uid = 0
+      const transport = {
+        ensureFolder: async () => 'LinkTo-Sync',
+        fetchHeaders: async () => [...remote].map(([id, raw]) => ({ uid: id, headers: parseHeaderBlock(raw.toString().split('\r\n\r\n')[0]) })),
+        download: async (_: string, id: number) => remote.get(id) ?? null,
+        append: async (_: string, raw: Buffer) => { remote.set(++uid, raw) },
+        remove: async (_: string, ids: number[]) => { ids.forEach(id => remote.delete(id)) }
+      }
+      const local = { list: () => f.store.listTodosForSync(true), upsert: (item: any) => f.store.upsertTodoFromSync(item), hasAccount: () => false, hasMessage: () => false }
+      const note = { id: 'phone-note', kind: 'memo' as const, title: '待回信的想法', status: 'open' as const, dueAt: null, createdAt: 1, data: { content: '手机写下的内容', updatedAt: 100 } }
+      remote.set(++uid, Buffer.from(await codec.encode(note)))
+      await syncRound({ transport, local, keyring: ring, now: 200 })
+      assert.equal(f.store.getInsight(note.id)?.kind, 'memo')
+      assert.equal(f.store.getInsight(note.id)?.data.content, note.data.content)
+      const updated = { ...note, status: 'dismissed' as const, data: { ...note.data, updatedAt: 300 } }
+      remote.set(++uid, Buffer.from(await codec.encode(updated)))
+      await syncRound({ transport, local, keyring: ring, now: 400 })
+      assert.equal(f.store.getInsight(note.id)?.status, 'dismissed')
+      assert.equal(f.store.listTodosForSync().length, 0, 'memo must not leak into desktop task integrations')
+      assert.equal(remote.size, 1, 'duplicate versions are cleaned by desktop sync')
+    } finally { f.cleanup(); await codec.clear() }
+  })
+  await test('enabling encryption rewrites legacy plaintext notes and local edits advance a remote clock', async () => {
+    const f = fixture()
+    const ring = new KeyRing('migration-shared-passphrase')
+    try {
+      const now = Date.now(), remote = new Map<number, Buffer>()
+      let uid = 0
+      const item = { v: 1, kind: 'memo' as const, id: 'legacy-note', title: '旧随手记', status: 'open', dueAt: null, createdAt: now, updatedAt: now, data: { content: '需要加密', updatedAt: now } }
+      remote.set(++uid, (await encodeMessage(item, { keyring: null })).raw)
+      const transport = {
+        ensureFolder: async () => 'LinkTo-Sync',
+        fetchHeaders: async () => [...remote].map(([id, raw]) => ({ uid: id, headers: parseHeaderBlock(raw.toString().split('\r\n\r\n')[0]) })),
+        download: async (_: string, id: number) => remote.get(id) ?? null,
+        append: async (_: string, raw: Buffer) => { remote.set(++uid, raw) },
+        remove: async (_: string, ids: number[]) => { ids.forEach(id => remote.delete(id)) }
+      }
+      const local = { list: () => f.store.listTodosForSync(true), upsert: (row: any) => f.store.upsertTodoFromSync(row), hasAccount: () => false, hasMessage: () => false }
+      await syncRound({ transport, local, keyring: ring, now })
+      assert.equal(remote.size, 1)
+      assert.match([...remote.values()][0].toString(), /X-LinkTo-Encrypted: 1/)
+      assert.equal((await decodeMessage([...remote.values()][0], ring)).data.content, item.data.content)
+      const future = now + 60_000
+      f.store.updateInsight(item.id, { data: { updatedAt: future } })
+      f.store.updateInsight(item.id, { status: 'done' })
+      assert.ok(Number(f.store.getInsight(item.id)?.data.updatedAt) > future)
+    } finally { f.cleanup() }
+  })
+  console.log('All mail and mobile sync regression checks passed')
 }
 
 main().catch(err => { console.error(err); process.exitCode = 1 })

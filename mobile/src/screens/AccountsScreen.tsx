@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { T, accountInitial } from '../theme'
 import { useMail } from '../store/mail'
 import { useTablet } from '../hooks/useTablet'
+import { ACCOUNT_PROVIDER_CHOICES, PROVIDER_PRESETS, microsoftProviderFor, presetFor } from '../providers'
+import { authorizeMicrosoft, msClientId, saveMsClientId } from '../oauth/microsoft'
 
 export function AccountsScreen() {
   const isTablet = useTablet()
@@ -18,46 +20,49 @@ export function AccountsScreen() {
   const [advanced, setAdvanced] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-
-  const guess = (mail: string) => {
-    const domain = mail.split('@')[1]?.toLowerCase() ?? ''
-    if (domain.includes('gmail')) return { host: 'imap.gmail.com', port: '993', smtpHost: 'smtp.gmail.com', smtpPort: '465', smtpSecure: true }
-    if (domain.includes('qq')) return { host: 'imap.qq.com', port: '993', smtpHost: 'smtp.qq.com', smtpPort: '465', smtpSecure: true }
-    if (domain.includes('163')) return { host: 'imap.163.com', port: '993', smtpHost: 'smtp.163.com', smtpPort: '465', smtpSecure: true }
-    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) {
-      return { host: 'outlook.office365.com', port: '993', smtpHost: 'smtp.office365.com', smtpPort: '587', smtpSecure: false }
-    }
-    if (domain.includes('icloud') || domain.includes('me.com')) {
-      return { host: 'imap.mail.me.com', port: '993', smtpHost: 'smtp.mail.me.com', smtpPort: '587', smtpSecure: false }
-    }
-    return { host: domain ? 'imap.' + domain : '', port: '993', smtpHost: domain ? 'smtp.' + domain : '', smtpPort: '465', smtpSecure: true }
-  }
+  const [provider, setProvider] = useState<string | null>(null)
+  const [msId, setMsId] = useState(''), [device, setDevice] = useState<{ code: string; url: string } | null>(null)
+  const authAbort = useRef<AbortController | null>(null)
+  useEffect(() => { void msClientId().then(setMsId); return () => authAbort.current?.abort() }, [])
+  const preset = provider ? PROVIDER_PRESETS.find(p => p.key === provider)! : presetFor(email)
+  const microsoft = preset.auth === 'oauth-ms'
+  const proton = preset.key === 'proton'
 
   const onEmailChange = (v: string) => {
     setEmail(v)
-    const g = guess(v)
-    setHost(g.host)
-    setPort(g.port)
-    setSmtpHost(g.smtpHost)
-    setSmtpPort(g.smtpPort)
-    setSmtpSecure(g.smtpSecure)
+    const p = provider ? PROVIDER_PRESETS.find(p => p.key === provider)! : presetFor(v)
+    setHost(p.imap?.host ?? '')
+    setPort(String(p.imap?.port ?? 993))
+    setSecure(p.imap?.secure ?? true)
+    setSmtpHost(p.smtp?.host ?? '')
+    setSmtpPort(String(p.smtp?.port ?? 465))
+    setSmtpSecure(p.smtp?.secure ?? true)
+  }
+  const oauth = async () => {
+    setBusy(true); setErr(''); setDevice(null)
+    const controller = new AbortController(); authAbort.current = controller
+    try {
+      await saveMsClientId(msId)
+      const tokens = await authorizeMicrosoft((code, url) => setDevice({ code, url }), controller.signal)
+      const selected = PROVIDER_PRESETS.find(p => p.key === microsoftProviderFor(tokens.email, tokens.tenantId))!
+      const problem = await saveAccount({ email: tokens.email, pass: JSON.stringify(tokens), host: selected.imap!.host, port: String(selected.imap!.port), secure: true, smtpHost: selected.smtp!.host, smtpPort: String(selected.smtp!.port), smtpSecure: selected.smtp!.secure, authType: 'oauth-ms', accessToken: tokens.accessToken })
+      if (problem) throw new Error(problem)
+      await openUnified()
+    } catch (e) { if (!controller.signal.aborted) setErr(e instanceof Error ? e.message : String(e)) }
+    finally { if (!controller.signal.aborted) { setBusy(false); setDevice(null) } }
   }
 
   const submit = async () => {
     setBusy(true)
     setErr('')
-    const problem = await saveAccount({
-      email, pass, host, port, secure,
-      smtpHost, smtpPort, smtpSecure
-    })
-    setBusy(false)
-    if (problem) {
-      setErr(problem)
-      return
-    }
-    const acc = useMail.getState().accounts.find(a => a.email === email.trim().toLowerCase())
-    setEmail(''); setPass(''); setAdvanced(false)
-    if (acc) void openAccount(acc)
+    try {
+      const problem = await saveAccount({ email, pass, host, port, secure, smtpHost, smtpPort, smtpSecure })
+      if (problem) { setErr(problem); return }
+      const acc = useMail.getState().accounts.find(a => a.email === email.trim().toLowerCase())
+      setEmail(''); setPass(''); setAdvanced(false)
+      if (acc) await openAccount(acc)
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
   }
 
   return (
@@ -65,7 +70,7 @@ export function AccountsScreen() {
       <View style={s.headRow}>
         <View style={{ flex: 1 }}>
           <Text style={[s.title, isTablet && s.padWide]}>林可兔 LinkTo</Text>
-          <Text style={[s.subtitle, isTablet && s.padWide]}>移动版 v0.4 · 多账户 / 文件夹 / 搜索 / HTML / 发信</Text>
+          <Text style={[s.subtitle, isTablet && s.padWide]}>邮件、今日安排与随手记 · 邮箱凭据留在自己的设备</Text>
         </View>
         {accounts.length > 0 && (
           <TouchableOpacity onPress={() => void openUnified()} hitSlop={10}>
@@ -104,9 +109,17 @@ export function AccountsScreen() {
 
         <View style={s.section}>
           <Text style={s.sectionTitle}>{accounts.length ? '添加另一个账户' : '添加 IMAP 账户'}</Text>
-          <Text style={s.hint}>Gmail / QQ / 163 需要应用专用密码或授权码；发信默认按服务商猜 SMTP</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>{ACCOUNT_PROVIDER_CHOICES.map(p => <Pressable accessibilityRole="button" key={p.key} onPress={() => { setProvider(p.key); if (p.imap) { setHost(p.imap.host); setPort(String(p.imap.port)); setSecure(p.imap.secure) } else setHost(''); if (p.smtp) { setSmtpHost(p.smtp.host); setSmtpPort(String(p.smtp.port)); setSmtpSecure(p.smtp.secure) } else setSmtpHost('') }} style={[s.providerChip, preset.key === p.key && { borderColor: T.accent, backgroundColor: T.accentSoft }]}><Text style={s.checkText}>{p.label}</Text></Pressable>)}</ScrollView>
+          <Pressable accessibilityRole="button" onPress={() => { setProvider(null); setErr('') }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={s.advancedText}>按邮箱地址自动识别</Text></Pressable>
+          <Text style={s.hint}>{preset.hint}</Text>
+          {proton ? <View style={s.providerNotice}><Text style={s.hint}>Proton Bridge 只在电脑上运行。手机端暂不能直接接入 Proton；可先使用其他邮箱同步待办与笔记。</Text><Pressable accessibilityRole="button" onPress={() => void Linking.openURL('https://proton.me/mail/download')} style={s.btn}><Text style={s.advancedText}>打开 Proton 官方移动端入口 ↗</Text></Pressable></View> : microsoft ? <View style={s.providerNotice}>
+            <Text style={s.hint}>Outlook / Hotmail / Live / Microsoft 365 统一浏览器授权。首次填写自己的公共客户端应用 ID，之后可复用；个人邮箱需在 Outlook 网页版开启 IMAP。</Text>
+            <TextInput accessibilityLabel="Microsoft 客户端 ID" value={msId} onChangeText={setMsId} placeholder="Microsoft Client ID（可与电脑共用）" placeholderTextColor={T.faint} autoCapitalize="none" style={s.input} />
+            {device && <><Text selectable style={[s.title, { textAlign: 'center', marginBottom: 12 }]}>{device.code}</Text><Pressable accessibilityRole="button" onPress={() => void Linking.openURL(device.url)} style={s.btn}><Text style={s.advancedText}>打开微软页面并输入此代码</Text></Pressable></>}
+            <Pressable accessibilityRole="button" disabled={busy} onPress={() => void oauth()} style={[s.btn, s.btnPrimary, busy && { opacity: 0.5 }]}><Text style={s.btnPrimaryText}>{busy ? '等待浏览器授权…' : '使用 Microsoft 登录'}</Text></Pressable>
+          </View> : <>
           <TextInput style={s.input} placeholder="邮箱地址" placeholderTextColor={T.faint} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={onEmailChange} />
-          <TextInput style={s.input} placeholder="密码 / 授权码" placeholderTextColor={T.faint} secureTextEntry value={pass} onChangeText={setPass} />
+          <TextInput style={s.input} placeholder={preset.passwordLabel ?? '密码 / 授权码'} placeholderTextColor={T.faint} secureTextEntry value={pass} onChangeText={setPass} />
           <View style={s.row}>
             <TextInput style={[s.input, s.grow]} placeholder="IMAP 服务器" placeholderTextColor={T.faint} autoCapitalize="none" autoCorrect={false} value={host} onChangeText={setHost} />
             <TextInput style={[s.input, s.port]} placeholder="993" placeholderTextColor={T.faint} keyboardType="number-pad" value={port} onChangeText={setPort} />
@@ -132,11 +145,12 @@ export function AccountsScreen() {
             </>
           )}
 
-          {err !== '' && <Text style={s.err}>{err}</Text>}
           <TouchableOpacity style={[s.btn, s.btnPrimary, s.btnBig, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => void submit()}>
             <Text style={s.btnPrimaryText}>{busy ? '验证连接中…' : '验证并添加'}</Text>
           </TouchableOpacity>
-          <Text style={s.note}>凭据存于系统钥匙串（Keychain / Keystore），不上传、不落明文。移动版当前只支持 465 隐式 TLS 发信；Outlook / iCloud 的 587 STARTTLS 请用 Mac 版发送。</Text>
+          </>}
+          {err !== '' && <Text accessibilityRole="alert" style={s.err}>{err}</Text>}
+          <Text style={s.note}>凭据存于系统钥匙串。支持 465 TLS 与 587 STARTTLS；客户端授权码、API Key 或浏览器授权按服务商要求选择。</Text>
         </View>
       </ScrollView>
     </View>
@@ -180,4 +194,5 @@ const s = StyleSheet.create({
   btnGhost: { backgroundColor: 'rgba(31,34,38,0.06)' },
   btnGhostText: { color: T.faint, fontSize: 12 },
   note: { fontSize: 11, color: T.faint, marginTop: 10, lineHeight: 16 }
+  ,providerChip: { minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: T.hairline, backgroundColor: T.surface }, providerNotice: { padding: 14, gap: 12, borderRadius: 14, backgroundColor: T.surfaceAlt }
 })

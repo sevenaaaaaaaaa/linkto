@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Keychain from 'react-native-keychain'
+import { linkToCore } from '../native/LinkToCore'
 
 /**
  * 守卫焚毁时一并清掉 v0.4 新增的本地秘密：
@@ -11,8 +12,14 @@ import * as Keychain from 'react-native-keychain'
  */
 export async function burnExtraSecrets(): Promise<void> {
   await Promise.allSettled([
+    linkToCore.cancelAllReminders(),
     Keychain.resetGenericPassword({ service: 'linkto.vault.key' }),
     Keychain.resetGenericPassword({ service: 'linkto.ai.key' }),
+    Keychain.resetGenericPassword({ service: 'linkto.workbench.key' }),
+    Keychain.resetGenericPassword({ service: 'linkto.mail-cache.key' }),
+    Keychain.resetGenericPassword({ service: 'linkto.workbench.sync' }),
+    AsyncStorage.removeItem('linkto.workbench.v1'),
+    AsyncStorage.removeItem('linkto.mail-cache.v1'),
     AsyncStorage.removeItem('linkto.vault.v1'),
     AsyncStorage.removeItem('linkto.accounts.v1')
   ])

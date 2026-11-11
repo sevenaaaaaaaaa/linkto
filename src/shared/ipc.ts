@@ -213,7 +213,7 @@ export interface LinkToApi {
   todoFromMessage(messageId: string): Promise<string | null>
   aiPlanTodos(ids: string[]): Promise<{ ok: boolean; error?: string; plans: { id: string; minutes: number; priority: 1 | 2 | 3; reason: string }[] }>
   deleteInsight(id: string): Promise<void>
-  saveMemo(title: string, content: string): Promise<void>
+  saveMemo(title: string, content: string, id?: string): Promise<void>
 
   // ---------- 收件箱纪律 ----------
   snoozeMessages(ids: string[], until: number | null): Promise<void>

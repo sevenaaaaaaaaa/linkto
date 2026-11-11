@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, useColorScheme, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import { T, fmtBytes, fmtShortDate, prettyFrom } from '../theme'
@@ -10,9 +10,11 @@ import { addVaultItem } from '../vault/store'
 import { aiDraftReply, aiSummarize } from '../ai/client'
 import { htmlToText } from '../util/text'
 import { addressOf } from '../smtp/message'
+import { useWorkbench } from '../workbench/store'
 
 /** embedded=true：平板双栏右栏嵌入，无 SafeArea / 返回头 */
 export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
+  const dark = useColorScheme() === 'dark'
   const { reading, body, bodyLoading, backToInbox, composeReply, composeNew, toggleSeen } = useMail()
   const [showImages, setShowImages] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
@@ -36,8 +38,8 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
       { text: '暂存正文', onPress: () => void saveTo('note') },
       { text: '存入保险箱', onPress: () => void saveTo('secret') },
       { text: '分享 Markdown', onPress: () => void Share.share({ message: markdown }).catch(() => undefined) },
-      { text: '取消', style: 'cancel' }
-    ])
+      ...(Platform.OS === 'ios' ? [{ text: '取消', style: 'cancel' as const }] : [])
+    ], { cancelable: true })
   }
 
   const saveTo = async (kind: 'note' | 'secret') => {
@@ -112,6 +114,7 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
 
   const actions = (
     <View style={s.actionRow}>
+      <Pressable accessibilityRole="button" onPress={() => useWorkbench.getState().openCapture({ source: { accountEmail: reading.accountEmail, mailbox: reading.mailbox, uid: reading.uid, messageId: reading.messageId, subject: reading.subject, from: reading.from, date: reading.date }, content: plainText.slice(0, 3000) })} style={s.actBtn}><Text style={s.actText}>记下 / 转待办</Text></Pressable>
       <Pressable onPress={() => void openAI()} style={s.actBtn}><Text style={s.actText}>AI 摘要</Text></Pressable>
       <Pressable onPress={saveMenu} style={s.actBtn}><Text style={s.actText}>暂存 / 保险箱</Text></Pressable>
       <Pressable onPress={() => void Share.share({ message: markdown }).catch(() => undefined)} style={s.actBtn}><Text style={s.actText}>分享</Text></Pressable>
@@ -158,8 +161,8 @@ export function ReadScreen({ embedded = false }: { embedded?: boolean }) {
             </Pressable>
           </View>
           <WebView
-            key={showImages ? 'img-on' : 'img-off'}
-            source={{ html: wrapHtml(html, { showImages }) }}
+            key={`${dark ? 'dark' : 'light'}-${showImages ? 'img-on' : 'img-off'}`}
+            source={{ html: wrapHtml(html, { showImages, dark }) }}
             style={s.web}
             originWhitelist={['*']}
             javaScriptEnabled={false}
@@ -270,8 +273,8 @@ const s = StyleSheet.create({
   attachName: { flex: 1, fontSize: 12, color: T.ink },
   attachSize: { fontSize: 10, color: T.faint },
   attachNote: { fontSize: 10, color: T.faint, marginTop: 2 },
-  actionRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingBottom: 10 },
-  actBtn: { backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, paddingBottom: 10 },
+  actBtn: { backgroundColor: T.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: T.hairline, borderRadius: 10, paddingHorizontal: 10, minHeight: 44, justifyContent: 'center' },
   actText: { fontSize: 11, color: T.inkSoft, fontWeight: '500' },
   aiRoot: { flex: 1, backgroundColor: T.paper },
   aiHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.hairline },

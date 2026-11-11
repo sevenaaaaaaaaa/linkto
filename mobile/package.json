@@ -1,6 +1,6 @@
 {
   "name": "LinkToMobile",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -8,6 +8,8 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "android:preview": "cd android && ./gradlew assemblePreview",
     "test:live": "jest __tests__/relay.live.test.ts --runInBand --testPathIgnorePatterns=/node_modules/"
   },
   "dependencies": {

@@ -1171,15 +1171,16 @@ export class MailStore {
     if (patch.status !== undefined) this.db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(patch.status, id)
     // 任何改动都刷新 updatedAt（跨设备同步按它做「后写者胜」合并；同步写入时由调用方带上远端时间）
     const merged = { ...j<Record<string, unknown>>(row.data_json, {}), ...(patch.data ?? {}) }
-    if (!patch.data || patch.data.updatedAt === undefined) merged.updatedAt = Date.now()
+    if (!patch.data || patch.data.updatedAt === undefined) merged.updatedAt = Math.max(Date.now(), (Number(merged.updatedAt) || 0) + 1)
     this.db.prepare('UPDATE insights SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), id)
   }
 
   /** 待办同步：全部待办（不限条数，含已完成 / 已移除的墓碑） */
-  listTodosForSync(): { id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }[] {
-    const rows = this.db.prepare("SELECT * FROM insights WHERE kind = 'todo'").all() as any[]
+  listTodosForSync(includeMemos = false): { kind?: 'todo' | 'memo'; id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }[] {
+    const rows = this.db.prepare(includeMemos ? "SELECT * FROM insights WHERE kind IN ('todo', 'memo')" : "SELECT * FROM insights WHERE kind = 'todo'").all() as any[]
     return rows.map(r => ({
       id: r.id,
+      kind: r.kind,
       title: r.title,
       status: r.status ?? 'open',
       dueAt: r.due_at ?? null,
@@ -1191,14 +1192,14 @@ export class MailStore {
   }
 
   /** 待办同步：写入远端版本（保留远端 created_at / status / data.updatedAt，不刷新时间戳；已有行不改关联的账户与邮件） */
-  upsertTodoFromSync(t: { id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }) {
+  upsertTodoFromSync(t: { kind?: 'todo' | 'memo'; id: string; title: string; status: string; dueAt: number | null; createdAt: number; accountId: string | null; messageId: string | null; data: Record<string, unknown> }) {
     this.db
       .prepare(
         `INSERT INTO insights (id, kind, account_id, message_id, title, data_json, status, due_at, period, created_at)
-         VALUES (?, 'todo', ?, ?, ?, ?, ?, ?, NULL, ?)
-         ON CONFLICT(id) DO UPDATE SET title=excluded.title, data_json=excluded.data_json, status=excluded.status, due_at=excluded.due_at`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, title=excluded.title, data_json=excluded.data_json, status=excluded.status, due_at=excluded.due_at`
       )
-      .run(t.id, t.accountId, t.messageId, t.title, JSON.stringify(t.data), t.status, t.dueAt, t.createdAt)
+      .run(t.id, t.kind === 'memo' ? 'memo' : 'todo', t.accountId, t.messageId, t.title, JSON.stringify(t.data), t.status, t.dueAt, t.createdAt)
   }
 
   setInsightStatus(id: string, status: string) {

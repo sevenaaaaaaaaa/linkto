@@ -207,7 +207,7 @@ export class TodoSyncService {
           remove: (folder, uids) => worker.deleteFromFolder(folder, uids)
         },
         local: {
-          list: () => store.listTodosForSync(),
+          list: () => store.listTodosForSync(true),
           upsert: t => store.upsertTodoFromSync({ ...t, accountId: t.accountId ?? null, messageId: t.messageId ?? null }),
           hasAccount: id => accountIds.has(id),
           hasMessage: id => !!store.getMessageRow(id)
@@ -220,7 +220,10 @@ export class TodoSyncService {
     } finally {
       await worker.returnToInbox().catch(() => {})
       this.lastStats = { pulled: stats.pulled, pushed: stats.pushed, removed: stats.removed, at: Date.now() }
-      if (stats.changedLocal) this.deps.event({ type: 'todos-changed' })
+      if (stats.changedLocal) {
+        this.deps.event({ type: 'todos-changed' })
+        this.deps.event({ type: 'insights-changed' })
+      }
     }
     return stats.more
   }
