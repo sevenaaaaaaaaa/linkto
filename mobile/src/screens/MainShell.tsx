@@ -20,11 +20,13 @@ import { CaptureSheet } from '../workbench/CaptureSheet'
 import { useWorkbench } from '../workbench/store'
 import { pauseWorkSync, syncWorkbench } from '../workbench/sync'
 import { SyncSettings } from '../workbench/SyncSettings'
+import { AgentScreen } from '../agent/AgentScreen'
+import { useAgent } from '../agent/store'
 
-const TABS: Array<{ id: MailTab; label: string; icon: 'mail' | 'today' | 'note' | 'more' }> = [
+const TABS: Array<{ id: MailTab; label: string; icon: 'mail' | 'today' | 'agent' | 'more' }> = [
   { id: 'mail', label: '邮件', icon: 'mail' },
   { id: 'today', label: '今日', icon: 'today' },
-  { id: 'notes', label: '随手记', icon: 'note' },
+  { id: 'agent', label: 'Agent', icon: 'agent' },
   { id: 'more', label: '更多', icon: 'more' }
 ]
 
@@ -33,7 +35,7 @@ function MoreScreen() {
     <Text style={s.moreTitle}>更多</Text><Text style={s.moreSubtitle}>让邮件、安排与想法，在自己的设备间流动。</Text>
     <SyncSettings />
     <ReminderSettings />
-    {([{ id: 'settings', title: '邮箱与设置', text: '账户、AI、应用锁与本机数据' }, { id: 'fly', title: '萤火密信', text: '发送一封阅后即焚的消息' }, { id: 'vault', title: '保险箱', text: '加密暂存内容与密码' }] as const).map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => useMail.getState().setTab(item.id)} style={({ pressed }) => [s.moreCard, pressed && { opacity: 0.7 }]}><Text style={s.moreCardTitle}>{item.title}</Text><Text style={s.moreSubtitle}>{item.text}</Text></Pressable>)}
+    {([{ id: 'notes', title: '随手记与便签', text: '记录想法，安排时间后转为待办' }, { id: 'settings', title: '邮箱与设置', text: '账户、AI、应用锁与本机数据' }, { id: 'fly', title: '萤火密信', text: '发送一封阅后即焚的消息' }, { id: 'vault', title: '保险箱', text: '加密暂存内容与密码' }] as const).map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => useMail.getState().setTab(item.id)} style={({ pressed }) => [s.moreCard, pressed && { opacity: 0.7 }]}><Text style={s.moreCardTitle}>{item.title}</Text><Text style={s.moreSubtitle}>{item.text}</Text></Pressable>)}
   </ScrollView>
 }
 
@@ -47,6 +49,7 @@ function MailTab() {
 
 function Content({ tab }: { tab: MailTab }) {
   if (tab === 'today' || tab === 'notes') return <WorkbenchScreen mode={tab} />
+  if (tab === 'agent') return <AgentScreen />
   if (tab === 'more') return <MoreScreen />
   if (tab === 'fly') return <FlyScreen />
   if (tab === 'vault') return <VaultScreen />
@@ -58,7 +61,7 @@ export function MainShell() {
   const isTablet = useTablet()
   const insets = useSafeAreaInsets()
   const { tab, screen, setTab } = useMail()
-  const activeTab = ['fly', 'vault', 'settings'].includes(tab) ? 'more' : tab
+  const activeTab = ['fly', 'vault', 'settings'].includes(tab) ? 'more' : tab === 'notes' ? 'today' : tab
   const focusMode = tab === 'mail' && (screen === 'read' || screen === 'compose')
   useEffect(() => {
     const openReminder = async () => { const id = await linkToCore.takeReminder(); if (id && useMail.getState().guard === 'ready') { useMail.getState().setTab('today'); useWorkbench.getState().openCapture({ itemId: id }) } }
@@ -68,7 +71,7 @@ export function MainShell() {
     })
     const reminderTimer = setInterval(() => { if (AppState.currentState === 'active') void openReminder() }, 2000)
     const timer = setInterval(() => { if (AppState.currentState === 'active') { void syncWorkbench(); if (useMail.getState().accounts.length && useMail.getState().tab === 'mail') void useMail.getState().refresh() } }, 60_000)
-    return () => { clearInterval(timer); clearInterval(reminderTimer); listener.remove(); pauseWorkSync(); useWorkbench.getState().clear() }
+    return () => { clearInterval(timer); clearInterval(reminderTimer); listener.remove(); pauseWorkSync(); useAgent.getState().clear(); useWorkbench.getState().clear() }
   }, [])
   const create = () => Alert.alert('新建', '从一封邮件，或一段想法开始。', [
     { text: '写邮件', onPress: () => { if (!useMail.getState().accounts.length) { setTab('mail'); useMail.getState().go('accounts') } else useMail.getState().composeNew() } },

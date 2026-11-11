@@ -70,3 +70,40 @@ test('special-use folder beats an unrelated folder with an archive-like name', a
   const { imap } = client((_, tag) => `* LIST (\\HasNoChildren) "/" "Project Archive"\r\n* LIST (\\Trash) "/" "Deleted Items"\r\n${tag} OK done\r\n`)
   expect(await imap.actionFolder('trash')).toBe('Deleted Items')
 })
+
+test('Chinese and ampersand folder names round-trip through modified UTF-7 and quoted names', async () => {
+  const { encodeMailbox, decodeMailbox } = require('../src/imap/mailbox-name')
+  for (const name of ['项目/待跟进', 'A & B', '客户📨', '日本語']) expect(decodeMailbox(encodeMailbox(name))).toBe(name)
+  expect(encodeMailbox('台北')).toBe('&U,BTFw-')
+  const { imap, commands } = client((command, tag) => command.startsWith('LIST') ? `* LIST () "/" "${encodeMailbox('项目/待跟进')}"\r\n${tag} OK done\r\n` : `${tag} OK done\r\n`)
+  expect((await imap.listMailboxes())[0].name).toBe('项目/待跟进')
+  await imap.createMailbox('项目/待跟进')
+  await imap.selectMailbox('项目/待跟进')
+  expect(commands.some(c => c.includes(`CREATE "${encodeMailbox('项目/待跟进')}"`))).toBe(true)
+  await expect(imap.createMailbox('bad\r\nDELETE INBOX')).rejects.toThrow('名称')
+})
+
+test('folder deletion protects system folders, nonempty folders and folders with children', async () => {
+  const { imap, commands } = client((command, tag) => command.startsWith('LIST') ? `* LIST (\\Trash) "/" "Deleted Items"\r\n* LIST () "/" "Project"\r\n* LIST () "/" "Parent"\r\n* LIST () "/" "Parent/Child"\r\n${tag} OK done\r\n` : `* STATUS "Project" (MESSAGES 2)\r\n${tag} OK done\r\n`)
+  await expect(imap.deleteEmptyMailbox('INBOX')).rejects.toThrow('系统文件夹')
+  await expect(imap.renameMailbox('Deleted Items', 'Oops')).rejects.toThrow('系统文件夹')
+  await expect(imap.deleteEmptyMailbox('Parent')).rejects.toThrow('子文件夹')
+  await expect(imap.deleteEmptyMailbox('Project')).rejects.toThrow('空文件夹')
+  expect(commands.some(c => / DELETE /.test(c))).toBe(false)
+})
+
+test('empty custom folder deletion and rename use server commands without expunging mail', async () => {
+  const { imap, commands } = client((command, tag) => command.startsWith('LIST') ? `* LIST () "/" "Project"\r\n${tag} OK done\r\n` : command.startsWith('STATUS') ? `* STATUS "Project" (MESSAGES 0)\r\n${tag} OK done\r\n` : `${tag} OK done\r\n`)
+  await imap.renameMailbox('Project', 'Renamed')
+  await imap.deleteEmptyMailbox('Project')
+  expect(commands.some(c => /RENAME "Project" "Renamed"/.test(c))).toBe(true)
+  expect(commands.some(c => /DELETE "Project"/.test(c))).toBe(true)
+  expect(commands.some(c => /EXPUNGE/.test(c))).toBe(false)
+})
+
+test('custom folder creation cannot collide with the hidden encrypted-sync namespace', async () => {
+  const { imap, commands } = client((_, tag) => `${tag} OK done\r\n`)
+  await expect(imap.createMailbox('LinkTo-Sync')).rejects.toThrow('保留')
+  await expect(imap.createMailbox('INBOX/LinkTo-Sync')).rejects.toThrow('保留')
+  expect(commands).toHaveLength(0)
+})

@@ -19,6 +19,8 @@ import type { MailSource } from '../workbench/model'
 import { isSyncFolder } from '../workbench/sync-codec'
 import { validMicrosoftToken } from '../oauth/microsoft'
 import { presetFor } from '../providers'
+import { useWorkbench } from '../workbench/store'
+import { validateMailbox } from '../imap/mailbox-name'
 
 export interface MobileAccount {
   id: string
@@ -34,7 +36,7 @@ export interface MobileAccount {
   authType?: 'password' | 'oauth-ms'
 }
 
-export type MailTab = 'mail' | 'today' | 'notes' | 'more' | 'fly' | 'vault' | 'settings'
+export type MailTab = 'mail' | 'today' | 'notes' | 'agent' | 'more' | 'fly' | 'vault' | 'settings'
 export type MailScreen = 'accounts' | 'inbox' | 'read' | 'compose'
 
 export interface MobileMessage extends MailEnvelope {
@@ -147,6 +149,10 @@ interface MailState {
   openMessage(m: MobileMessage, opts?: { stay?: boolean }): Promise<void>
   openSource(source: MailSource): Promise<void>
   moveMessage(m: MobileMessage, kind: 'archive' | 'trash'): Promise<{ undo?: () => Promise<void> }>
+  moveToFolder(m: MobileMessage, target: string): Promise<{ undo?: () => Promise<void> }>
+  fetchBody(m: MobileMessage): Promise<MailBody>
+  reloadFolders(accountId: string): Promise<void>
+  changeFolder(accountId: string, action: 'create' | 'rename' | 'delete', name: string, target?: string): Promise<void>
   toggleSeen(m: MobileMessage): Promise<void>
   stepReading(dir: 1 | -1): Promise<void>
   backToInbox(): void
@@ -454,20 +460,63 @@ export const useMail = create<MailState>((set, get) => ({
     await get().openMessage(message)
   },
 
+  fetchBody: async m => {
+    const account = get().accounts.find(a => a.id === m.accountId)
+    if (!account) throw new Error('原邮箱已移除')
+    const raw = await withClient(account, client => client.fetchRaw(m.mailbox, m.uid))
+    const parsed = parseMime(raw)
+    return { html: parsed.html, text: parsed.text, attachments: parsed.attachments }
+  },
+
+  reloadFolders: async accountId => {
+    const account = get().accounts.find(a => a.id === accountId)
+    if (!account) throw new Error('原邮箱已移除')
+    const list = await withClient(account, c => c.listMailboxes())
+    if (get().guard !== 'ready') return
+    set({ folders: { ...get().folders, [accountId]: list.filter(f => !isSyncFolder(f.name) && !f.flags.some(flag => /^\\noselect$/i.test(flag))) } })
+  },
+
+  changeFolder: async (accountId, action, name, target) => {
+    const account = get().accounts.find(a => a.id === accountId)
+    if (!account) throw new Error('原邮箱已移除')
+    if (action === 'create') name = validateMailbox(name)
+    if (action === 'rename') target = validateMailbox(target ?? '')
+    const delimiter = get().folders[accountId]?.find(f => f.name === name)?.delimiter
+    await withClient(account, c => action === 'create' ? c.createMailbox(name) : action === 'rename' ? c.renameMailbox(name, target ?? '') : c.deleteEmptyMailbox(name), false)
+    if (get().guard !== 'ready') return
+    if (action === 'rename') await useWorkbench.getState().remapMailbox(account.email, name, target!, delimiter || '')
+    // Cached UIDs and paths may be invalid after folder changes. Reload from server.
+    await forgetCachedAccount(accountId).catch(() => {})
+    const scope = get().scope
+    if (scope.accountId === accountId && (scope.folder === name || (delimiter && scope.folder.startsWith(name + delimiter)))) {
+      await get().openFolder(account, action === 'rename' ? target! + scope.folder.slice(name.length) : 'INBOX')
+    }
+    await get().reloadFolders(accountId)
+  },
+
   moveMessage: async (m, kind) => {
     const account = get().accounts.find(a => a.id === m.accountId)
     if (!account) throw new Error('请先添加原邮箱')
+    const target = await withClient(account, client => client.actionFolder(kind), false)
+    return get().moveToFolder(m, target)
+  },
+
+  moveToFolder: async (m, target) => {
+    const account = get().accounts.find(a => a.id === m.accountId)
+    if (!account) throw new Error('请先添加原邮箱')
     const moved = await withClient(account, async client => {
-      const target = await client.actionFolder(kind)
       const uid = await client.moveMessage(m.mailbox, m.uid, target, m.messageId)
       return { target, uid }
     }, false)
+    if (get().guard !== 'ready') return {}
     const same = (x: MobileMessage) => messageKey(x) === messageKey(m)
+    await useWorkbench.getState().remapMessage(m, target, moved.uid).catch(() => set({ statusText: '邮件已移动，但待办中的来源路径未更新，请刷新后检查' }))
     set(s => ({ messages: s.messages.filter(x => !same(x)), ...(s.reading && same(s.reading) ? { reading: null, body: null, screen: 'inbox' as const } : {}) }))
     const cache = await readMailCache().catch(() => null)
     if (cache) await saveMailList(m.accountId, m.mailbox, cache.messages.filter(x => x.accountId === m.accountId && x.mailbox === m.mailbox && !same(x))).catch(() => {})
     return moved.uid ? { undo: async () => {
-      await withClient(account, client => client.moveMessage(moved.target, moved.uid!, m.mailbox, m.messageId), false)
+      const uid = await withClient(account, client => client.moveMessage(moved.target, moved.uid!, m.mailbox, m.messageId), false)
+      await useWorkbench.getState().remapMessage({ ...m, mailbox: moved.target, uid: moved.uid! }, m.mailbox, uid)
       await get().refresh()
     } } : {}
   },
@@ -593,7 +642,7 @@ type Get = () => MailState
 
 async function loadFolders(set: Set, get: Get, account: MobileAccount): Promise<void> {
   try {
-    const list = (await withClient(account, c => c.listMailboxes())).filter(f => !isSyncFolder(f.name) && !f.flags.includes('\\Noselect'))
+    const list = (await withClient(account, c => c.listMailboxes())).filter(f => !isSyncFolder(f.name) && !f.flags.some(flag => /^\\noselect$/i.test(flag)))
     set({ folders: { ...get().folders, [account.id]: list } })
   } catch {
     /* 文件夹加载失败不阻塞收件箱 */

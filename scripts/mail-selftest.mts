@@ -275,11 +275,12 @@ async function main() {
       const received = await codec.decode(encoded.raw.toString('utf8'))
       assert.equal(received.title, desktop.title)
       assert.equal(received.kind, 'todo')
-      const mobile = { ...received, id: 'mobile-note', kind: 'memo' as const, title: '手机随手记', data: { updatedAt: 20, content: '想法与邮件放在一起' } }
+      const mobile = { ...received, id: 'mobile-note', kind: 'memo' as const, title: '手机随手记', data: { updatedAt: 20, content: '想法与邮件放在一起', collection: '项目跟进' } }
       const raw = await codec.encode(mobile)
       const decoded = await decodeMessage(Buffer.from(raw), ring)
       assert.equal(decoded.kind, 'memo')
       assert.equal(decoded.data.content, mobile.data.content)
+      assert.equal(decoded.data.collection, mobile.data.collection)
       await assert.rejects(decodeMessage(Buffer.from(raw.replace('X-LinkTo-Memo:', 'X-LinkTo-Todo:')), ring), /类型/)
       const wrong = new SyncCodec('incorrect-passphrase', async n => new Uint8Array(randomBytes(n)))
       try { await assert.rejects(wrong.decode(raw), /口令|损坏/) } finally { await wrong.clear() }
@@ -300,11 +301,12 @@ async function main() {
         remove: async (_: string, ids: number[]) => { ids.forEach(id => remote.delete(id)) }
       }
       const local = { list: () => f.store.listTodosForSync(true), upsert: (item: any) => f.store.upsertTodoFromSync(item), hasAccount: () => false, hasMessage: () => false }
-      const note = { id: 'phone-note', kind: 'memo' as const, title: '待回信的想法', status: 'open' as const, dueAt: null, createdAt: 1, data: { content: '手机写下的内容', updatedAt: 100 } }
+      const note = { id: 'phone-note', kind: 'memo' as const, title: '待回信的想法', status: 'open' as const, dueAt: null, createdAt: 1, data: { content: '手机写下的内容', collection: '项目跟进', updatedAt: 100 } }
       remote.set(++uid, Buffer.from(await codec.encode(note)))
       await syncRound({ transport, local, keyring: ring, now: 200 })
       assert.equal(f.store.getInsight(note.id)?.kind, 'memo')
       assert.equal(f.store.getInsight(note.id)?.data.content, note.data.content)
+      assert.equal(f.store.getInsight(note.id)?.data.collection, note.data.collection)
       const updated = { ...note, status: 'dismissed' as const, data: { ...note.data, updatedAt: 300 } }
       remote.set(++uid, Buffer.from(await codec.encode(updated)))
       await syncRound({ transport, local, keyring: ring, now: 400 })

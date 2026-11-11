@@ -2,7 +2,7 @@
 
 林可兔 LinkTo 的面向用户的版本说明，新版本在上。每日构建（Nightly）不在此列出，见 GitHub Releases 中的 `nightly` 预发布。
 
-桌面版与移动版分别编号：本文件的版本号指桌面版（macOS / Windows / Linux）；移动版（Android / iOS / 鸿蒙）尚未单独发布，其进度在条目中注明「移动版」。
+桌面版与移动版分别编号：本文件的版本号指桌面版（macOS / Windows / Linux）；移动版使用 `mobile-v` 标签，首个预发布为 `mobile-v0.7.1`，详见 [移动版更新日志](mobile/CHANGELOG.md)。
 
 ### 0.7.5 — 2026-11-03  修复：主窗口顶部不再有空带，各列标题带全显示
 

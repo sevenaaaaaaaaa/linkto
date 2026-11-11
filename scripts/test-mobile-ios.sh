@@ -11,6 +11,9 @@ cleanup() { xcrun simctl shutdown "$LINKTO_QA_SIM" >/dev/null 2>&1 || true; xcru
 trap cleanup EXIT
 xcrun simctl boot "$LINKTO_QA_SIM"
 xcrun simctl bootstatus "$LINKTO_QA_SIM" -b
+if [ -n "${LINKTO_QA_APPEARANCE:-}" ]; then
+  case "$LINKTO_QA_APPEARANCE" in light|dark) xcrun simctl ui "$LINKTO_QA_SIM" appearance "$LINKTO_QA_APPEARANCE" ;; *) echo 'LINKTO_QA_APPEARANCE must be light or dark' >&2; exit 2 ;; esac
+fi
 if [ -z "${LINKTO_IOS_APP:-}" ]; then
   xcodebuild -workspace mobile/ios/LinkToMobile.xcworkspace -scheme LinkToMobile -configuration Release -sdk iphonesimulator -destination "platform=iOS Simulator,id=$LINKTO_QA_SIM" -derivedDataPath .build/mobile-ios CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
   LINKTO_IOS_APP="$ROOT/.build/mobile-ios/Build/Products/Release-iphonesimulator/LinkToMobile.app"

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View
 } from 'react-native'
@@ -16,6 +16,8 @@ import { notice } from '../ui/Notice'
 import { useAppearance } from '../ui/preferences'
 import { SearchText } from '../ui/SearchText'
 import { linkToCore } from '../native/LinkToCore'
+import { FolderSheet } from '../mail/FolderSheet'
+import { useAgent } from '../agent/store'
 
 function MessageRow({ m, unified, selected, compact, query, snoozeUntil, onOpen }: { m: MobileMessage; unified: boolean; selected: boolean; compact: boolean; query: string; snoozeUntil?: number; onOpen(): void }) {
   const unread = !m.flags.includes('\\Seen')
@@ -64,6 +66,12 @@ export function InboxScreen() {
     searchQuery, composeNew, setTab
   } = useMail()
   const appearance = useAppearance()
+  const [folderAccount, setFolderAccount] = useState<string | null>(null), [moving, setMoving] = useState<MobileMessage[] | null>(null)
+  const actionKeys = useRef(new Set<string>())
+  const quickMove = async (message: MobileMessage, kind: 'archive' | 'trash') => {
+    const key = messageKey(message); if (actionKeys.current.has(key)) return; actionKeys.current.add(key)
+    try { const result = await useMail.getState().moveMessage(message, kind); notice(kind === 'trash' ? '已移至垃圾箱' : '已归档', result.undo) } catch (e) { notice(String(e)) } finally { actionKeys.current.delete(key) }
+  }
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchBusy, setBatchBusy] = useState(false)
@@ -146,7 +154,9 @@ export function InboxScreen() {
           disabled={showSnoozed || selecting}
           seen={item.flags.includes('\\Seen')}
           onPress={() => open(item)}
-          onLongPress={() => { if (showSnoozed) { const task = held.find(i => sameSource(item, i.data.source!)); if (task) Alert.alert('稍后处理', '可立即恢复到本应用收件箱。', [{ text: '取消' }, { text: '现在处理', onPress: () => void useWorkbench.getState().remove(task.id) }]); } else setActions(item) }}
+          onLongPress={() => { if (showSnoozed) { const task = held.find(i => sameSource(item, i.data.source!)); if (task) Alert.alert('稍后处理', '可立即恢复到本应用收件箱。', [{ text: '取消' }, { text: '现在处理', onPress: () => void useWorkbench.getState().remove(task.id) }]); } else { setSelecting(true); toggleSelection(item); void linkToCore.haptic('light') } }}
+          onArchive={() => void quickMove(item, 'archive')}
+          onTrash={() => void quickMove(item, 'trash')}
           onToggle={() => { if (!showSnoozed && !selecting) void toggleSeen(item).catch(e => notice(String(e))) }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(messageKey(item)) }} accessibilityLabel={item.subject} onPress={() => toggleSelection(item)} style={{ display: selecting ? 'flex' : 'none', width: 44, minHeight: 60, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: T.accent }}>{selected.has(messageKey(item)) ? '✓' : '○'}</Text></Pressable><View style={{ flex: 1 }}><MessageRow onOpen={() => open(item)} snoozeUntil={showSnoozed ? Number(held.find(i => sameSource(item, i.data.source!))?.data.mailSnoozeUntil) : undefined} compact={appearance.compact} query={searchQuery} m={item} unified={unified} selected={selecting ? selected.has(messageKey(item)) : isTablet && reading?.uid === item.uid && reading?.accountId === item.accountId && reading?.mailbox === item.mailbox} /></View>{!showSnoozed && !selecting && <Pressable accessibilityRole="button" accessibilityLabel={`处理邮件 ${item.subject}`} onPress={() => setActions(item)} style={{ width: 44, minHeight: 60, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: T.faint, fontSize: 21 }}>···</Text></Pressable>}</View>
@@ -157,7 +167,7 @@ export function InboxScreen() {
 
   const header = (
     <View style={s.header}>
-      <Pressable onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Text style={s.headerGlyph}>☰</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="账户与文件夹" onPress={() => setDrawer(true)} hitSlop={10} style={s.headerIcon}><Text style={s.headerGlyph}>☰</Text></Pressable>
       <View style={{ flex: 1 }}>
         <Text style={s.title} numberOfLines={1}>{showSnoozed ? '稍后处理' : unified ? '收件箱' : scope.title === 'INBOX' ? '收件箱' : scope.title}</Text>
         <Text style={s.sub} numberOfLines={1}>{subtitle}{unread ? ' · ' + unread + ' 封未读' : ''}</Text>
@@ -199,6 +209,11 @@ export function InboxScreen() {
   </View>
   const batchBar = selecting ? <View style={{ flexDirection: 'row', backgroundColor: T.surfaceAlt, paddingHorizontal: 16, gap: 18, flexWrap: 'wrap', alignItems: 'center' }}><Text style={{ color: T.inkSoft, fontSize: 12 }}>已选 {selected.size}</Text>{(['archive', 'seen', 'trash'] as const).map((kind, index) => <Pressable accessibilityRole="button" key={kind} disabled={batchBusy || !selected.size} onPress={() => void batch(kind)} style={{ minHeight: 48, justifyContent: 'center' }}><Text style={{ color: kind === 'trash' ? T.danger : T.accent, opacity: batchBusy || !selected.size ? 0.4 : 1, fontSize: 13 }}>{['归档', '标已读', '移至垃圾箱'][index]}</Text></Pressable>)}</View> : null
 
+  const selectedMessages = messages.filter(m => selected.has(messageKey(m)))
+  const startMove = () => { if (new Set(selectedMessages.map(m => m.accountId)).size !== 1) { Alert.alert('请选择同一个邮箱的邮件', 'IMAP 文件夹移动在同一邮箱内完成，请按邮箱分别选择。'); return }; setMoving(selectedMessages) }
+  const extraBatch = selecting ? <View style={{ flexDirection: 'row', paddingHorizontal: 16, gap: 22, backgroundColor: T.surfaceAlt }}><Pressable accessibilityRole="button" disabled={batchBusy || !selected.size} onPress={startMove} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent }}>移动到…</Text></Pressable><Pressable accessibilityRole="button" disabled={batchBusy || !selected.size} onPress={() => { if (!useAgent.getState().setInput(selectedMessages)) { notice('Agent 正在执行，请先停止或等待完成'); return }; setTab('agent') }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: T.accent }}>交给 Agent</Text></Pressable></View> : null
+  const folderSheet = folderAccount ? <FolderSheet accountId={folderAccount} onClose={() => setFolderAccount(null)} /> : moving?.length ? <FolderSheet accountId={moving[0].accountId} messages={moving} onClose={() => { setMoving(null); setSelecting(false); setSelected(new Set()) }} /> : null
+
   const statusBar = status === 'syncing' ? (
     <View style={s.statusBar}><ActivityIndicator size="small" color={T.accent} /><Text style={s.statusText}>{statusText || '同步中…'}</Text></View>
   ) : status === 'error' ? (
@@ -234,6 +249,7 @@ export function InboxScreen() {
                   <Text style={s.drawerServer} numberOfLines={1}>{a.host}</Text>
                 </View>
               </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => { setDrawer(false); setFolderAccount(a.id) }} style={s.folderRow}><Text style={{ color: T.accent, fontSize: 13 }}>新建 / 管理文件夹</Text></Pressable>
               <Pressable
                 onPress={() => { setDrawer(false); void openFolder(a, 'INBOX') }}
                 style={[s.folderRow, s.folderIndent, scope.accountId === a.id && scope.folder === 'INBOX' && s.folderOn]}
@@ -266,7 +282,7 @@ export function InboxScreen() {
         <View style={s.tabletList}>
           {header}
           {listTools}
-          {batchBar}
+          {batchBar}{extraBatch}
           {searchBar}
           {statusBar}
           {list}
@@ -289,7 +305,7 @@ export function InboxScreen() {
           )}
         </View>
         <MailActions message={actions} onPeek={setPeek} onClose={() => setActions(null)} />
-      {drawerView}
+      {drawerView}{folderSheet}
         {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
       </View>
     )
@@ -299,7 +315,7 @@ export function InboxScreen() {
     <View style={s.root}>
       {header}
       {listTools}
-      {batchBar}
+      {batchBar}{extraBatch}
       {searchBar}
       {statusBar}
       {list}
@@ -307,7 +323,7 @@ export function InboxScreen() {
         <Text style={s.fabGlyph}>✎</Text>
       </Pressable>
       <MailActions message={actions} onPeek={setPeek} onClose={() => setActions(null)} />
-      {drawerView}
+      {drawerView}{folderSheet}
       {peek && <LensPeek msg={peek} onClose={() => setPeek(null)} />}
     </View>
   )

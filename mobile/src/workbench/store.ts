@@ -4,6 +4,7 @@ import { encryptedStore, randomBytes, serial } from '../storage/encrypted'
 import { autoSchedule, dayEnd, estimateMinutes, plannedAt, type MailSource, type WorkItem } from './model'
 import { defaultPlanning, validatePlanning, type Planning } from './planning'
 import { linkToCore } from '../native/LinkToCore'
+import { clearInlineDrafts } from './drafts'
 
 const disk = encryptedStore<WorkItem[]>('workbench', () => [])
 const preferences = encryptedStore<Planning>('planning', () => defaultPlanning)
@@ -17,6 +18,7 @@ const update = (fn: (items: WorkItem[]) => WorkItem[], recordUndo = true) => {
   if (generation !== revision) return
   const previous = await disk.read()
   const items = fn(previous)
+  if (items === previous) return
   if (generation !== revision) return
   await disk.write(items)
   if (generation === revision) {
@@ -40,14 +42,23 @@ interface WorkState {
   savePlanning(value: Planning): Promise<void>
   reorder(ids: string[]): Promise<void>
   undo(): Promise<void>
+  snapshotUndo(): () => Promise<void>
+  edit(id: string, title: string, content: string, expectedVersion: number): Promise<void>
+  batch(ids: string[], action: 'remove' | 'complete' | 'reopen' | 'tomorrow' | 'pin'): Promise<void>
+  remapMailbox(email: string, oldName: string, newName: string, delimiter: string): Promise<void>
+  remapMessage(source: MailSource, target: string, uid: number | null): Promise<void>
+  moveCollection(ids: string[], name: string): Promise<void>
+  renameCollection(from: string, to: string): Promise<void>
+  importTasks(tasks: Array<{ id: string; title: string; content: string; source: MailSource; minutes: number; at: number | null }>): Promise<{ added: number; skipped: number; overflow: number }>
   loaded: boolean
   error: string
-  capture: { itemId?: string; source?: MailSource; content?: string } | null
+  activeCollection: string | null
+  capture: { itemId?: string; source?: MailSource; content?: string; collection?: string | null } | null
   load(): Promise<void>
   clear(): void
   openCapture(input?: WorkState['capture']): void
   closeCapture(): void
-  save(input: { id?: string; title: string; content: string; at: number | null; fixed?: boolean; minutes?: number; priority?: 1 | 2 | 3; reminder?: boolean; source?: MailSource }): Promise<void>
+  save(input: { id?: string; title: string; content: string; at: number | null; fixed?: boolean; minutes?: number; priority?: 1 | 2 | 3; reminder?: boolean; source?: MailSource; expectedVersion?: number; collection?: string | null }): Promise<void>
   snooze(source: MailSource, until: number): Promise<string>
   complete(id: string): Promise<void>
   remove(id: string): Promise<void>
@@ -57,7 +68,7 @@ interface WorkState {
 }
 
 export const useWorkbench = create<WorkState>((set, get) => ({
-  items: [], planning: defaultPlanning, loaded: false, error: '', capture: null,
+  items: [], planning: defaultPlanning, loaded: false, error: '', capture: null, activeCollection: null,
   load: async () => {
     const generation = revision
     try {
@@ -68,10 +79,69 @@ export const useWorkbench = create<WorkState>((set, get) => ({
     }
     catch (err) { if (generation === revision) set({ error: String(err), loaded: true }) }
   },
-  clear: () => { revision++; undoEntry = null; set({ items: [], loaded: false, capture: null }) },
+  clear: () => { revision++; undoEntry = null; clearInlineDrafts(); set({ items: [], loaded: false, capture: null, activeCollection: null }) },
   savePlanning: async value => {
     validatePlanning(value)
     await serial('planning', () => preferences.write(value)); set({ planning: value })
+  },
+  moveCollection: (ids, name) => {
+    if (name.trim().length > 64) return Promise.reject(new Error('文件夹名称最多 64 字'))
+    const selected = new Set(ids)
+    return update(items => items.map(item => !selected.has(item.id) || item.status === 'dismissed' ? item : { ...item, data: { ...item.data, collection: name.trim(), updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) } }))
+  },
+  renameCollection: (from, to) => {
+    if (to.trim().length > 64) return Promise.reject(new Error('文件夹名称最多 64 字'))
+    return update(items => items.map(item => item.data.collection !== from || item.status === 'dismissed' ? item : { ...item, data: { ...item.data, collection: to.trim(), updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) } }))
+  },
+  remapMailbox: (email, oldName, newName, delimiter) => update(items => items.map(item => {
+    const source = item.data.source
+    if (!source || source.accountEmail.toLowerCase() !== email.toLowerCase() || !(source.mailbox === oldName || (delimiter && source.mailbox.startsWith(oldName + delimiter)))) return item
+    return { ...item, data: { ...item.data, source: { ...source, mailbox: newName + source.mailbox.slice(oldName.length) }, updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) } }
+  }), false),
+  remapMessage: (m, target, uid) => update(items => items.map(item => {
+    const source = item.data.source
+    if (!source || source.accountEmail.toLowerCase() !== m.accountEmail.toLowerCase() || !(m.messageId ? source.messageId === m.messageId : source.mailbox === m.mailbox && source.uid === m.uid)) return item
+    return { ...item, data: { ...item.data, source: { ...source, mailbox: target, uid: uid ?? 0 }, updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) } }
+  }), false),
+  edit: async (id, title, content, expectedVersion) => {
+    if (!title.trim() && !content.trim()) throw new Error('先写下一点内容')
+    await update(items => items.map(item => {
+      if (item.id !== id) return item
+      if (item.data.updatedAt !== expectedVersion || item.status === 'dismissed') throw new Error('记录已在另一处更新；草稿已保留，请复制内容后重新打开')
+      return { ...item, title: (title.trim() || content.trim().split('\n')[0]).slice(0, 240), data: { ...item.data, content, notes: content, updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) } }
+    }))
+    const item = get().items.find(i => i.id === id)
+    if (item) await reconcileReminder(item).catch(() => set({ error: '内容已保存，提醒更新失败，请检查通知权限。' }))
+  },
+  batch: async (ids, action) => {
+    const selected = new Set(ids)
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(9, 0, 0, 0)
+    await update(items => items.map(item => !selected.has(item.id) || item.status === 'dismissed' ? item : {
+      ...item, ...(action === 'tomorrow' ? { kind: 'todo' as const, dueAt: tomorrow.getTime() } : {}),
+      status: action === 'remove' ? 'dismissed' : action === 'complete' ? 'done' : action === 'reopen' || action === 'tomorrow' ? 'open' : item.status,
+      data: { ...item.data, ...(action === 'pin' ? { pinned: true } : {}), ...(action === 'tomorrow' ? { fixedAt: null, scheduledAt: tomorrow.getTime(), unscheduled: false, ...(item.data.mailSnoozeUntil ? { mailSnoozeUntil: tomorrow.getTime() } : {}) } : {}), updatedAt: Math.max(Date.now(), item.data.updatedAt + 1) }
+    }))
+    const results = await Promise.allSettled(get().items.filter(i => selected.has(i.id)).map(reconcileReminder))
+    if (results.some(r => r.status === 'rejected')) set({ error: '记录已更新，但部分提醒未更新，请检查通知权限。' })
+  },
+  importTasks: async tasks => {
+    let added = 0, skipped = 0, overflow = 0
+    await update(items => {
+      const known = new Set(items.map(i => i.id)), now = Date.now()
+      const next = [...items]
+      for (const task of tasks) {
+        if (known.has(task.id)) { skipped++; continue }
+        known.add(task.id); added++
+        next.push({ id: task.id, kind: 'todo', title: task.title, status: 'open', dueAt: task.at, createdAt: now, data: { updatedAt: now, content: task.content, notes: task.content, source: task.source, minutes: task.minutes, fixedAt: task.at, reminder: false } })
+      }
+      if (!added) return items
+      const date = new Date(now); date.setHours(0, 0, 0, 0)
+      const plan = autoSchedule(next, now, date.getTime() + get().planning.end * 60000, get().planning)
+      overflow = plan.overflow.length
+      return next.map(item => plan.scheduled.has(item.id) || plan.overflow.includes(item.id) ? { ...item, data: { ...item.data, scheduledAt: plan.scheduled.get(item.id) ?? null, unscheduled: !plan.scheduled.has(item.id), updatedAt: Math.max(now, item.data.updatedAt + 1) } } : item)
+    })
+    await Promise.allSettled(get().items.map(reconcileReminder))
+    return { added, skipped, overflow }
   },
   reorder: async ids => {
     const order = new Map(ids.map((id, index) => [id, index]))
@@ -100,7 +170,11 @@ export const useWorkbench = create<WorkState>((set, get) => ({
     undoEntry = null
     await Promise.allSettled(get().items.filter(i => entry.versions.has(i.id)).map(reconcileReminder))
   },
-  openCapture: (input = {}) => set({ capture: input }),
+  snapshotUndo: () => {
+    const entry = undoEntry
+    return async () => { if (!entry || undoEntry !== entry) throw new Error('此后已有其他改动，无法再撤销这次工作流'); await get().undo() }
+  },
+  openCapture: (input = {}) => set({ capture: { collection: get().activeCollection, ...input } }),
   closeCapture: () => set({ capture: null }),
   save: async input => {
     if (!input.title.trim() && !input.content.trim()) throw new Error('先写下一点内容')
@@ -108,13 +182,15 @@ export const useWorkbench = create<WorkState>((set, get) => ({
     const now = Date.now()
     await update(items => {
       const previous = items.find(i => i.id === id)
+      if (input.expectedVersion !== undefined && previous?.data.updatedAt !== input.expectedVersion) throw new Error('记录已在另一处更新；草稿已保留，请复制内容后重新打开')
       const item: WorkItem = {
         id, kind: input.at ? 'todo' : 'memo', title: (input.title.trim() || input.content.trim().split('\n')[0]).slice(0, 240),
         status: previous?.status === 'dismissed' ? 'open' : previous?.status ?? 'open', dueAt: input.at,
         createdAt: previous?.createdAt ?? now,
-        data: { ...previous?.data, content: input.content, notes: input.content, updatedAt: Math.max(now, (previous?.data.updatedAt ?? 0) + 1),
+        data: { ...previous?.data, collection: previous?.data.collection ?? input.collection ?? '', content: input.content, notes: input.content, updatedAt: Math.max(now, (previous?.data.updatedAt ?? 0) + 1),
           minutes: input.minutes ?? estimateMinutes(input.title + input.content), priority: input.priority ?? 2,
-          fixedAt: input.fixed ? input.at : null, scheduledAt: input.at, unscheduled: false, reminder: input.reminder ?? false, source: input.source ?? previous?.data.source }
+          fixedAt: input.fixed ? input.at : null, scheduledAt: input.at, unscheduled: false, reminder: input.reminder ?? false, source: input.source ?? previous?.data.source,
+          ...(previous?.data.mailSnoozeUntil ? { mailSnoozeUntil: input.at } : {}) }
       }
       return [...items.filter(i => i.id !== id), item]
     })

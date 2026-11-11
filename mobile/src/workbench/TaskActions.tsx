@@ -6,7 +6,7 @@ import { themedStyles, T } from '../theme'
 import { notice } from '../ui/Notice'
 export function TaskActions({ item, onClose }: { item: WorkItem; onClose(): void }) {
   const work = useWorkbench()
-  const run = async (fn: () => Promise<void>, label: string) => { try { await fn(); notice(label, work.undo); onClose() } catch (e) { Alert.alert('操作未完成', String(e)) } }
+  const run = async (fn: () => Promise<void>, label: string) => { try { await fn(); notice(label, work.snapshotUndo()); onClose() } catch (e) { Alert.alert('操作未完成', String(e)) } }
   const shift = (minutes: number) => {
     const at = (plannedAt(item) ?? Date.now()) + minutes * 60000
     const conflicts = conflictsFor({ ...item, dueAt: at, data: { ...item.data, fixedAt: at, scheduledAt: at, unscheduled: false } }, work.items)

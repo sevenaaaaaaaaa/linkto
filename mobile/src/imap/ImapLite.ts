@@ -1,4 +1,5 @@
 import TcpSocket from 'react-native-tcp-socket'
+import { decodeMailbox, encodeMailbox, protectedMailbox, validateMailbox } from './mailbox-name'
 
 /**
  * ImapLite —— 跑在原生 TLS socket 上的极简 IMAP 客户端（v1）
@@ -320,14 +321,42 @@ export class ImapLite {
     if (!r.ok) throw new Error('文件夹列表获取失败')
     const out: MailBoxInfo[] = []
     for (const line of r.lines) {
-      const m = line.match(/^\* (?:LIST|LSUB) \(([^)]*)\)\s+"?([^"]*)"? "?"?([^"]*)"?"?$/)
-      if (m) out.push({ flags: m[1].trim().split(/\s+/).filter(Boolean), delimiter: unquote(m[2]), name: unquote(m[3]) })
+      const m = line.match(/^\* (?:LIST|LSUB) \(([^)]*)\)\s+("(?:[^"\\]|\\.)*"|NIL)\s+("(?:[^"\\]|\\.)*"|[^\s]+)$/i)
+      if (m) out.push({ flags: m[1].trim().split(/\s+/).filter(Boolean), delimiter: m[2] === 'NIL' ? '' : unquote(m[2]), name: decodeMailbox(unquote(m[3])) })
     }
     return out
   }
 
+  async createMailbox(name: string): Promise<void> {
+    const path = validateMailbox(name)
+    if (!(await this.cmd(`CREATE ${ImapLite.quote(encodeMailbox(path))}`)).ok) throw new Error('文件夹创建失败：名称已存在或服务器不允许')
+    await this.cmd(`SUBSCRIBE ${ImapLite.quote(encodeMailbox(path))}`)
+  }
+
+  async renameMailbox(name: string, target: string): Promise<void> {
+    await this.assertCustomMailbox(name)
+    if (!(await this.cmd(`RENAME ${ImapLite.quote(encodeMailbox(name))} ${ImapLite.quote(encodeMailbox(validateMailbox(target)))}`)).ok) throw new Error('文件夹改名失败，请检查名称和权限')
+  }
+
+  private async assertCustomMailbox(name: string): Promise<MailBoxInfo> {
+    const folder = (await this.listMailboxes()).find(f => f.name === name)
+    if (!folder || protectedMailbox(folder)) throw new Error('系统文件夹与同步文件夹不可改名或删除')
+    return folder
+  }
+
+  async deleteEmptyMailbox(name: string): Promise<void> {
+    const folder = await this.assertCustomMailbox(name)
+    if (folder.delimiter && (await this.listMailboxes()).some(f => f.name.startsWith(name + folder.delimiter))) throw new Error('请先移走子文件夹')
+    const result = await this.cmd(`STATUS ${ImapLite.quote(encodeMailbox(name))} (MESSAGES)`)
+    if (!result.ok || !result.lines.some(line => {
+      const match = line.match(/^\* STATUS ("(?:[^"\\]|\\.)*"|[^\s]+) \(MESSAGES (\d+)\)$/i)
+      return match && decodeMailbox(unquote(match[1])) === name && Number(match[2]) === 0
+    })) throw new Error('只能删除空文件夹；请先移动其中的邮件')
+    if (!(await this.cmd(`DELETE ${ImapLite.quote(encodeMailbox(name))}`)).ok) throw new Error('文件夹删除失败，请刷新检查')
+  }
+
   async selectMailbox(name: string): Promise<{ exists: number }> {
-    const r = await this.cmd(`SELECT ${ImapLite.quote(name)}`)
+    const r = await this.cmd(`SELECT ${ImapLite.quote(encodeMailbox(name))}`)
     if (!r.ok) throw new Error(`打开邮箱失败：${name}`)
     let exists = 0
     for (const line of r.lines) {
@@ -394,7 +423,7 @@ export class ImapLite {
     if (found) return found.name
     const name = kind === 'archive' ? 'Archive' : 'Trash'
     for (const path of [name, `INBOX.${name}`, `INBOX/${name}`]) {
-      if ((await this.cmd(`CREATE ${ImapLite.quote(path)}`)).ok) return path
+      if ((await this.cmd(`CREATE ${ImapLite.quote(encodeMailbox(path))}`)).ok) return path
     }
     throw new Error('无法找到或创建目标文件夹，请检查邮箱权限')
   }
@@ -403,9 +432,9 @@ export class ImapLite {
   async moveMessage(mailbox: string, uid: number, target: string, messageId?: string): Promise<number | null> {
     if (mailbox === target) throw new Error('邮件已经在目标文件夹中')
     await this.selectMailbox(mailbox)
-    let result = await this.cmd(`UID MOVE ${uid} ${ImapLite.quote(target)}`)
+    let result = await this.cmd(`UID MOVE ${uid} ${ImapLite.quote(encodeMailbox(target))}`)
     if (!result.ok) {
-      result = await this.cmd(`UID COPY ${uid} ${ImapLite.quote(target)}`)
+      result = await this.cmd(`UID COPY ${uid} ${ImapLite.quote(encodeMailbox(target))}`)
       if (!result.ok) throw new Error('移动邮件失败：服务器拒绝复制到目标文件夹')
       const deleted = await this.cmd(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`)
       if (!deleted.ok) throw new Error('邮件已复制，但原邮件未能移除，请刷新检查')
@@ -423,8 +452,8 @@ export class ImapLite {
     const existing = folders.find(f => /(?:^|[/.])LinkTo-Sync$/i.test(f.name))
     if (existing) return existing.name
     for (const path of ['LinkTo-Sync', 'INBOX.LinkTo-Sync', 'Folders/LinkTo-Sync']) {
-      const made = await this.cmd(`CREATE ${ImapLite.quote(path)}`)
-      if (made.ok) { await this.cmd(`SUBSCRIBE ${ImapLite.quote(path)}`); return path }
+      const made = await this.cmd(`CREATE ${ImapLite.quote(encodeMailbox(path))}`)
+      if (made.ok) { await this.cmd(`SUBSCRIBE ${ImapLite.quote(encodeMailbox(path))}`); return path }
     }
     throw new Error('无法创建同步文件夹，请检查邮箱权限')
   }
@@ -456,7 +485,7 @@ export class ImapLite {
   async appendSync(folder: string, raw: string): Promise<void> {
     // Sync messages are ASCII headers + base64 body; literal byte length equals string length.
     if (/[^\x00-\x7f]/.test(raw)) throw new Error('同步邮件必须使用 base64 正文')
-    const response = await this.cmd(`APPEND ${ImapLite.quote(folder)} (\\Seen) {${raw.length}}`, undefined, 60000, () => this.sock?.write(raw + '\r\n'))
+    const response = await this.cmd(`APPEND ${ImapLite.quote(encodeMailbox(folder))} (\\Seen) {${raw.length}}`, undefined, 60000, () => this.sock?.write(raw + '\r\n'))
     if (!response.ok) throw new Error('写入同步文件夹失败')
   }
 
