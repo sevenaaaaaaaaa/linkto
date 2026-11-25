@@ -1,0 +1,142 @@
+# 通用发布工作流：push 一个 v* tag → 自动建 GitHub Release（含自动 changelog）
+#
+# 为什么每个仓库都装这个：
+#   1) 发布动作从"本机跑脚本 + 传几十 MB"变成"推几 KB 的 tag"，慢链路再差也不影响建 Release
+#   2) tag 与版本文件不一致时立刻失败，不再出现"发出去才发现版本号没 bump"
+#   3) Release 说明由 GitHub 按 commit 生成，不用手写、不会写错版本
+#
+# 版本源按顺序自动识别（仓库根目录）：VERSION / package.json / pubspec.yaml /
+# Cargo.toml / pyproject.toml / composer.json
+# 也可以放一个 .release-version-file，里面写版本文件的相对路径（monorepo 用这个）。
+#
+# 需要真实安装包的仓库：本工作流只建 Release 壳；安装包用
+#   gh-ops/release.sh --local --asset <文件>
+# 补传（逐资产重试，只重传失败的那个）。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（必须已存在于仓库，例如 v1.2.3）"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          fetch-depth: 0
+
+      - name: 解出版本号并与 tag 比对
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
+          V="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+          case "$V" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+          SRC=""
+          if [ -f .release-version-file ]; then
+            SRC=$(head -1 .release-version-file | tr -d ' \r\n')
+            [ -f "$SRC" ] || { echo "::error::.release-version-file 指向的文件不存在：$SRC"; exit 1; }
+          else
+            for f in VERSION package.json pubspec.yaml Cargo.toml pyproject.toml composer.json; do
+              [ -f "$f" ] && { SRC="$f"; break; }
+            done
+          fi
+
+          if [ -z "$SRC" ]; then
+            echo "::warning::仓库里没有可识别的版本文件，跳过版本比对（建议补 .release-version-file）"
+            exit 0
+          fi
+
+          FOUND=""
+          case "$SRC" in
+            VERSION)       FOUND=$(head -1 "$SRC" | sed 's/^v//' | tr -d ' \r\n') ;;
+            package.json)  FOUND=$(python3 -c 'import json;print(json.load(open("package.json")).get("version",""))') ;;
+            composer.json) FOUND=$(python3 -c 'import json;print(json.load(open("composer.json")).get("version",""))') ;;
+            pubspec.yaml)  FOUND=$(grep -m1 '^version:' "$SRC" | awk '{print $2}' | cut -d+ -f1) ;;
+            pyproject.toml)
+              FOUND=$(sed -n '/^\[project\]/,/^\[/p' "$SRC" | awk -F'"' '/^version *=/{print $2; exit}')
+              [ -z "$FOUND" ] && FOUND=$(awk -F'"' '/^version *=/{print $2; exit}' "$SRC") ;;
+            Cargo.toml)
+              FOUND=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$SRC" | awk -F'"' '/^version *=/{print $2; exit}')
+              [ -z "$FOUND" ] && FOUND=$(sed -n '/^\[package\]/,/^\[/p' "$SRC" | awk -F'"' '/^version *=/{print $2; exit}') ;;
+            *) FOUND="" ;;
+          esac
+
+          echo "版本源 $SRC = ${FOUND:-（空）} ; tag 版本 = $V"
+
+          # 版本一致就放行；不一致时：声明了 .release-version-file 的仓库严格阻塞，
+          # 没声明的只警告（有些仓库 VERSION 与 tag 口径本来就不同，例如 websflow）。
+          strict='^[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ -z "$FOUND" ]; then
+            echo "::warning::$SRC 里读不出版本号，跳过比对"
+          elif [ "$FOUND" = "$V" ]; then
+            echo "✓ $SRC = $FOUND 与 tag 一致"
+          elif [ -f .release-version-file ] && printf '%s' "$FOUND" | grep -Eq "$strict" && printf '%s' "$V" | grep -Eq "$strict"; then
+            echo "::error::$SRC 里是 ${FOUND}，但 tag 是 $TAG —— 版本没 bump 或 tag 打错了"
+            echo "修法：改 $SRC → git commit → git tag -f $TAG → git push -f origin $TAG"
+            exit 1
+          else
+            echo "::warning::$SRC = ${FOUND}，tag 版本 = ${V}（未声明 .release-version-file，不阻塞）"
+          fi
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.check.outputs.tag }}
+      VERSION: ${{ needs.check.outputs.version }}
+      PRE: ${{ needs.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.tag }}
+          fetch-depth: 0
+
+      - name: 建 Release（已存在则跳过）
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，跳过创建（安装包用 gh-ops/release.sh --local 补传）"
+            exit 0
+          fi
+          ARGS=(--title "$TAG" --generate-notes --verify-tag)
+          [ "$PRE" = "true" ] && ARGS+=(--prerelease)
+          gh release create "$TAG" "${ARGS[@]}"
+
+      - name: 汇总
+        run: |
+          {
+            echo "### 发布结果"
+            echo ""
+            echo "- tag: \`$TAG\`"
+            echo "- 版本: \`$VERSION\`"
+            echo "- 预发布: \`$PRE\`"
+            echo "- 链接: ${{ github.server_url }}/${{ github.repository }}/releases/tag/$TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
