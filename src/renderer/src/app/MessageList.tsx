@@ -2039,6 +2039,17 @@ function IconChevron(props: { open: boolean }) {
 function TodayBriefCard(props: { accountId: string | null }) {
   const [brief, setBrief] = useState<TodayBrief | null>(null)
   const [hidden, setHidden] = useState(() => sessionStorage.getItem('ms_brief_hidden') === '1')
+  // AI 没配 key 时简报只能走本地规则；不说明白，用户会以为「AI 就这水平」
+  const [aiOff, setAiOff] = useState(false)
+  useEffect(() => {
+    void api
+      .getAISettings()
+      .then(s => {
+        const local = /127\.0\.0\.1|localhost/.test(s.baseURL || '')
+        setAiOff(!(s.enabled && (!!s.apiKey || local)))
+      })
+      .catch(() => {})
+  }, [])
   useEffect(() => {
     let alive = true
     const load = () => void api.todayBrief(props.accountId).then(b => alive && setBrief(b)).catch(() => {})
@@ -2060,13 +2071,24 @@ function TodayBriefCard(props: { accountId: string | null }) {
       </span>
       <div className="flex-1 min-w-0 text-sm leading-relaxed">
         <div className="font-semibold" style={{ color: 'var(--fg)' }}>{brief.headline}</div>
+        {/* 简报是摘要不是正文：每行最多两行，超了省略，全文进 title / 完整简报 */}
         {brief.lines.slice(0, 2).map((l, i) => (
-          <div key={i} className="text-xs leading-[18px]" style={{ color: 'var(--muted)' }}>{l}</div>
+          <div key={i} title={l} className="text-xs leading-[18px] line-clamp-2" style={{ color: 'var(--muted)' }}>{l}</div>
         ))}
         <FeedBriefLine />
-        <button onClick={() => goView('insights')} className="mt-1 text-xs font-medium underline underline-offset-2" style={{ color: 'var(--fg)' }}>
-          完整简报
-        </button>
+        <div className="mt-1 flex items-center gap-2 flex-wrap">
+          <button onClick={() => goView('insights')} className="text-xs font-medium underline underline-offset-2" style={{ color: 'var(--fg)' }}>
+            完整简报
+          </button>
+          {aiOff && (
+            <span className="text-2xs inline-flex items-center gap-1" style={{ color: 'var(--warn-ink)' }} title="AI 未配置 API Key，也没有启用本地模型：分区、摘要、通知过滤都只用本地规则">
+              AI 未启用 · 本地规则
+              <button onClick={() => void api.openSettings('ai')} className="underline underline-offset-2" style={{ color: 'var(--fg)' }}>
+                配置
+              </button>
+            </span>
+          )}
+        </div>
       </div>
       <button
         onClick={() => {

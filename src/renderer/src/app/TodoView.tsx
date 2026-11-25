@@ -1238,7 +1238,8 @@ function Timeline(props: { items: Planned[]; now: number; version: number }) {
       <div className="relative mx-4 mb-6" style={{ height: (END - START) * PX }}>
         {Array.from({ length: END - START + 1 }, (_, i) => (
           <div key={i} className="absolute left-0 right-0 flex items-start gap-2" style={{ top: i * PX }}>
-            <span className="w-9 -mt-2 text-2xs tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{String(START + i).padStart(2, '0')}:00</span>
+            {/* 34px：等宽「08:00」实测 33px，原来的 w-9 只有 29.25px，末位会被切掉 */}
+            <span className="w-[34px] shrink-0 -mt-2 text-2xs tnum" style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>{String(START + i).padStart(2, '0')}:00</span>
             <span className="flex-1 border-t border-[var(--border-soft)]" />
           </div>
         ))}

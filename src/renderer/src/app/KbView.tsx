@@ -91,7 +91,7 @@ export function KbView() {
                 ))}
               </div>
               <div className="text-sm font-medium text-zinc-800 truncate">{item.title}</div>
-              <div className="mt-1 text-xs text-zinc-400 line-clamp-3 leading-relaxed">
+              <div className="mt-1 text-xs text-zinc-400 line-clamp-2 leading-relaxed">
                 {item.content.slice(0, 120) || '（空白手记）'}
               </div>
               {item.sourceLabel && <div className="mt-2 text-2xs text-zinc-300 truncate">来源：{item.sourceLabel}</div>}

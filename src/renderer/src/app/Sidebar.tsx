@@ -321,9 +321,10 @@ export function Sidebar() {
           className="w-full h-8 px-2.5 flex items-center gap-2 rounded-[var(--r-sm)] text-sm border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors"
           style={{ background: 'var(--surface-strong)', color: 'var(--faint)' }}
         >
-          <IconSearch width={14} height={14} />
-          <span className="flex-1 text-left">命令、跳转与提问</span>
-          <kbd className="text-2xs" style={{ fontFamily: 'var(--font-mono)' }}>⌘K</kbd>
+          <IconSearch width={14} height={14} className="shrink-0" />
+          {/* 侧栏可比这行字窄：单行截断兜底，别让文案把 32px 的按钮撑成两行 */}
+          <span className="flex-1 min-w-0 truncate text-left">命令与提问</span>
+          <kbd className="text-2xs shrink-0" style={{ fontFamily: 'var(--font-mono)' }}>⌘K</kbd>
         </button>
       </div>
 
