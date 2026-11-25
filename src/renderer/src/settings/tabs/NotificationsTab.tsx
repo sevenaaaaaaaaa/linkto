@@ -152,11 +152,19 @@ function TestResultNote({ r }: { r: TestResult }) {
   }
   return (
     <div className="text-xs py-2 leading-relaxed" style={{ color: r.via === 'none' ? 'var(--danger-ink)' : 'var(--warn-ink)' }}>
-      系统通知发送失败{r.error ? `（${r.error}）` : ''}。
-      {r.via === 'applescript'
-        ? '已改用兜底通知（显示为「脚本编辑器」，没有操作按钮，点击无法定位邮件）。'
-        : '兜底通知也未能发出。'}
-      请到「系统设置 → 通知 → LinkTo」允许通知；列表里没有 LinkTo 时，先用安装包里的「打不开？双击我」重新签名后重启应用再试。
+      <div>
+        系统通知发送失败{r.error ? `（${r.error}）` : ''}。
+        {r.via === 'applescript'
+          ? '已改用兜底通知（显示为「脚本编辑器」，没有操作按钮，点击无法定位邮件）。'
+          : '兜底通知也未能发出。'}
+        请到「系统设置 → 通知 → LinkTo」允许通知；列表里没有 LinkTo 时，先用安装包里的「打不开？双击我」重新签名后重启应用再试。
+      </div>
+      <button
+        onClick={() => void api.openNotificationSettings()}
+        className="mt-1.5 text-xs px-2.5 py-1 rounded-md border border-ink/10 bg-white hover:bg-zinc-50"
+      >
+        打开系统通知设置
+      </button>
     </div>
   )
 }

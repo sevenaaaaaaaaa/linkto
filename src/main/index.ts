@@ -1106,9 +1106,9 @@ async function bootstrap() {
       changed: accountId => {
         broadcast({ type: 'messages-changed', accountId })
       },
-      newMail: (accountId, messageId, subject, from, category, ruleSetCategory) => {
+      newMail: (accountId, messageId, subject, from, category, ruleSetCategory, humanSender) => {
         broadcast({ type: 'new-mail', accountId, subject, from })
-        notifier.notify({ accountId, messageId, subject, from, category })
+        notifier.notify({ accountId, messageId, subject, from, category, humanSender })
         // 自动提炼（正则预过滤账单/会议/Newsletter，命中才花一次 AI 调用）
         const ai = appStore.getAI()
         const row = mailStore.getMessageRow(messageId)

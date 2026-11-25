@@ -9,6 +9,8 @@ export interface NewMailInfo {
   subject: string
   from: string
   category: string
+  /** 发件人看起来是真人（非 no-reply / 列表 / 营销）：启发式误判成 notification 时仍值得提醒 */
+  humanSender?: boolean
 }
 
 /** 一次通知投递的结果（测试通知回传给设置页） */
@@ -97,7 +99,13 @@ export class Notifier {
       if (meta?.seen) continue
       const d = decideNotify(
         s,
-        { accountId: info.accountId, category: info.category, insight: meta?.insight ?? null, snoozedUntil: meta?.snoozedUntil ?? null },
+        {
+          accountId: info.accountId,
+          category: info.category,
+          humanSender: info.humanSender,
+          insight: meta?.insight ?? null,
+          snoozedUntil: meta?.snoozedUntil ?? null
+        },
         now
       )
       if (d.notify) accepted.push({ info, silent: d.silent })

@@ -18,7 +18,9 @@
     "test:update": "node --no-warnings --experimental-strip-types scripts/update-selftest.mts",
     "test:vault": "node --no-warnings --experimental-strip-types scripts/vault-selftest.mts",
     "test:mail": "node scripts/mail-selftest.mjs",
-    "test:all": "npm run test:fly && npm run test:update && npm run test:vault && npm run test:mail",
+    "test:notify": "node --no-warnings --experimental-strip-types scripts/notify-policy-selftest.mts",
+    "test:all": "npm run test:notify && npm run test:fly && npm run test:update && npm run test:vault && npm run test:mail",
+    "ui:audit": "node scripts/ui-text-audit.mjs",
     "linkto": "node scripts/linkto.mjs",
     "fly:reader-hash": "node --no-warnings --experimental-strip-types scripts/fly-reader-hash.mts"
   },

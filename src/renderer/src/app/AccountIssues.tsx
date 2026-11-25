@@ -23,6 +23,15 @@ const HEADLINE: Record<AccountErrorKind, string> = {
   unknown: '同步出错'
 }
 
+/** 侧栏最窄 176px，标题整句放不进去：同一类别给一版短词，名称才不会被挤成「Pr…」 */
+const HEADLINE_SHORT: Record<AccountErrorKind, string> = {
+  auth: '需登录',
+  network: '连不上',
+  server: '被拒绝',
+  tls: 'TLS 失败',
+  unknown: '同步出错'
+}
+
 export function accountErrorHeadline(a: AccountWithStatus): string {
   return HEADLINE[accountErrorKind(a)]
 }
@@ -53,6 +62,11 @@ export function accountHoverText(a: AccountWithStatus, shortcut?: string): strin
   return `${a.name}（${a.email}）· ${state}${shortcut ? ` · ${shortcut}` : ''}`
 }
 
+/** 本机 IMAP 桥（Proton Mail Bridge 等）只在 127.0.0.1 上；这类账户连不上时先看桥 */
+function isLocalBridgeHost(host: string | undefined): boolean {
+  return !!host && /^(127\.0\.0\.1|localhost|::1|\[::1\])$/i.test(host)
+}
+
 function ActionButton(props: { action: AccountAction; primary?: boolean }) {
   return (
     <button
@@ -80,13 +94,31 @@ function IssueBlock(props: { account: AccountWithStatus; compact?: boolean }) {
     <div className={props.compact ? 'py-1.5' : ''}>
       <div className="flex items-center gap-1.5 min-w-0">
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: a.color }} />
-        <span className="font-medium truncate" style={{ color: 'var(--fg)' }}>{a.name}</span>
-        <span className="shrink-0" style={{ color: 'var(--danger-ink)' }}>· {accountErrorHeadline(a)}</span>
+        <span className="flex-1 min-w-0 font-medium truncate" title={`${a.name}（${a.email}）`} style={{ color: 'var(--fg)' }}>{a.name}</span>
+        <span className="shrink-0 text-2xs" style={{ color: 'var(--danger-ink)' }} title={accountErrorHeadline(a)}>{HEADLINE_SHORT[accountErrorKind(a)]}</span>
       </div>
-      <div className="mt-0.5 flex items-end gap-2">
-        <span className="flex-1 min-w-0 line-clamp-2 leading-snug" title={a.statusText} style={{ color: 'var(--muted)' }}>
-          {a.statusText || '连接失败'}
-        </span>
+      {/* 原因整句占满整宽、最多两行；再长就省略号，完整文本在悬停 title 里 */}
+      <div className="mt-1 min-w-0 text-2xs line-clamp-2 leading-snug" title={a.statusText} style={{ color: 'var(--muted)' }}>
+        {a.statusText || '连接失败'}
+      </div>
+      {/* 动作单独一行：侧栏只有 176px，按钮和名称挤一行会把名字和按钮一起挤出去 */}
+      <div className="mt-1.5 flex items-center justify-end gap-1.5">
+        {/* 本机桥连不上时，人真正要做的是「把 Bridge 打开并解锁」，不是反复点重试 */}
+        {accountErrorKind(a) === 'network' && isLocalBridgeHost(a.imap?.host) && (
+          <button
+            onClick={e => {
+              e.stopPropagation()
+              void api.openLocalBridge().then(r => {
+                if (r.ok) setTimeout(() => void api.syncAccountNow(a.id), 4000)
+              })
+            }}
+            title="唤起本机 Bridge 应用（如 Proton Mail Bridge），4 秒后自动重试同步"
+            className="no-drag shrink-0 h-6 px-2 rounded-[var(--r-sm)] text-xs transition-colors hover:bg-[var(--hover)]"
+            style={{ color: 'var(--fg)' }}
+          >
+            唤醒 Bridge
+          </button>
+        )}
         <ActionButton action={action} primary={accountErrorKind(a) === 'auth'} />
       </div>
     </div>

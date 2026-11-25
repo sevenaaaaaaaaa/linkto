@@ -60,6 +60,8 @@ export interface NotifyCandidate {
   accountId: string
   /** 启发式 / AI 分类 */
   category: string
+  /** 发件人看起来是真人：AI 不在线时，启发式把真人邮件判成 notification 是常见误判，不该因此静默不提醒 */
+  humanSender?: boolean
   /** 邮件理解结果（AI 未就绪时用启发式），可缺省 */
   insight?: { section: MailSection; bundle: MailBundle | null } | null
   /** 稍后处理到期时间；未来时间表示仍在 snooze 中 */
@@ -75,7 +77,10 @@ export function passesSmart(c: NotifyCandidate): boolean {
   const bundle = c.insight?.bundle ?? null
   if (bundle === 'newsletter' || bundle === 'notification' || bundle === 'screener') return false
   if (c.insight?.section === 'bundle') return false
-  return c.category === 'personal' || c.insight?.section === 'act'
+  if (c.category === 'personal' || c.insight?.section === 'act') return true
+  // 降级：没有 AI 理解时只能靠启发式分类，「提醒 / 确认 / 通知」这类主题词会把真人邮件误判成
+  // notification。发件人看着是真人时仍然提醒，否则智能过滤会把真实来信静默吞掉（真实反馈：收不到通知）
+  return c.category === 'notification' && c.humanSender === true
 }
 
 /**

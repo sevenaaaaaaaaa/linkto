@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, ipcMain, dialog, shell, app, net, nativeTheme } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BackupService } from './backup'
@@ -1133,6 +1134,33 @@ export function registerIpc(ctx: AppContext) {
     notifyTest: async () => (await notifier.test()).ok,
     /** 测试通知并回传投递结果（系统通知失败原因 / 是否走了 AppleScript 兜底） */
     notifyTestResult: () => notifier.test(),
+    /** 跳到系统设置的通知面板：macOS 拒绝过通知后，只有人能改回来 */
+    openNotificationSettings: async () => {
+      const deepLinks = [
+        'x-apple.systempreferences:com.apple.Notifications-Settings.extension',
+        'x-apple.systempreferences:com.apple.preference.notifications'
+      ]
+      for (const url of deepLinks) {
+        try {
+          await shell.openExternal(url)
+          return true
+        } catch {
+          /* 旧版本 macOS 不认新 pane id，换下一个 */
+        }
+      }
+      return false
+    },
+    /** 本机 IMAP 桥（Proton Mail Bridge 等）在跑但没监听端口时，把人送到 Bridge 窗口去解锁 */
+    openLocalBridge: async () => {
+      const names = ['Proton Mail Bridge', 'ProtonMail Bridge']
+      for (const name of names) {
+        const ok = await new Promise<boolean>(resolve => {
+          execFile('open', ['-a', name], err => resolve(!err))
+        })
+        if (ok) return { ok: true }
+      }
+      return { ok: false, error: '没有找到本机 Bridge 应用（Proton Mail Bridge）' }
+    },
     getAISettings: () => appStore.getAI(),
     setAISettings: ([s]: [AISettings]) => appStore.setAI(s),
     // ---- 内置本地引擎 ----
@@ -1187,9 +1215,12 @@ export function registerIpc(ctx: AppContext) {
     aiListModels: async () => {
       const s = appStore.getAI()
       const base = s.baseURL.replace(/\/+$/, '')
+      // 带鉴权：OpenAI 兼容端点（DeepSeek / OpenAI / 本地网关）的 /models 不给匿名调用，
+      // 少了这个头会一律 401，界面上永远显示「拉取不到模型」，把真实原因（key 错 / 网络不通）掩盖掉。
+      const authHeaders: Record<string, string> = s.apiKey ? { Authorization: `Bearer ${s.apiKey}` } : {}
       const tryFetch = async (url: string, native: boolean): Promise<string[]> => {
         try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(2000) })
+          const res = await fetch(url, { signal: AbortSignal.timeout(4000), headers: authHeaders })
           if (!res.ok) return []
           const j = (await res.json()) as { models?: { name?: string; model?: string }[]; data?: { id?: string }[] }
           if (native && Array.isArray(j.models)) return j.models.map(m => m.model ?? m.name ?? '').filter(Boolean)

@@ -20,6 +20,20 @@ const NOISE_FROM = /(promo|marketing|ads?@|广告|营销|bounce|spam)/i
 const NOTIFICATION_SUBJECT =
   /(验证码|验证碼|安全|登录|账单|发票|订单|发货|快递|物流|收据|支付|提醒|确认|通知|receipt|invoice|order|shipped|delivery|security|verify|verification|confirm|notification|alert|billing|payment|statement|password|signin|sign-in|updated|expired|reminder)/i
 
+/**
+ * 这封信「像不像真人发来的」：命中自动发件人 / 营销 / 列表头就不算。
+ * 用途：AI 不可用时，分类只能靠启发式，而「提醒 / 确认 / 通知」这类词会把真人邮件误判成 notification；
+ * 通知层据此判断「误判但可能是人」的邮件要不要仍然提醒。
+ */
+export function looksHumanSender(msg: Pick<ClassifyInput, 'fromAddress' | 'autoSubmitted' | 'listUnsubscribe' | 'listId' | 'precedence'>): boolean {
+  if (msg.autoSubmitted) return false
+  if (msg.listUnsubscribe || msg.listId) return false
+  if (/bulk/i.test(msg.precedence ?? '')) return false
+  const from = msg.fromAddress ?? ''
+  if (NOTIFICATION_FROM.test(from) || NOISE_FROM.test(from) || NEWSLETTER_FROM.test(from)) return false
+  return true
+}
+
 /** 启发式分类：本地运行，零成本、零隐私顾虑；AI 分类可覆盖其结果 */
 export function heuristicClassify(msg: ClassifyInput): { category: MessageCategory; isNewsletter: boolean } {
   const from = `${msg.fromAddress} ${msg.fromName ?? ''}`

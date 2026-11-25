@@ -6,7 +6,7 @@ import type { AccountConfig, Address, Folder, MessageCategory, SpecialFolder } f
 import type { MailStore, MessageInsert } from '../db'
 import type { AppStore } from '../store'
 import { DEFAULT_GENERAL } from '../store'
-import { heuristicClassify, normalizeSubject } from './classify'
+import { heuristicClassify, looksHumanSender, normalizeSubject } from './classify'
 import { evalRules } from '../rules/engine'
 import { isNotifiableArrival } from '../notify-policy'
 import { parseEmailRaw } from './parse-pool'
@@ -130,7 +130,7 @@ export interface SyncEvents {
   status(accountId: string, status: 'connected' | 'syncing' | 'error' | 'disabled', text: string): void
   progress(accountId: string, text: string): void
   changed(accountId?: string): void
-  newMail(accountId: string, messageId: string, subject: string, from: string, category: string, ruleSetCategory?: boolean): void
+  newMail(accountId: string, messageId: string, subject: string, from: string, category: string, ruleSetCategory?: boolean, humanSender?: boolean): void
   /** 新到达的收件箱邮件（不含首次同步/历史回填）：执行规则动作、AI 条件规则 */
   arrived(accountId: string, messageId: string, ruleActions: RuleAction[], held?: boolean): void
   /** 待办同步文件夹（LinkTo-Sync）在选中期间收到 EXISTS：其他设备写入了新版本 */
@@ -706,6 +706,15 @@ export class AccountWorker {
       precedence: env.headers['precedence'] ?? null,
       autoSubmitted: env.headers['auto-submitted'] ?? null
     })
+    // 供通知层用：AI 不可用时启发式会把真人邮件误判成 notification（提醒/确认/通知等词），
+    // 这些发件人看着像真人时仍然值得弹一次，否则智能过滤会静默吞掉它们。
+    const humanSender = looksHumanSender({
+      fromAddress: env.from?.address ?? '',
+      autoSubmitted: env.headers['auto-submitted'] ?? null,
+      listUnsubscribe: listUnsub,
+      listId,
+      precedence: env.headers['precedence'] ?? null
+    })
     const threadId = this.store.resolveThreadId(
       this.account.id,
       norm,
@@ -796,7 +805,15 @@ export class AccountWorker {
         now: Date.now()
       })
     ) {
-      this.events.newMail(this.account.id, id, env.subject, env.from ? (env.from.name || env.from.address) : '', category, actions.some(a => a.type === 'setCategory'))
+      this.events.newMail(
+        this.account.id,
+        id,
+        env.subject,
+        env.from ? (env.from.name || env.from.address) : '',
+        category,
+        actions.some(a => a.type === 'setCategory'),
+        humanSender
+      )
     }
     if (inserted && special === 'inbox' && arrival) {
       // held 随事件上交：规则「通知我」在 Screener 拦截中的邮件上不得 force 弹窗（否则拦截形同虚设）

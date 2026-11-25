@@ -154,6 +154,10 @@ export interface LinkToApi {
   notifyTest(): Promise<boolean>
   /** 发送测试通知并返回投递结果：native = 系统通知；applescript = 系统通知失败后的兜底；none = 都失败 */
   notifyTestResult(): Promise<{ ok: boolean; via: 'native' | 'applescript' | 'none'; error?: string }>
+  /** 打开 macOS「系统设置 → 通知」：通知被系统拒绝时唯一的人工修复入口 */
+  openNotificationSettings(): Promise<boolean>
+  /** 本机 IMAP 桥（如 Proton Mail Bridge）没在监听端口：唤起 Bridge 应用 */
+  openLocalBridge(): Promise<{ ok: boolean; error?: string }>
   getAISettings(): Promise<AISettings>
   setAISettings(s: AISettings): Promise<void>
   aiProbeLocal(): Promise<{ found: boolean; baseURL: string; provider: string; models: string[] }>
